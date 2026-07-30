@@ -3,6 +3,7 @@ import { DraftConflict } from "../../components/DraftConflict"
 import { AuthorshipBadge } from "../../components/AuthorshipBadge"
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -11,6 +12,7 @@ import {
 } from "react"
 import { createPortal } from "react-dom"
 import { Copy, Eye, Merge, Scissors, Trash2 } from "lucide-react"
+import { useNavigate, useSearch } from "@tanstack/react-router"
 import { Trans, useLingui } from "@lingui/react/macro"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import type { PageSectioningOutput, PageSectioningSection } from "@adt/types"
@@ -36,6 +38,7 @@ import { useFloatingSave } from "../../components/floating-save"
 import { CascadeResetDialog } from "../../components/CascadeResetDialog"
 import { SectioningSyncNotice } from "../../components/SectioningSyncNotice"
 import { useDownstreamWithOutput } from "@/hooks/use-downstream-with-output"
+import type { BookStepSearch } from "@/lib/book-step-search"
 
 export function SectioningPageDetail({
   bookLabel,
@@ -55,6 +58,8 @@ export function SectioningPageDetail({
   hasNextPage?: boolean
 }) {
   const { t } = useLingui()
+  const navigate = useNavigate()
+  const search = useSearch({ strict: false }) as BookStepSearch
   const queryClient = useQueryClient()
   const { headerSlotEl } = useStepHeader()
   const { data: imageData } = usePageImage(bookLabel, pageId)
@@ -98,6 +103,14 @@ export function SectioningPageDetail({
   const savePromiseRef = useRef<Promise<void> | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [structuralBusy, setStructuralBusy] = useState(false)
+  const [confirmMerge, setConfirmMerge] = useState<{
+    action: () => void
+    label: string
+  } | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
+  const sectionElementsRef = useRef(new Map<string, HTMLDivElement>())
+  const consumedSectionFocusRef = useRef<string | null>(null)
+  const [focusedSectionId, setFocusedSectionId] = useState<string | null>(null)
 
   /**
    * A pending action awaiting confirmation. Every mutation that resets the
@@ -139,6 +152,36 @@ export function SectioningPageDetail({
     [draft.pending, sectionsFromServer]
   )
   const dirty = Object.keys(pendingBySectionId).length > 0
+
+  // Exact-section validation links are one-shot: focus the stable section id,
+  // then remove it from the URL without disturbing other step search state.
+  useEffect(() => {
+    if (!search.sectionId || mergedSections.length === 0) return
+    const focusKey = `${pageId}:${search.sectionId}`
+    if (consumedSectionFocusRef.current === focusKey) return
+    consumedSectionFocusRef.current = focusKey
+
+    const element = sectionElementsRef.current.get(search.sectionId)
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "center" })
+      setFocusedSectionId(search.sectionId)
+    } else {
+      setFocusedSectionId(null)
+    }
+
+    void navigate({
+      to: "/books/$label/$step/$pageId",
+      params: { label: bookLabel, step: "sectioning", pageId },
+      search: { ...search, sectionId: undefined },
+      replace: true,
+    })
+  }, [bookLabel, mergedSections.length, navigate, pageId, search])
+
+  useEffect(() => {
+    if (!focusedSectionId) return
+    const timeout = window.setTimeout(() => setFocusedSectionId(null), 2_000)
+    return () => window.clearTimeout(timeout)
+  }, [focusedSectionId])
 
   const handleSectionChange = useCallback((next: PageSectioningSection) => {
     draft.setPending((prev) => {
@@ -458,7 +501,17 @@ export function SectioningPageDetail({
           </div>
         ) : (
           mergedSections.map((section, idx) => (
-            <div key={section.sectionId}>
+            <div
+              key={section.sectionId}
+              ref={(element) => {
+                if (element) sectionElementsRef.current.set(section.sectionId, element)
+                else sectionElementsRef.current.delete(section.sectionId)
+              }}
+              className={cn(
+                "rounded-md transition-shadow",
+                focusedSectionId === section.sectionId && "ring-2 ring-sky-500 ring-offset-2",
+              )}
+            >
               <div className="flex items-center gap-3 mb-2">
                 <div className="text-xs font-medium text-muted-foreground">
                   {`#${idx + 1}`}
