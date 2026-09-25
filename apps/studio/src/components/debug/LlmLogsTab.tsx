@@ -32,7 +32,7 @@ interface LlmLogsTabProps {
   isRunning: boolean
 }
 
-type RowStatus = "success" | "cached" | "error" | "skipped" | "cancelled"
+type RowStatus = "success" | "cached" | "error" | "skipped" | "cancelled" | "skipped-with-error"
 
 const STATUS_DOT: Record<RowStatus, string> = {
   success: "bg-green-500",
@@ -40,6 +40,7 @@ const STATUS_DOT: Record<RowStatus, string> = {
   error: "bg-red-500",
   skipped: "bg-slate-400",
   cancelled: "bg-slate-400",
+  "skipped-with-error": "bg-amber-500",
 }
 
 function formatSeconds(ms: number): string {
@@ -53,6 +54,7 @@ function formatSeconds(ms: number): string {
  * cache hit is the part worth pinning down.
  */
 export function getStatus(entry: LlmLogEntry): RowStatus {
+  if (entry.data.outcome === "skipped-with-error") return "skipped-with-error"
   if (entry.data.outcome === "cancelled") return "cancelled"
   if (entry.data.success === false) return "error"
   if (
@@ -163,7 +165,7 @@ function LogDetail({ data, label }: { data: LlmLogEntry["data"]; label: string }
             <div className="text-muted-foreground mb-0.5">
               <Trans>Model</Trans>
             </div>
-            <div className="font-medium">{data.modelId}</div>
+            <div className="font-medium">{data.modelId || "—"}</div>
           </div>
           <div>
             <div className="text-muted-foreground mb-0.5">
@@ -184,7 +186,7 @@ function LogDetail({ data, label }: { data: LlmLogEntry["data"]; label: string }
           {data.attempt !== undefined && <div><Trans>Attempt</Trans><div>{data.attempt + 1}{data.maxAttempts ? `/${data.maxAttempts}` : ""}</div></div>}
           {data.errorClass && <div><Trans>Error class</Trans><div>{getLlmErrorClassLabel(i18n, data.errorClass)}</div></div>}
           {data.providerCall !== undefined && <div><Trans>Provider call</Trans><div>{data.providerCall ? t`Yes` : t`No`}</div></div>}
-          {data.outcome && <div><Trans>Outcome</Trans><div>{data.outcome === "success" ? t`Success` : data.outcome === "retrying" ? t`Retrying` : data.outcome === "cancelled" ? t`Cancelled` : t`Failed`}</div></div>}
+          {data.outcome && <div><Trans>Outcome</Trans><div>{data.outcome === "success" ? t`Success` : data.outcome === "retrying" ? t`Retrying` : data.outcome === "cancelled" ? t`Cancelled` : data.outcome === "skipped-with-error" ? t`Skipped after error` : t`Failed`}</div></div>}
           {data.requestId && <div><Trans>Request ID</Trans><div>{data.requestId}</div></div>}
           {data.usage && (
             <>
@@ -293,10 +295,12 @@ function LogDetail({ data, label }: { data: LlmLogEntry["data"]; label: string }
           <div>
             <div className="font-medium text-muted-foreground mb-1 flex items-center gap-1">
               <MinusCircle className="h-3 w-3" />
-              <Trans>No audio</Trans>
+              {data.outcome === "skipped-with-error" ? <Trans>Skipped after error</Trans> : <Trans>No audio</Trans>}
             </div>
             <p className="bg-muted p-3 rounded text-[11px] text-muted-foreground">
-              {data.skippedReason === NO_SPEAKABLE_TEXT
+              {data.skippedReason === "page-error"
+                ? t`This page was skipped after an error. The decision sent no additional provider request. Review retained results before continuing.`
+                : data.skippedReason === NO_SPEAKABLE_TEXT
                 ? t`This entry has no speakable text, so no audio was generated and no request was sent to the provider.`
                 : data.skippedReason}
             </p>
@@ -318,6 +322,7 @@ function HistoryLogRow({ entry, label }: { entry: LlmLogEntry; label: string }) 
     error: t`Error`,
     skipped: t`No audio`,
     cancelled: t`Cancelled`,
+    "skipped-with-error": t`Skipped after error`,
   }
 
   function formatTimestamp(iso: string): string {
@@ -354,7 +359,7 @@ function HistoryLogRow({ entry, label }: { entry: LlmLogEntry; label: string }) 
         </td>
         <td className="py-1.5 px-2 text-muted-foreground">{entry.itemId}</td>
         <td className="py-1.5 px-2 font-medium">{entry.data.promptName}</td>
-        <td className="py-1.5 px-2 text-muted-foreground">{entry.data.modelId}</td>
+        <td className="py-1.5 px-2 text-muted-foreground">{entry.data.modelId || "—"}</td>
         <td className="py-1.5 px-2 tabular-nums text-right">
           {formatSeconds(entry.data.durationMs)}
         </td>

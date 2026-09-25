@@ -9357,6 +9357,9 @@ msgstr "Skip this run"
 msgid "Skipped"
 msgstr "Skipped"
 
+msgid "Skipped after error"
+msgstr "Skipped after error"
+
 msgid "Sky"
 msgstr "Sky"
 
@@ -10436,6 +10439,9 @@ msgstr "This page has no translatable text entries"
 
 msgid "This page has not been reviewed yet"
 msgstr "This page has not been reviewed yet"
+
+msgid "This page was skipped after an error. The decision sent no additional provider request. Review retained results before continuing."
+msgstr "This page was skipped after an error. The decision sent no additional provider request. Review retained results before continuing."
 
 msgid "This page's embedded text layer is empty, but the Sectioning step recovered text from the page image — so it looks like a scanned or image-only page. The pipeline can still work from the recovered text, but for better summaries, metadata, and translations, try to obtain a text-based version of this PDF (one with a real text layer) rather than a scanned copy."
 msgstr "This page's embedded text layer is empty, but the Sectioning step recovered text from the page image — so it looks like a scanned or image-only page. The pipeline can still work from the recovered text, but for better summaries, metadata, and translations, try to obtain a text-based version of this PDF (one with a real text layer) rather than a scanned copy."

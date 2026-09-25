@@ -115,7 +115,7 @@ export function createDebugRoutes(
           COALESCE(SUM(json_extract(data, '$.usage.outputTokens')), 0) as outputTokens,
           COALESCE(ROUND(AVG(CASE WHEN ${notSkipped} THEN json_extract(data, '$.durationMs') END), 0), 0) as avgDurationMs,
           SUM(CASE
-            WHEN json_extract(data, '$.outcome') = 'cancelled' THEN 0
+            WHEN json_extract(data, '$.outcome') IN ('cancelled', 'skipped-with-error') THEN 0
             WHEN json_extract(data, '$.success') = 0 THEN 1
             WHEN json_extract(data, '$.success') IS NULL
               AND json_array_length(json_extract(data, '$.validationErrors')) > 0 THEN 1

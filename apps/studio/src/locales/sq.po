@@ -9359,6 +9359,9 @@ msgstr "Anashkalo në këtë ekzekutim"
 msgid "Skipped"
 msgstr "Kaluar"
 
+msgid "Skipped after error"
+msgstr "U anashkalua pas një gabimi"
+
 msgid "Sky"
 msgstr "Qiell"
 
@@ -10438,6 +10441,9 @@ msgstr "Kjo faqe nuk ka hyrje teksti të përkthyeshme"
 
 msgid "This page has not been reviewed yet"
 msgstr "Kjo faqe nuk është rishikuar akoma"
+
+msgid "This page was skipped after an error. The decision sent no additional provider request. Review retained results before continuing."
+msgstr "Kjo faqe u anashkalua pas një gabimi. Vendimi nuk dërgoi asnjë kërkesë shtesë te ofruesi. Shqyrtoni rezultatet e ruajtura përpara se të vazhdoni."
 
 msgid "This page's embedded text layer is empty, but the Sectioning step recovered text from the page image — so it looks like a scanned or image-only page. The pipeline can still work from the recovered text, but for better summaries, metadata, and translations, try to obtain a text-based version of this PDF (one with a real text layer) rather than a scanned copy."
 msgstr "Shtresa e tekstit të integruar e kësaj faqeje është bosh, por hapi i Seksionimit rikuperoi tekst nga imazhi i faqes — pra duket si një faqe e skanuar ose vetëm me imazhe. Procesi ende mund të punojë me tekstin e rikuperuar, por për përmbledhje, metadata dhe përkthime më të mira, provoni të siguroni një version të këtij PDF-je të bazuar në tekst (me një shtresë teksti reale) në vend të një kopjeje të skanuar."

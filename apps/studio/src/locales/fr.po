@@ -9359,6 +9359,9 @@ msgstr "Ignorer pour cette exécution"
 msgid "Skipped"
 msgstr "Ignoré"
 
+msgid "Skipped after error"
+msgstr "Ignorée après une erreur"
+
 msgid "Sky"
 msgstr "Sky"
 
@@ -10438,6 +10441,9 @@ msgstr "Cette page n'a pas d'entrées de texte traduisibles"
 
 msgid "This page has not been reviewed yet"
 msgstr "Cette page n'a pas encore été révisée"
+
+msgid "This page was skipped after an error. The decision sent no additional provider request. Review retained results before continuing."
+msgstr "Cette page a été ignorée après une erreur. La décision n’a envoyé aucune requête supplémentaire au fournisseur. Vérifiez les résultats conservés avant de continuer."
 
 msgid "This page's embedded text layer is empty, but the Sectioning step recovered text from the page image — so it looks like a scanned or image-only page. The pipeline can still work from the recovered text, but for better summaries, metadata, and translations, try to obtain a text-based version of this PDF (one with a real text layer) rather than a scanned copy."
 msgstr "La couche de texte intégrée de cette page est vide, mais l'étape de Sectionnement a récupéré du texte à partir de l'image de la page — elle semble donc numérisée ou uniquement composée d'images. Le pipeline peut toujours fonctionner à partir du texte récupéré, mais pour de meilleurs résumés, métadonnées et traductions, essayez d'obtenir une version de ce PDF basée sur du texte (avec une vraie couche de texte) plutôt qu'une copie numérisée."

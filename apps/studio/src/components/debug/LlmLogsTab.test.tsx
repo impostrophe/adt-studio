@@ -140,3 +140,8 @@ it("distinguishes cancellation from provider failure", () => {
   const entry = (data: Record<string, unknown>) => ({ data } as Parameters<typeof getStatus>[0])
   expect(getStatus(entry({ success: false, cacheHit: false, providerCall: false, outcome: "cancelled" }))).toBe("cancelled")
 })
+
+
+it("distinguishes a skipped page error from success, no-audio and a new failed call", () => {
+  expect(getStatus({ data: { success: false, outcome: "skipped-with-error", providerCall: false, skippedReason: "page-error" } } as Parameters<typeof getStatus>[0])).toBe("skipped-with-error")
+})

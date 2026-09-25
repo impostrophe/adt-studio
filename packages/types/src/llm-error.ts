@@ -27,6 +27,6 @@ export const LLMCallDiagnostics = z.object({
   finalError: z.boolean().optional(),
   maxAttempts: z.number().int().positive().optional(),
   providerCall: z.boolean().optional(),
-  outcome: z.enum(["success", "retrying", "failed", "cancelled"]).optional(),
+  outcome: z.enum(["success", "retrying", "failed", "cancelled", "skipped-with-error"]).optional(),
 })
 export type LLMCallDiagnostics = z.infer<typeof LLMCallDiagnostics>

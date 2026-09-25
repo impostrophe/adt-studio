@@ -322,6 +322,16 @@ async function handlePageFailure(ctx: PageFailureContext): Promise<void> {
       ctx.gate.open()
     }
     if (action === "skip") {
+      // Persist the choice before continuing. This is a diagnostic outcome,
+      // not permission to replace retained content or declare it current.
+      ctx.progress.emit({
+        type: "page-error-skipped",
+        step: ctx.step,
+        pageId: ctx.pageId,
+        errorClass: classifyLLMError(ctx.err).errorClass,
+        requestId: ctx.err instanceof LLMCallError ? ctx.err.requestId : undefined,
+        attemptCount: ctx.err instanceof LLMCallError ? ctx.err.attempts : undefined,
+      })
       let set = ctx.skippedByStep.get(ctx.step)
       if (!set) {
         set = new Set()
@@ -1003,7 +1013,26 @@ function createAdmittedStageRunner(): StageRunner {
       try {
         const trackingProgress: StageRunProgress = {
           emit(event) {
-            if (event.type === "step-start") {
+            if (event.type === "page-error-skipped") {
+              completionStorage.appendLlmLog({
+                requestId: event.requestId ?? crypto.randomUUID(),
+                timestamp: new Date().toISOString(),
+                taskType: event.step,
+                pageId: event.pageId,
+                promptName: "page-error-decision",
+                modelId: "",
+                durationMs: 0,
+                attempt: Math.max(0, (event.attemptCount ?? 1) - 1),
+                errorClass: event.errorClass,
+                success: false,
+                errorCount: 0,
+                cacheHit: false,
+                providerCall: false,
+                outcome: "skipped-with-error",
+                skippedReason: "page-error",
+                messages: [],
+              })
+            } else if (event.type === "step-start") {
               // Cancellation checkpoint before every step: a cancel that lands
               // between steps stops the run here, before the step is recorded.
               if (options.signal?.aborted) throw new RunCancelledError()

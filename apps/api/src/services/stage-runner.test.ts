@@ -3044,6 +3044,12 @@ describe("concurrent page decisions", () => {
         })
       }
       storage.close()
+      const snapshot = () => {
+        const db = openBookDb(path.join(booksDir, "paused", "paused.db"))
+        try { return db.all("SELECT * FROM node_data ORDER BY node, item_id, version") }
+        finally { db.close() }
+      }
+      const beforeNodes = snapshot()
       const failures: Array<() => void> = []
       captionPageImagesMock.mockReset()
       captionPageImagesMock
@@ -3102,6 +3108,18 @@ describe("concurrent page decisions", () => {
         await vi.waitFor(() => expect(settled).toBe(true), { timeout: 1000 })
         expect(broker.getPendingDecisions("paused")).toEqual([])
         expect(captionPageImagesMock).toHaveBeenCalledTimes(2)
+        // Reopen real storage after the runner has closed it: Skip is durable
+        // even when a sibling subsequently stops the step, without content writes.
+        expect(snapshot()).toEqual(beforeNodes)
+        const db = openBookDb(path.join(booksDir, "paused", "paused.db"))
+        try {
+          const rows = db.all("SELECT item_id, data FROM llm_log WHERE json_extract(data, '$.outcome') = 'skipped-with-error'") as Array<{ item_id: string; data: string }>
+          expect(rows).toHaveLength(action === "skip" ? 1 : 0)
+          if (action === "skip") {
+            expect(rows[0].item_id).toBe(first.pageId)
+            expect(JSON.parse(rows[0].data)).toMatchObject({ outcome: "skipped-with-error", providerCall: false, cacheHit: false, skippedReason: "page-error" })
+          }
+        } finally { db.close() }
       } finally {
         controller.abort()
         broker.clearForRun("paused")
