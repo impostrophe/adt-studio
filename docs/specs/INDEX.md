@@ -26,6 +26,8 @@ already holds its number — check both before taking one
 | [SPEC-0015](SPEC-0015-nano-banana-image-models.md) | Nano Banana image models | in-review | @elasticsounds | #579 / #904 |
 
 
+SPEC-0009 has a [Phase A implementation and evidence record](SPEC-0009-implementation-evidence.md); human review is pending and Phase B remains blocked.
+
 Legacy notes, from before this process existed, now in [`docs/analysis/`](../analysis/):
 [SECTIONING_CROSSWORD_BUG.md](../analysis/SECTIONING_CROSSWORD_BUG.md),
 [SECTIONING_VALIDATION_FAILURES.md](../analysis/SECTIONING_VALIDATION_FAILURES.md)
