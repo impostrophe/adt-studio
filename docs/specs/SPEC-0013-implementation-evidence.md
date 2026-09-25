@@ -64,7 +64,7 @@ is pending.
 | 11 | Passed | Actual Hono routes return 400 for ineligible Retry/retry-all, retaining the same pending decision. Retry is unavailable for every stage until safe support exists. |
 | 12 | Passed | API tests reject wrong book/run/step/page, strict invalid bodies, stale and cancelled decisions; concurrent duplicate submissions yield one 200 and one 409. Legacy clients may omit additive context: the opaque ID still binds to the URL book and active run. |
 | 13 | Passed | Broker fake-time tests exercise initial/subsequent disconnect, reconnect, 30-second grace and ten-minute timeout. API polling matches SSE. Production Studio browser acceptance recovers after reload and removes a decision resolved in a second tab. |
-| 14 | Not run | Broker tests pass for run-end/cancel cleanup, run-scoped bulk policy, rejecting old run callbacks and fresh-broker stale IDs. Actual process-kill/restart with persisted interrupted-state verification was not exercised; CLI step-run persistence is also absent in the exercised flow. No durable restart guarantee is claimed. |
+| 14 | Passed at committed decision boundary | Broker lifecycle tests cover run-end/cancel and bulk-policy isolation. `page-error-restart.test.ts` kills a real process with a pending decision and open storage, then uses production startup cleanup and actual decision/status routes in a new process: old ID returns 409, step reports Interrupted, no worker resumes, committed node histories and referenced asset bytes are unchanged. This does not test a crash inside a write transaction; CLI step-run persistence remains outside this evidence. |
 | 15 | Passed | Actual compiled CLI on a fresh one-page representative-book fixture exits 1 in 5.6 seconds with no dialog after six stubbed outbound requests: three metadata and three Meaningfulness. Existing DAG/runner failure tests pass. This is not a protected rerun or crash-recovery acceptance. |
 | 16 | Blocked | Durable page-specific skipped-with-error summaries, downstream cardinality and freshness-qualified readiness are not implemented by this slice. Existing Skip/Stop behavior must not be described as satisfying this criterion. |
 | 17 | Passed | Shared additive diagnostics expose request/attempt identity, class, terminal outcome, cache/provider-call flags and available usage. Typed errors do not expose raw provider bodies; Debug tests exclude no-call cancellation rows from provider totals while retaining inspectability. Real CLI SQLite logs show three correlated attempts per work unit. External CLI accounting limitation remains under AC-6. |
@@ -82,7 +82,7 @@ The SQLite tests verify the decision boundary, not a missing recovery transactio
 | Check | Result |
 |---|---|
 | Untouched develop baseline: `pnpm test --maxWorkers=2 --testTimeout=30000` | 277 files, 3,604 tests passed before changes. |
-| Final `pnpm test --maxWorkers=2 --testTimeout=30000` | 281 files, 3,661 tests passed. Its pretest runs `pnpm build`, which passed. Subsequent source edits were formatting only; affected tests were rerun. |
+| Final `pnpm test --maxWorkers=2 --testTimeout=30000` | 282 files, 3,673 tests passed after the confidence follow-up (419.72 seconds with other suites running concurrently). Its pretest runs `pnpm build`, which passed. The earlier implementation run passed 281 files / 3,661 tests. |
 | Focused retry/cache/classification/decision/Studio tests | 10 files, 125 tests passed before the full run; final formatting check reran decision-route/dialog tests. |
 | `pnpm typecheck` | Passed. |
 | `pnpm lint` | Passed with zero errors and eight unused-suppression warnings, matching a separately exercised untouched-develop baseline. |
@@ -128,3 +128,41 @@ with the real API broker: it does not exercise an enabled manual Retry worker.
   inherited stack content. The original remote stack is recoverable from the
   backup ref above. PR #712 is unchanged and remains attributed as the starting
   point for classification, HTTP-budget tests and decision/UI adaptation.
+
+
+## Additional confidence pass (2026-09-25)
+
+The follow-up audit added ten transport cases using actual SDK adapters with
+stubbed fetch. Anthropic and Google now each demonstrate bounded transient
+exhaustion, permanent fast-fail and invalid-output repair followed by success
+with correct accumulated usage. Additional tests observe the next request's
+actual timing for normal and excessive Retry-After values (66-second ceiling),
+reject a late successful response after cancellation without publishing cache,
+and isolate budgets/log identities for concurrent successful and failing pages.
+
+A new UI regression failed against the previous implementation: when another
+tab resolves the current decision and polling advances, the original POST's
+late rejection cleared the next decision's busy state and displayed the wrong
+error. The dialog now mounts submission state by decision ID. The test proves
+that a late rejection cannot unlock the next pending submission or inject its
+error. No copy or recovery eligibility changed.
+
+A separate process test exercises SIGKILL at the committed failure-decision
+boundary, then production startup cleanup, real SQLite and real Hono routes.
+It verifies interrupted status, stale-decision rejection, no automatic worker
+invocation and unchanged committed node histories/media. This strengthens
+AC-14 for that boundary; protected retry/publication and crashes during an
+incomplete transaction remain unverified. No claim about all crash positions
+or opaque external-provider executables follows from this test.
+
+
+Follow-up verification: all 3,673 tests in 282 files passed, including the 12
+added cases. Focused checks passed 37 provider/dialog tests plus the separate
+process-restart test. `pnpm typecheck`, `pnpm lint` (same eight existing warnings),
+Studio production build, Lingui extraction and strict compilation passed.
+No new messages were introduced; all five catalogs remain complete. Rebuilt
+Studio browser acceptance again passed reload/polling recovery, rejected
+submission, refresh/Stop and two-tab resolution with no JavaScript errors and
+unchanged fixture book data. The initial failing UI regression and all follow-up
+logs are retained in `tmp/acceptance/`. No Docker/installer rerun or release
+verification is claimed for this UI-only runtime fix.
