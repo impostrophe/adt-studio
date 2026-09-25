@@ -34,6 +34,7 @@ export interface ClaudeAgentResultEvent {
   result?: string
   structured_output?: unknown
   usage?: ClaudeAgentUsage
+  api_error_status?: number | null
   total_cost_usd?: number
   errors?: string[]
 }
@@ -76,8 +77,8 @@ export interface ClaudeCliArgsOptions {
  * Headless print mode, fully isolated: no settings sources, no built-in tools,
  * no MCP servers, no session files. stream-json is the only print-mode input
  * format that carries image blocks, and stream-json output requires
- * `--verbose`. Without tools a user turn cannot fan out, so no turn cap is
- * needed.
+ * `--verbose`. Transport retries, structured-output repair and stream fallback
+ * are disabled through the child environment so the facade owns those budgets.
  */
 export function buildClaudeArgs(options: ClaudeCliArgsOptions): string[] {
   const args = [

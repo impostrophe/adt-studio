@@ -98,13 +98,27 @@ export function createClaudeAgentStructuredTextBackend(
           }${authFailureHint(context.credentials.apiKey)}`,
         )
       }
+      const usage = toTokenUsage(result.usage)
+      if (result.subtype === "error_max_structured_output_retries") {
+        throw new LLMValidationError(
+          [
+            "Claude Agent did not provide valid structured output. Return corrected JSON matching the schema.",
+          ],
+          result.result,
+          usage,
+        )
+      }
       if (result.subtype !== "success" || result.is_error) {
         throw new Error(
           `Claude Agent turn failed (${result.subtype})${formatErrors(result)}${authFailureHint(context.credentials.apiKey)}`,
+          {
+            cause: Number.isInteger(result.api_error_status)
+              ? { statusCode: result.api_error_status }
+              : undefined,
+          },
         )
       }
 
-      const usage = toTokenUsage(result.usage)
       const rawText = result.result
       const value =
         result.structured_output !== undefined
@@ -175,6 +189,12 @@ export function buildClaudeAgentEnv(
   for (const key of CLI_CREDENTIAL_ENV_KEYS) delete env[key]
   if (apiKey) env.ANTHROPIC_API_KEY = apiKey
   env.MAX_THINKING_TOKENS = "0"
+  // Disable known internal retry paths, verified with CLI 2.1.260 at loopback.
+  // Token-limit continuation remains outside these controls; older CLIs may
+  // also ignore them. See the opt-in wire-budget acceptance test.
+  env.CLAUDE_CODE_MAX_RETRIES = "0"
+  env.MAX_STRUCTURED_OUTPUT_RETRIES = "0"
+  env.CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK = "1"
   return env
 }
 
