@@ -221,7 +221,7 @@ export function SectioningLandingPage({ bookLabel }: { bookLabel: string }) {
           </Trans>
         }
         checked={activitiesEnabled}
-        disabled={activityNames.length === 0}
+        disabled={activityNames.length === 0 || modeConfirmation.busy}
         onCheckedChange={handleActivityDetectionChange}
       />
     </LandingPageShell>
