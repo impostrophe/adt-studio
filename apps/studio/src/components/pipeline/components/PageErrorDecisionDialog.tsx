@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useRef, useState } from "react"
 import { SkipForward, CircleStop } from "lucide-react"
 import { Trans } from "@lingui/react/macro"
 import { useLingui } from "@lingui/react"
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { useBookRun } from "@/hooks/use-book-run"
+import type { PendingDecision } from "@/api/client"
 import { getLlmErrorClassLabel } from "@/lib/llm-error-class-i18n"
 import { getStepLabelI18n } from "../pipeline-i18n"
 
@@ -23,23 +24,20 @@ import { getStepLabelI18n } from "../pipeline-i18n"
  * layout so it appears on any screen of the book.
  */
 export function PageErrorDecisionDialog() {
-  const { i18n } = useLingui()
-  const { pendingDecisions, resolveDecision, refreshDecisions } = useBookRun()
+  const { pendingDecisions } = useBookRun()
   const current = pendingDecisions[0]
+  // Polling may advance while a previous POST is still in flight. A keyed
+  // component keeps that response from changing the next decision's state.
+  return current ? <PendingPageErrorDecision key={current.decisionId} current={current} /> : null
+}
+
+function PendingPageErrorDecision({ current }: { current: PendingDecision }) {
+  const { i18n } = useLingui()
+  const { resolveDecision, refreshDecisions } = useBookRun()
   const [applyToAll, setApplyToAll] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submissionFailed, setSubmissionFailed] = useState(false)
   const busy = useRef(false)
-
-  // Reset the "apply to all" checkbox whenever a new decision comes to the head.
-  useEffect(() => {
-    setApplyToAll(false)
-    setSubmitting(false)
-    setSubmissionFailed(false)
-    busy.current = false
-  }, [current?.decisionId])
-
-  if (!current) return null
 
   const stepLabel = getStepLabelI18n(current.step)
 

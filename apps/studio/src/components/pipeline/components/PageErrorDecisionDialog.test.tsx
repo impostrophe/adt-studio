@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Dialog harness adapted from PR #712.
 import React from "react"
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { PageErrorDecisionDialog } from "./PageErrorDecisionDialog"
 
@@ -32,7 +32,9 @@ vi.mock("@/hooks/use-book-run", () => ({
   useBookRun: () => ({ pendingDecisions, resolveDecision, refreshDecisions }),
 }))
 vi.mock("../pipeline-i18n", () => ({ getStepLabelI18n: () => "Image Meaningfulness" }))
+const initialDecision = { ...pendingDecisions[0] }
 beforeEach(() => {
+  pendingDecisions.splice(0, pendingDecisions.length, { ...initialDecision })
   resolveDecision.mockReset()
   refreshDecisions.mockReset()
 })
@@ -75,4 +77,40 @@ describe("safe decision dialog", () => {
     expect(refreshDecisions).toHaveBeenCalledTimes(1)
     expect(screen.queryByText("409 stale")).toBeNull()
   })
+})
+
+it("does not let a previous decision response unlock or report failure on the next decision", async () => {
+  let rejectFirst!: (error: Error) => void
+  let finishSecond!: () => void
+  resolveDecision
+    .mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectFirst = reject
+        }),
+    )
+    .mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSecond = resolve
+        }),
+    )
+  const { rerender } = render(<PageErrorDecisionDialog />)
+  fireEvent.click(screen.getByRole("button", { name: "Stop step" }))
+  // Another tab resolves the first decision; polling advances this dialog while
+  // this tab's original POST is still in flight.
+  pendingDecisions.splice(0, 1, { ...initialDecision, decisionId: "decision-2", pageId: "pg003" })
+  rerender(<PageErrorDecisionDialog />)
+  const nextStop = screen.getByRole("button", { name: "Stop step" })
+  fireEvent.click(nextStop)
+  expect(resolveDecision).toHaveBeenCalledTimes(2)
+  await act(async () => {
+    rejectFirst(new Error("409 already resolved"))
+  })
+  expect((nextStop as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.queryByRole("alert")).toBeNull()
+  fireEvent.click(nextStop)
+  expect(resolveDecision).toHaveBeenCalledTimes(2)
+  finishSecond()
+  await waitFor(() => expect((nextStop as HTMLButtonElement).disabled).toBe(false))
 })
