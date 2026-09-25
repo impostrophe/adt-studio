@@ -96,6 +96,7 @@ async function reRenderAdmittedPage(
 
   const storage = publication.storage
   let visualRefinement: VisualRefinementDeps | undefined
+  let renderingCommitted = false
   // Book typography (editable size-per-role map), shared with every rendered page.
   const typography = readTypography(storage)
 
@@ -142,7 +143,8 @@ async function reRenderAdmittedPage(
       label,
     )
 
-    // Create LLM model resolver (model-specific, cached)
+    // Explicit rerenders request a fresh attempt, including answers/review.
+    // Keep write-through so later ordinary calls with identical inputs reuse it.
     const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
     const promptEngine = createPromptEngine(resolvePromptRoots({ booksDir, promptsDir, bookPromptsDir }), { basePromptModelId: config.base_prompt_model, capture: true })
@@ -155,6 +157,7 @@ async function reRenderAdmittedPage(
       const model = createLLMModel({
         modelId,
         cacheDir,
+        forceFresh: true,
         promptEngine,
         onLog: (entry) => storage.appendLlmLog(entry),
         providerCredentials: credentials,
@@ -231,6 +234,7 @@ async function reRenderAdmittedPage(
 
     if (sectionIndex === undefined) {
       const version = storage.putNodeData("web-rendering", pageId, renderResult)
+      renderingCommitted = true
       return { version, rendering: renderResult }
     }
 
@@ -254,10 +258,40 @@ async function reRenderAdmittedPage(
     const mergedRendering = { sections: mergedSections }
 
     const version = storage.putNodeData("web-rendering", pageId, mergedRendering)
+    renderingCommitted = true
     return { version, rendering: mergedRendering }
   } finally {
-    if (visualRefinement) {
-      await visualRefinement.screenshotRenderer.close()
+    try {
+      if (visualRefinement) await visualRefinement.screenshotRenderer.close()
+      // A failed generation did not change rendering. In particular, a fresh
+      // provider failure must not delete downstream manual work or completion.
+      // Successful invalidation still awaits the shared scoped-preservation API.
+      if (renderingCommitted) {
+        storage.clearNodesByType([
+          "image-captioning",
+          "text-catalog",
+          "easy-read",
+          "text-catalog-translation",
+          "core-tts-catalog",
+          "tts",
+          "tts-timestamps",
+          "accessibility-assessment",
+        ])
+        storage.clearStepRuns([
+          "image-captioning",
+          "text-catalog",
+          "easy-read",
+          "catalog-translation",
+          "core-tts-catalog",
+          "image-translation",
+          "tts",
+          "word-timestamps",
+          "package-web",
+          "accessibility-assessment",
+        ])
+      }
+    } finally {
+      storage.close()
     }
   }
 }
