@@ -579,3 +579,12 @@ export { OUTPUT_KIND_STEP } from "./pipeline.js"
 export { GENERATION_OUTPUT_KINDS } from "./output-freshness.js"
 
 export { PackagePublication } from "./extraction.js"
+
+export {
+  SectionSyncStatus,
+  SectionSyncResult,
+  SectionSyncProof,
+  SectioningSynchronization,
+  SectioningSyncInput,
+  SectioningSyncCandidate,
+} from "./sectioning-sync.js"

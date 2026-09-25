@@ -512,3 +512,4 @@ export { readGenerationCatalog, GENERATION_NODES, isGenerationKind } from "./gen
 export { assertPackageReadable, recoverPackagePublication } from "./packaging/publication.js"
 
 export { writePackageInventory, packageInventoryValid } from "./packaging/publication.js"
+export { classifySectioningSynchronization } from "./sectioning-sync.js"
