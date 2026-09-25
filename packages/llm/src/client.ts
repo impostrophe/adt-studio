@@ -110,7 +110,7 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
 
       const context = opts.context ?? {}
       const forceFresh = opts.forceFresh ?? options.forceFresh ?? false
-      // Per-call signal wins over the model-level signal; either one cancels.
+      // Either the per-call or model-level signal cancels this request.
       const signals = [opts.signal, modelSignal].filter((s): s is AbortSignal => !!s)
       const externalSignal = signals.length > 1 ? AbortSignal.any(signals) : signals[0]
       externalSignal?.throwIfAborted()

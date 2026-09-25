@@ -282,3 +282,170 @@ describe("single provider request budget", () => {
     expect(fs.readFileSync(cacheDir, "utf8")).toBe("keep")
   })
 })
+
+// Exercise distinct SDK transports, not only OpenAI-compatible response parsing.
+describe.each([
+  { provider: "anthropic", modelId: "anthropic:claude-opus-4-6" },
+  { provider: "google", modelId: "google:gemini-2.5-pro" },
+])("$provider transport contract", ({ provider, modelId }) => {
+  function providerModel(onLog?: (entry: LlmLogEntry) => void) {
+    return model({ modelId, providerCredentials: { [provider]: { apiKey: "test-only" } }, onLog })
+  }
+  function providerResponse(ok: unknown) {
+    const object = { ok }
+    const body =
+      provider === "anthropic"
+        ? {
+            id: "msg-test",
+            type: "message",
+            role: "assistant",
+            model: "claude-opus-4-6",
+            content: [{ type: "tool_use", id: "tool-1", name: "json", input: object }],
+            stop_reason: "tool_use",
+            stop_sequence: null,
+            usage: { input_tokens: 2, output_tokens: 3 },
+          }
+        : {
+            candidates: [
+              {
+                content: { role: "model", parts: [{ text: JSON.stringify(object) }] },
+                finishReason: "STOP",
+                index: 0,
+              },
+            ],
+            usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 3, totalTokenCount: 5 },
+          }
+    return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
+  }
+  it("does not multiply transient attempts inside the SDK", async () => {
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ error: { message: "temporary" } }), {
+          status: 503,
+          headers: { "content-type": "application/json" },
+        }),
+    )
+    expect(await exhaust(providerModel().generateObject(request))).toMatchObject({
+      providerCalls: 3,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+  it("stops after one permanent authentication failure", async () => {
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ error: { message: "invalid credentials" } }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        }),
+    )
+    expect(await exhaust(providerModel().generateObject(request))).toMatchObject({
+      providerCalls: 1,
+      classification: { retryable: false },
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+  it("repairs invalid output within one budget and accounts for both responses", async () => {
+    const logs: LlmLogEntry[] = []
+    fetchMock
+      .mockImplementationOnce(async () => providerResponse("not-a-boolean"))
+      .mockImplementation(async () => providerResponse(true))
+    const result = await providerModel((entry) => logs.push(entry)).generateObject(request)
+    expect(result).toMatchObject({
+      object: { ok: true },
+      cached: false,
+      usage: { inputTokens: 4, outputTokens: 6 },
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(logs.map((entry) => entry.outcome)).toEqual(["retrying", "success"])
+    expect(logs[0]).toMatchObject({
+      errorClass: "model-output",
+      usage: { inputTokens: 2, outputTokens: 3 },
+    })
+    expect(new Set(logs.map((entry) => entry.requestId)).size).toBe(1)
+    expect(String(fetchMock.mock.calls[1][1]?.body)).toContain("failed validation")
+  })
+})
+
+describe("retry timing and concurrent callers", () => {
+  it.each([
+    ["2", 2000],
+    ["999999", 66000],
+  ])("bounds actual request timing for Retry-After %s", async (retryAfter, delay) => {
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ error: { message: "temporary" } }), {
+          status: 429,
+          headers: { "content-type": "application/json", "retry-after": retryAfter },
+        }),
+    )
+    const pending = model()
+      .generateObject({ ...request, maxRetries: 1 })
+      .catch((error) => error)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(delay - 1)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await pending).toMatchObject({ providerCalls: 2 })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+  it("does not publish a response arriving after external cancellation", async () => {
+    const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "spec0013-late-response-"))
+    dirs.push(cacheDir)
+    const controller = new AbortController()
+    const logs: LlmLogEntry[] = []
+    let deliver!: (response: Response) => void
+    fetchMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          deliver = resolve
+        }),
+    )
+    const pending = model({
+      cacheDir,
+      signal: controller.signal,
+      onLog: (entry) => logs.push(entry),
+    })
+      .generateObject(request)
+      .catch((error) => error)
+    await vi.advanceTimersByTimeAsync(0)
+    controller.abort()
+    deliver(response('{"ok":true}'))
+    expect(await pending).toMatchObject({
+      classification: { errorClass: "cancelled" },
+      providerCalls: 1,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fs.readdirSync(cacheDir)).toEqual([])
+    expect(logs.at(-1)).toMatchObject({ outcome: "cancelled", finalError: true })
+  })
+  it("keeps simultaneous page budgets and logs independent", async () => {
+    const logs: LlmLogEntry[] = []
+    fetchMock.mockImplementation(async (_url, init) =>
+      String(init?.body).includes("failing-page")
+        ? new Response(JSON.stringify({ error: { message: "temporary" } }), {
+            status: 503,
+            headers: { "content-type": "application/json" },
+          })
+        : response('{"ok":true}'),
+    )
+    const llm = model({ onLog: (entry) => logs.push(entry) })
+    const failed = llm
+      .generateObject({
+        ...request,
+        messages: [{ role: "user", content: "failing-page" }],
+        log: { ...request.log, pageId: "failed" },
+      })
+      .catch((error) => error)
+    const succeeded = llm.generateObject({
+      ...request,
+      log: { ...request.log, pageId: "succeeded" },
+    })
+    await expect(succeeded).resolves.toMatchObject({ object: { ok: true } })
+    expect(await exhaust(failed)).toMatchObject({ providerCalls: 3 })
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(logs.filter((entry) => entry.pageId === "succeeded")).toHaveLength(1)
+    expect(logs.filter((entry) => entry.pageId === "failed")).toHaveLength(3)
+    expect(new Set(logs.map((entry) => entry.requestId)).size).toBe(2)
+  })
+})
