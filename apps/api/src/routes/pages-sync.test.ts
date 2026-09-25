@@ -4,10 +4,11 @@ import os from "node:os"
 import path from "node:path"
 import crypto from "node:crypto"
 import { Hono } from "hono"
-import { createBookStorage, openBookDb } from "@adt/storage"
+import { createBookStorage, openBookDb, readCurrentNodeRow } from "@adt/storage"
 import type { PageSectioningOutput, SectioningSynchronization } from "@adt/types"
 import { createPageRoutes } from "./pages.js"
 import { errorHandler } from "../middleware/error-handler.js"
+import { readSectioningSynchronization } from "../services/sectioning-sync.js"
 
 const label = "sync-book"
 const pageId = "pg001"
@@ -33,6 +34,11 @@ async function get(root = dir) {
 function write(fn: (storage: ReturnType<typeof createBookStorage>) => void) {
   const storage = createBookStorage(label, dir)
   try { fn(storage) } finally { storage.close() }
+}
+function addNeighbor(storage: ReturnType<typeof createBookStorage>) {
+  storage.putExtractedPage({ pageId: "pg002", pageNumber: 2, text: "Neighbor", images: [], pageImage: {
+    imageId: "pg002_page", buffer: Buffer.from("neighbor-image"), format: "png", hash: "neighbor", width: 800, height: 600,
+  } })
 }
 function snapshot(root = dir) {
   const dbPath = path.join(root, label, `${label}.db`)
@@ -74,6 +80,76 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }))
 
 describe("read-only synchronization projection", () => {
+  it.each(["duplicate", "invalid schema", "invalid JSON"])("retains uncertainty when a neighboring page has %s", async (kind) => {
+    write((storage) => {
+      addNeighbor(storage)
+      storage.putNodeData("page-sectioning", "pg002", kind === "duplicate" ? source : { legacy: true })
+      storage.putNodeData("web-rendering", pageId, { sections: [] })
+    })
+    if (kind === "invalid JSON") {
+      const db = openBookDb(path.join(dir, label, `${label}.db`))
+      try { db.run("UPDATE node_data SET data = ? WHERE node = ? AND item_id = ?", ["{broken", "page-sectioning", "pg002"]) } finally { db.close() }
+    }
+    const before = snapshot()
+    expect((await get()).sectioningSynchronization.sections).toMatchObject([{ sectionId, status: "unknown-origin" }])
+    expect(snapshot()).toEqual(before)
+  })
+
+  it("uses neighbors' restored current pointers rather than their latest historical ownership", async () => {
+    write((storage) => {
+      addNeighbor(storage)
+      storage.putNodeData("page-sectioning", "pg002", { reasoning: "empty", sections: [] })
+      storage.putNodeData("page-sectioning", "pg002", source)
+      storage.putNodeData("web-rendering", pageId, { sections: [] })
+    })
+    expect((await get()).sectioningSynchronization.sections[0].status).toBe("unknown-origin")
+    write((storage) => storage.setCurrentNodeVersion("page-sectioning", "pg002", 1))
+    const before = snapshot()
+    expect((await get()).sectioningSynchronization.sections[0].status).toBe("invalid-rendering")
+    expect(snapshot()).toEqual(before)
+  })
+
+  it("keeps a coherent read under real SQLite contention and releases the lock for retry", async () => {
+    write((storage) => {
+      addNeighbor(storage)
+      storage.putNodeData("page-sectioning", "pg002", { reasoning: "empty", sections: [] })
+      storage.putNodeData("web-rendering", pageId, { sections: [] })
+    })
+    const update = () => write((storage) => storage.transaction(() => {
+      storage.putNodeData("page-sectioning", pageId, source)
+      storage.putNodeData("web-rendering", pageId, rendering)
+      storage.putNodeData("page-sectioning", "pg002", source)
+    }))
+    const reader = openBookDb(path.join(dir, label, `${label}.db`))
+    try {
+      reader.exec("BEGIN")
+      const sourceRow = readCurrentNodeRow(reader, "page-sectioning", pageId)!
+      // The repository's WASM SQLite blocks the competing connection while
+      // this snapshot is open. Exercise that real boundary, without mocks or
+      // assuming that PRAGMA journal_mode = WAL enables concurrent commits.
+      expect(update).toThrow("database is locked")
+      const renderedRow = readCurrentNodeRow(reader, "web-rendering", pageId)!
+      const result = readSectioningSynchronization(reader, pageId,
+        { version: sourceRow.version, data: JSON.parse(sourceRow.data) },
+        { version: renderedRow.version, data: JSON.parse(renderedRow.data) }, "reflowable")
+      expect(result).toMatchObject({ sourceVersion: 1, renderingVersion: 2, sections: [{ sectionId, status: "invalid-rendering" }] })
+    } finally {
+      reader.exec("ROLLBACK")
+      reader.close()
+    }
+    update()
+    expect((await get()).sectioningSynchronization).toMatchObject({ sourceVersion: 2, renderingVersion: 3, sections: [{ sectionId, status: "unknown-origin" }] })
+  })
+
+  it("releases the read transaction after a missing-page response", async () => {
+    const before = snapshot()
+    const response = await appFor(dir).request(`/api/books/${label}/pages/missing`)
+    expect(response.status).toBe(404)
+    expect(snapshot()).toEqual(before)
+    write((storage) => storage.putNodeData("page-sectioning", pageId, source))
+    expect((await get()).sectioningSynchronization.sourceVersion).toBe(2)
+  })
+
   it("reports unknown provenance even for matching legacy text and never writes any row/file", async () => {
     const before = snapshot()
     const first = await get()

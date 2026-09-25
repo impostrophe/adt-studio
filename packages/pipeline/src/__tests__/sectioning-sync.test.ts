@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+import { JSDOM } from "jsdom"
 import type { PageSectioningSection, SectioningSyncInput } from "@adt/types"
 import { classifySectioningSynchronization as classify } from "../sectioning-sync.js"
 
@@ -116,10 +117,11 @@ describe("Sectioning synchronization classifier (SPEC-0012)", () => {
     assertRetained(input, "unknown-origin")
   })
 
-  it.each(["none", "wrong-version", "wrong-page", "unknown", "duplicate"])("requires trusted proof (%s)", (kind) => {
+  it.each(["none", "wrong-version", "wrong-source-version", "wrong-page", "unknown", "duplicate"])("requires trusted proof (%s)", (kind) => {
     const input = fixture()
     if (kind === "none") input.proofs = []
     if (kind === "wrong-version") input.proofs[0].renderingVersion = 3
+    if (kind === "wrong-source-version") input.proofs[0].sourceVersion = 1
     if (kind === "wrong-page") input.proofs[0].pageId = "pg002"
     if (kind === "unknown") input.proofs[0].origin = "unknown"
     if (kind === "duplicate") input.proofs.push({ ...input.proofs[0] })
@@ -174,6 +176,57 @@ describe("Sectioning synchronization classifier (SPEC-0012)", () => {
 })
 
 describe("conservative projection boundaries", () => {
+  it.each([
+    "carriage\rreturn", "windows\r\nline", "line\nfeed", "tab\there", "quotes '\" & < >",
+    "literal &#13; &notit;", "العربية 中文 e\u0301 👩🏽‍🚀", "\u00a0nonbreaking\u2028separator", "",
+  ])("round-trips replacement text through a browser HTML parser: %j", (text) => {
+    const input = fixture()
+    input.source.sections[0].nodes[0].text = text
+    const result = classify(input)
+    expect(result.sections[0].status).toBe("text-patched")
+    const dom = new JSDOM(result.rendering!.sections[0].html)
+    try {
+      const target = dom.window.document.querySelector('[data-id="text-1"]')!
+      expect(target.textContent).toBe(text)
+      expect(target.children).toHaveLength(0)
+    } finally { dom.window.close() }
+    assertRetained({ ...input, rendering: result.rendering, priorSource: structuredClone(input.source) }, "current")
+  })
+
+  it("updates an empty leaf without changing its opening or closing tag bytes", () => {
+    const html = `<section data-section-id='${sectionId}' data-section-type='text'><p class='keep' data-id='text-1'></P  ></section>`
+    const input = fixture(html)
+    input.priorSource!.sections[0].nodes[0].text = ""
+    input.source.sections[0].nodes[0].text = "New & text"
+    const result = classify(input)
+    expect(result.sections[0].status).toBe("text-patched")
+    expect(result.rendering!.sections[0].html).toBe(html.replace("</P  >", "New &amp; text</P  >"))
+  })
+
+  it("retains source characters that cannot be represented losslessly in HTML", () => {
+    const input = fixture()
+    input.source.sections[0].nodes[0].text = "nul\u0000byte"
+    assertRetained(input, "structural-drift")
+  })
+
+  it.each(["template", "noscript", "select", "svg", "math"])("retains unsupported %s parsing contexts", (tag) => {
+    const input = fixture(`<section data-section-id='${sectionId}' data-section-type='text'><${tag}><p data-id='text-1'>Old &amp; safe</p></${tag}></section>`)
+    assertRetained(input, "structural-drift")
+  })
+
+  it("also checks parsing contexts outside the section wrapper", () => {
+    const input = fixture()
+    input.rendering!.sections[0].html = `<template>${input.rendering!.sections[0].html}</template>`
+    assertRetained(input, "structural-drift")
+  })
+
+  it("retains ambiguous reused blank identities even when their hints differ", () => {
+    const input = fixture(`<section data-section-id='${sectionId}' data-section-type='text'><p data-id='text-1'>Pick [[blank:item-1:first]] &amp; [[blank:item-1:second]]</p></section>`)
+    input.priorSource!.sections[0].nodes[0].text = "Pick ___ & [placeholder:word]"
+    input.source.sections[0].nodes[0].text = "Choose ___ & [placeholder:word]"
+    assertRetained(input, "protected-divergence")
+  })
+
   it("does not return a partial section patch if a later leaf diverged manually", () => {
     const input = fixture()
     for (const tree of [input.source, input.priorSource!]) tree.sections[0].nodes.push({ nodeId: "second", role: "text", text: "Source", isPruned: false })

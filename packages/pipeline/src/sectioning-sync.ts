@@ -12,6 +12,13 @@ const VOID_TAGS = new Set([
   "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
   "param", "source", "track", "wbr",
 ])
+// These contexts do not share ordinary HTML text parsing/display semantics.
+// htmlparser2 deliberately does not perform the browser's tree construction;
+// do not mistake a leaf inside one for a proven visible text projection.
+const UNSUPPORTED_TEXT_CONTEXTS = new Set([
+  "script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes",
+  "plaintext", "template", "noscript", "select", "option", "optgroup", "svg", "math",
+])
 
 function inspectHtml(html: string) {
   let malformed = false
@@ -48,7 +55,8 @@ function structure(section: PageSectioningSection): string {
 }
 
 function escapeText(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  // Literal CR is normalized to LF by the browser before HTML tokenization.
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r/g, "&#13;")
 }
 
 /** Preserve the renderer's blank markers only with an exact, unique mapping. */
@@ -59,8 +67,14 @@ function projectText(before: string, after: string, rendered: string): string | 
   const proposed = after.split(blanks)
   const actual = rendered.split(/(\[\[blank:item-\d+(?::[^\]]+)?\]\])/g)
   if (previous.length < 3 || previous.length !== proposed.length || previous.length !== actual.length) return null
+  const blankIds = new Set<string>()
   for (let i = 0; i < previous.length; i++) {
     if (i % 2 === 0 ? previous[i] !== actual[i] : previous[i] !== proposed[i]) return null
+    if (i % 2) {
+      const id = actual[i].match(/^\[\[blank:(item-\d+)/)![1]
+      if (blankIds.has(id)) return null
+      blankIds.add(id)
+    }
   }
   return proposed.map((part, i) => i % 2 ? actual[i] : part).join("")
 }
@@ -110,16 +124,31 @@ function patchSection(before: PageSectioningSection, after: PageSectioningSectio
       if (element.name !== "img") return fail("structural-drift", `Image identity is not on an image: ${node.nodeId}`)
       continue // Never rewrite src or any other image attribute.
     }
-    if (element.children.length !== 1 || element.children[0].type !== "text") {
+    const textNode = element.children[0]
+    if (element.children.length > 1 || (textNode && textNode.type !== "text") || VOID_TAGS.has(element.name)) {
       return fail("structural-drift", `Text projection contains unsupported markup: ${node.nodeId}`)
     }
-    if (["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "plaintext"].includes(element.name)) return fail("structural-drift", `Text projection is not ordinary display text: ${node.nodeId}`)
-    const textNode = element.children[0]
-    const projected = projectText(node.text ?? "", next.text ?? "", textNode.data)
+    if (UNSUPPORTED_TEXT_CONTEXTS.has(element.name)) return fail("structural-drift", `Text projection is not ordinary display text: ${node.nodeId}`)
+    for (let ancestor = element.parent; ancestor; ancestor = ancestor.parent) {
+      if ("name" in ancestor && UNSUPPORTED_TEXT_CONTEXTS.has(ancestor.name)) return fail("structural-drift", `Text projection has an unsupported parsing context: ${node.nodeId}`)
+    }
+    const renderedText = textNode?.data ?? ""
+    const projected = projectText(node.text ?? "", next.text ?? "", renderedText)
     if (projected === null) return fail("protected-divergence", `Rendered text differs from the recorded source: ${node.nodeId}`)
-    if (projected === textNode.data) continue
-    if (textNode.startIndex === null || textNode.endIndex === null) return fail("invalid-rendering", "Text has no source location.")
-    replacements.push({ start: textNode.startIndex, end: textNode.endIndex + 1, text: escapeText(projected) })
+    // Neither a literal NUL nor a numeric reference survives HTML parsing.
+    if (projected.includes("\u0000")) return fail("structural-drift", `Text cannot be represented losslessly in HTML: ${node.nodeId}`)
+    if (projected === renderedText) continue
+    let start = textNode?.startIndex ?? null
+    let end = textNode && textNode.endIndex !== null ? textNode.endIndex + 1 : null
+    if (!textNode && element.startIndex !== null && element.endIndex !== null) {
+      // Empty leaves have no text-node span. Inspection above requires an
+      // explicit closing tag; insert immediately before it, preserving even
+      // its original casing/spacing. Never insert content into a void tag.
+      const closingStart = html.lastIndexOf("</", element.endIndex)
+      if (closingStart > element.startIndex) start = end = closingStart
+    }
+    if (start === null || end === null) return fail("invalid-rendering", "Text has no source location.")
+    replacements.push({ start, end, text: escapeText(projected) })
   }
   let candidate = html
   for (const replacement of replacements.sort((a, b) => b.start - a.start)) {

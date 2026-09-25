@@ -61,8 +61,9 @@ following verification; rows below describe current behavior and intended checks
 
 ## Verification results
 
-Code reviewed at `1534791a`. The spec checkboxes remain unchecked because this
-is a partial rollout and human review remains pending.
+Initial code reviewed at `1534791a`; a subsequent confidence pass is documented
+below. The spec checkboxes remain unchecked because this is a partial rollout
+and human review remains pending.
 
 | Check | Result |
 |---|---|
@@ -75,7 +76,7 @@ is a partial rollout and human review remains pending.
 | `pnpm --filter @adt/studio compile --strict` | Passed. |
 | `pnpm --filter @adt/studio build` | Passed; bundle-size/plugin-timing warnings. |
 | API and Electron API bundle scripts | Passed, including required WASM copies. Not a packaged desktop launch test. |
-| Full suite on final code | 280 files / 3,654 tests passed: `DEVELOPER_DIR=/Library/Developer/CommandLineTools pnpm test --maxWorkers=4 --testTimeout=60000` (345.92 seconds). |
+| Full suite on initial slice | 280 files / 3,654 tests passed: `DEVELOPER_DIR=/Library/Developer/CommandLineTools pnpm test --maxWorkers=4 --testTimeout=60000` (345.92 seconds). |
 | Isolated packaging regression tests with normal timeout | 12/12 passed with the normal 20-second API test timeout. |
 | `pnpm run lint:invariants` | Unavailable: the repository has no such script. The new invariant runs through the named tests under `pnpm test`. |
 | Docker image check | Not run: local Docker daemon unavailable (confirmed outside sandbox). |
@@ -96,13 +97,13 @@ specification or its save/repair integration has passed.
 |---|---|---|
 | 1 | Blocked | Pure candidate replaces escaped text with no fetch/provider calls. Stored and preview propagation on Save awaits shared protection, writer admission and scoped invalidation. |
 | 2 | Passed (pure slice) | Exact byte comparisons preserve unrelated sparse/reordered renderings, layout attributes, image URLs and custom scripts; GET compares all tables/files before/after. No production patch publication yet. |
-| 3 | Passed (pure slice) | Escaped injection text, exact blank-marker/hint mapping, unchanged optional/container/activity IDs. Unsupported nested/custom or raw-text projections are retained, not flattened. |
+| 3 | Passed (pure slice) | Browser-verified escaped text (including CR/CRLF and empty leaves), unique blank-marker/hint mapping, unchanged optional/container/activity IDs. Unsupported nested/custom or special parsing contexts are retained, not flattened. |
 | 4 | Passed | Stable HTML section identity plus unique graph ownership; stale sectionIndex deliberately ignored. Sparse/reordered, missing, duplicate and foreign ownership tests. |
 | 5 | Passed (read/pure slice) | Missing/invalid/structural output retains HTML with stable affected identities; invalid legacy source produces an explicit unverified diagnostic. Save-response integration remains blocked. |
 | 6 | Passed (preservation slice) | Missing/stale/duplicate proof and even matching legacy text remain unknown. Manual divergence yields no partial section patch. Notices require review; shared review-resolution actions are not implemented. |
 | 7 | Blocked | No transactional save activation without shared writer/protection/freshness contracts. Existing save's destructive invalidation is unchanged. |
 | 8 | Blocked | Existing semantic Save is unchanged; subsequent GET reports drift, but Save does not yet return the new authoritative result. |
-| 9 | Blocked | Candidate comparison is idempotent against committed matching inputs; save deduplication not integrated. |
+| 9 | Blocked | Candidate comparison is idempotent against committed matching inputs, including cleared text; save deduplication not integrated. |
 | 10 | Blocked | Expected-version save conflicts and shared task/CLI admission unavailable. No new write endpoint or repair action bypasses them. |
 | 11 | Passed (read slice) | Real SQLite current pointers, restored versions, fresh route/storage instances and copied book directory return reproducible drift. All tables and file hashes unchanged by GET. Actual archive-import UI not exercised. |
 | 12 | Blocked | Notice is derived only from GET and survives refetch/new rendering versions. No task-completion heuristic clears it. Full queued/failed/cancelled repair workflow awaits shared dependencies. |
@@ -129,6 +130,57 @@ folder `tmp/spec-0012-evidence/` (outside this checkout and not committed book d
 Real activity-book and fixed-layout-book export acceptance, package comparison,
 transport-level rerender/cache counts, cancellation/recovery and concurrent-writer
 publication tests remain not-run because those write paths are not activated.
+
+## Follow-up confidence pass (25 September 2026)
+
+Added 25 regression cases: 19 classifier cases and six real SQLite/filesystem
+cases. Ten newly introduced classifier assertions failed before the fixes:
+literal CR/CRLF changed when parsed by a browser, NUL disappeared, unsupported
+template/select/foreign-content contexts were treated as ordinary text, and
+reused blank identities were accepted despite their ambiguous correspondence.
+Two further assertions exposed an empty-leaf problem: clearing text removed the
+text node, so repeat classification incorrectly reported drift and a later edit
+could not refill it. Empty leaves now compare correctly and insert before their
+explicit closing tag without rewriting tag bytes. Browser-parser round-trip
+cases also verify idempotency for the resulting committed source/render pair.
+
+The classifier now escapes carriage returns as numeric references and retains
+unrepresentable NUL text, unsupported parsing contexts (including ancestors
+outside the section wrapper), and ambiguous blank mappings without changing
+their stored HTML. The checks remain conservative; they do not enable a general
+HTML repair engine or production patch publication. Expected source-version
+proof rejection is now explicit alongside the existing rendering-version check.
+
+Real-storage tests additionally cover duplicate neighboring ownership, invalid
+neighbor schema/JSON, restored neighboring current pointers, missing-page error
+cleanup and contention. The competing connection was blocked by the repository's
+WASM SQLite while the read transaction was open; after rollback/close, the retry
+succeeded and a new GET saw the new versions. This verifies lock release and
+coherent reads under that locking behavior, **not concurrent writer commits or
+the still-unimplemented save conflict/retry contract**. The initial test assumed
+concurrent commit support and failed with `database is locked`; the final test
+asserts the actual runtime boundary instead of mocking it away.
+
+- Focused command: `DEVELOPER_DIR=/Library/Developer/CommandLineTools pnpm exec vitest run apps/api/src/routes/pages-sync.test.ts packages/pipeline/src/__tests__/sectioning-sync.test.ts apps/studio/src/components/pipeline/components/SectioningSyncNotice.test.tsx apps/studio/src/components/pipeline/stages/sectioning/SectioningPageDetail.test.tsx --maxWorkers=2`.
+  Passed 79 tests / four files (55 classifier, 16 real-storage, eight Studio).
+- Independent headless Chromium 145.0.7632.6 check: ten candidate HTML cases
+  preserved exact DOM text and created no injected child elements, including
+  Unicode, CR/CRLF, literal entities and markup-looking text. The initial browser
+  launch hit the macOS sandbox restriction; the permitted outside-sandbox run
+  passed. Script and results: adjacent `tmp/spec-0012-evidence/verify-projection-browser.mjs`
+  and `confidence-browser.log`.
+- Typecheck passed; lint passed with the same eight unchanged-file warnings.
+  API and Electron API bundles also passed again on the updated classifier.
+  No Studio strings or locale catalogs changed in this pass.
+- Final unchanged-code run: `DEVELOPER_DIR=/Library/Developer/CommandLineTools pnpm test --maxWorkers=4 --testTimeout=60000`
+  passed **280 files / 3,679 tests** in 182.67 seconds, including the pretest
+  build. This supersedes the initial slice's full-suite count above. The full
+  suite was repeated after the final empty-leaf fix; no source changes were made
+  during this final run. `git diff --check` also passed.
+
+This strengthens the bounded evidence for AC-2–6, AC-9's pure idempotency portion,
+and AC-11. All acceptance statuses
+and blocked integration requirements in the matrix above remain unchanged.
 
 ## Outstanding decisions and delivery
 
