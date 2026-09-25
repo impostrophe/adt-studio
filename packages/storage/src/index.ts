@@ -11,4 +11,4 @@ export { storeImmutableAsset, readBookAsset } from "./immutable-assets.js"
 export { withBookWriter, withNewBookWriter, ownsBookWriter, assertBookWriter, BookBusyError } from "./book-writer.js"
 
 export { publishSpeechOutput, publishSpeechTimings, restoreSpeechOutput } from "./speech-history.js"
-export { atomicBookFile, configHash, readConfigText, readSectioningLifecycle, writeSectioningLifecycle, recoverSectioningTransition, publishSectioningTransition, SECTIONING_JOURNAL, SECTIONING_LIFECYCLE } from "./sectioning-transition.js"
+export { atomicBookFile, configHash, readConfigText, readSectioningLifecycle, writeSectioningLifecycle, invalidateSectioningLifecycle, recoverSectioningTransition, publishSectioningTransition, SECTIONING_JOURNAL, SECTIONING_LIFECYCLE } from "./sectioning-transition.js"
