@@ -102,7 +102,7 @@ export function createDebugRoutes(
       // nothing speakable in it), so they are counted separately: treating them
       // as calls would understate the cache-hit rate, and their ~0ms would drag
       // the average latency down. They stay queryable via /debug/llm-logs.
-      const notSkipped = "json_extract(data, '$.skippedReason') IS NULL"
+      const notSkipped = "json_extract(data, '$.skippedReason') IS NULL AND (json_extract(data, '$.providerCall') IS NULL OR json_extract(data, '$.providerCall') = 1 OR json_extract(data, '$.cacheHit') = 1)"
       const stepRows = db.all(`
         SELECT
           step,
@@ -118,7 +118,7 @@ export function createDebugRoutes(
               AND json_array_length(json_extract(data, '$.validationErrors')) > 0 THEN 1
             ELSE 0
           END) as errorCount,
-          SUM(CASE WHEN ${notSkipped} THEN 0 ELSE 1 END) as skipped
+          SUM(CASE WHEN json_extract(data, '$.skippedReason') IS NOT NULL THEN 1 ELSE 0 END) as skipped
         FROM llm_log
         GROUP BY step
         ORDER BY step

@@ -1655,6 +1655,13 @@ msgstr "Joignez des fichiers de polices ou choisissez des Google Fonts pour ce l
 msgid "Attached fonts"
 msgstr "Polices jointes"
 
+msgid "Attempt"
+msgstr "Tentative"
+
+#. placeholder {0}: current.attemptCount
+msgid "Attempts made: {0}"
+msgstr "Tentatives effectuées : {0}"
+
 msgid "Audience or reading level"
 msgstr "Public ou niveau de lecture"
 
@@ -2138,6 +2145,9 @@ msgstr "Annuler le téléchargement"
 
 msgid "Cancel run"
 msgstr "Annuler l’exécution"
+
+msgid "Cancelled"
+msgstr "Annulé"
 
 msgid "Cancelling {stageLabel}"
 msgstr "Annulation de {stageLabel}"
@@ -2639,8 +2649,14 @@ msgstr "Connecté avec succès."
 msgid "Connected through the login already present on this machine."
 msgstr "Connecté via la connexion déjà présente sur cette machine."
 
+msgid "Connection closed"
+msgstr "Connexion fermée"
+
 msgid "Connection not checked yet."
 msgstr "Connexion pas encore vérifiée."
+
+msgid "Connection timeout"
+msgstr "Délai de connexion dépassé"
 
 msgid "Consulting the style council..."
 msgstr "Consultation du conseil de style..."
@@ -3757,6 +3773,9 @@ msgstr "Export EPUB"
 
 msgid "Error"
 msgstr "Erreur"
+
+msgid "Error class"
+msgstr "Catégorie d’erreur"
 
 msgid "Error output"
 msgstr "Sortie d'erreur"
@@ -5653,6 +5672,9 @@ msgstr "Les valeurs plus basses produisent un style plus cohérent entre les pag
 msgid "Make sure you're uploading a .zip file exported from ADT Studio."
 msgstr "Assurez-vous de télécharger un fichier .zip exporté depuis ADT Studio."
 
+msgid "Malformed model output"
+msgstr "Sortie du modèle non valide"
+
 msgid "Manage all sections"
 msgstr "Gérer toutes les sections"
 
@@ -6546,6 +6568,9 @@ msgstr "Nodes"
 msgid "noise"
 msgstr "bruit"
 
+msgid "Non-retryable error"
+msgstr "Erreur ne permettant pas de nouvelle tentative"
+
 msgid "None"
 msgstr "Aucun"
 
@@ -6934,6 +6959,9 @@ msgstr "En cours de traitement"
 
 msgid "Out of date"
 msgstr "Obsolète"
+
+msgid "Outcome"
+msgstr "Résultat"
 
 msgid "Outline ID:"
 msgstr "ID du plan :"
@@ -7599,6 +7627,9 @@ msgstr "Le fournisseur « {providerId} » n'est pas enregistré. Ajoutez ses cl�
 #~ msgid "Provider available"
 #~ msgstr "Fournisseur disponible"
 
+msgid "Provider call"
+msgstr "Appel au fournisseur"
+
 #~ msgid "Provider coming soon"
 #~ msgstr "Fournisseur bientôt disponible"
 
@@ -7788,6 +7819,9 @@ msgstr "Citation"
 
 msgid "Radius"
 msgstr "Rayon"
+
+msgid "Rate limit"
+msgstr "Limite de requêtes"
 
 msgid "Re-enable type"
 msgstr "Réactiver le type"
@@ -7987,6 +8021,9 @@ msgstr "Actualisez l’état audio avant d’importer un enregistrement."
 
 msgid "Refresh provider availability, versions, auth state and model metadata in the background. Set to 0 seconds to rely on manual refreshes."
 msgstr "Rafraîchir la disponibilité des fournisseurs, les versions, l'état d'authentification et les métadonnées des modèles en arrière-plan. Réglez sur 0 secondes pour s'appuyer sur des rafraîchissements manuels."
+
+msgid "Refresh status"
+msgstr "Actualiser l’état"
 
 msgid "Refresh validation"
 msgstr "Actualiser validation"
@@ -8203,8 +8240,14 @@ msgstr "Signaler un problème"
 msgid "Request failed: {0}"
 msgstr "Échec de la requête : {0}"
 
+msgid "Request ID"
+msgstr "Identifiant de la requête"
+
 msgid "Request settings"
 msgstr "Paramètres de la requête"
+
+msgid "Request timeout"
+msgstr "Délai de requête dépassé"
 
 msgid "Require comment on failure"
 msgstr "Commentaire requis en cas d'échec"
@@ -8314,6 +8357,9 @@ msgstr "Réessayer Exporter"
 
 msgid "Retry preparation"
 msgstr "Réessayer la préparation"
+
+msgid "Retrying"
+msgstr "Nouvelle tentative en cours"
 
 msgid "Return to coordinator"
 msgstr "Renvoyer au coordinateur"
@@ -9079,6 +9125,9 @@ msgstr "grave"
 
 msgid "Serious"
 msgstr "Grave"
+
+msgid "Server error"
+msgstr "Erreur du serveur"
 
 msgid "Session comments"
 msgstr "Commentaires de session"
@@ -10034,6 +10083,9 @@ msgstr "La page de crédits."
 msgid "The data sent within the body of a request or response message."
 msgstr "Les données envoyées dans le corps d'un message de requête ou de réponse."
 
+msgid "The decision was not accepted. Refresh its status before trying again."
+msgstr "La décision n’a pas été acceptée. Actualisez son état avant de réessayer."
+
 msgid "The default TTS instruction applied to every language unless overridden below. OpenAI uses it as a voice instruction and Gemini as in-prompt accent steering; Azure and ElevenLabs ignore it."
 msgstr "L'instruction TTS par défaut appliquée à chaque langue sauf si elle est remplacée ci-dessous. OpenAI l'utilise comme instruction vocale et Gemini comme guidage d'accent dans le prompt ; Azure et ElevenLabs l'ignorent."
 
@@ -10828,6 +10880,9 @@ msgstr "Auteur inconnu"
 
 msgid "Unknown criterion"
 msgstr "Critère inconnu"
+
+msgid "Unknown error"
+msgstr "Erreur inconnue"
 
 msgid "Unknown stage"
 msgstr "Étape inconnue"

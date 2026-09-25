@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { SkipForward, CircleStop } from "lucide-react"
 import { Trans } from "@lingui/react/macro"
 import { useLingui } from "@lingui/react"
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { useBookRun } from "@/hooks/use-book-run"
+import { getLlmErrorClassLabel } from "@/lib/llm-error-class-i18n"
 import { getStepLabelI18n } from "../pipeline-i18n"
 
 /**
@@ -23,21 +24,38 @@ import { getStepLabelI18n } from "../pipeline-i18n"
  */
 export function PageErrorDecisionDialog() {
   const { i18n } = useLingui()
-  const { pendingDecisions, resolveDecision } = useBookRun()
+  const { pendingDecisions, resolveDecision, refreshDecisions } = useBookRun()
   const current = pendingDecisions[0]
   const [applyToAll, setApplyToAll] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submissionFailed, setSubmissionFailed] = useState(false)
+  const busy = useRef(false)
 
   // Reset the "apply to all" checkbox whenever a new decision comes to the head.
   useEffect(() => {
     setApplyToAll(false)
+    setSubmitting(false)
+    setSubmissionFailed(false)
+    busy.current = false
   }, [current?.decisionId])
 
   if (!current) return null
 
   const stepLabel = getStepLabelI18n(current.step)
 
-  const resolve = (action: "skip" | "stop") => {
-    resolveDecision(current.decisionId, action, applyToAll)
+  const resolve = async (action: "skip" | "stop") => {
+    if (busy.current) return
+    busy.current = true
+    setSubmitting(true)
+    setSubmissionFailed(false)
+    try {
+      await resolveDecision(current.decisionId, action, applyToAll)
+    } catch {
+      setSubmissionFailed(true)
+    } finally {
+      busy.current = false
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -55,9 +73,7 @@ export function PageErrorDecisionDialog() {
             <Trans>A page failed in {stepLabel}</Trans>
           </DialogTitle>
           <DialogDescription className="text-[13px] leading-snug text-muted-foreground">
-            <Trans>
-              Skip this page and continue the step, or stop the step entirely.
-            </Trans>
+            <Trans>Skip this page and continue the step, or stop the step entirely.</Trans>
           </DialogDescription>
         </DialogHeader>
 
@@ -70,9 +86,33 @@ export function PageErrorDecisionDialog() {
           </p>
         </div>
 
+        {current.errorClass && (
+          <p className="text-xs text-muted-foreground">
+            {getLlmErrorClassLabel(i18n, current.errorClass)}
+          </p>
+        )}
+        {current.attemptCount !== undefined && (
+          <p className="text-xs text-muted-foreground">
+            <Trans>Attempts made: {current.attemptCount}</Trans>
+          </p>
+        )}
+        {submissionFailed && (
+          <div role="alert" className="text-sm text-destructive">
+            <Trans>The decision was not accepted. Refresh its status before trying again.</Trans>
+            <Button
+              variant="outline"
+              onClick={() => {
+                void refreshDecisions()
+              }}
+            >
+              <Trans>Refresh status</Trans>
+            </Button>
+          </div>
+        )}
         <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
           <input
             type="checkbox"
+            disabled={submitting}
             checked={applyToAll}
             onChange={(e) => setApplyToAll(e.target.checked)}
             className="h-4 w-4 rounded border-input accent-current"
@@ -82,6 +122,7 @@ export function PageErrorDecisionDialog() {
 
         <DialogFooter className="-mt-1 gap-2">
           <Button
+            disabled={submitting}
             variant="ghost"
             onClick={() => resolve("skip")}
             className="h-10 px-4 font-medium"
@@ -91,6 +132,7 @@ export function PageErrorDecisionDialog() {
             <Trans>Skip page and continue</Trans>
           </Button>
           <Button
+            disabled={submitting}
             variant="destructive"
             onClick={() => resolve("stop")}
             className="h-10 px-5 font-medium"

@@ -423,12 +423,7 @@ export async function logoutProviderCli(providerId: string): Promise<void> {
   })
 }
 
-export interface PendingDecision {
-  decisionId: string
-  step: string
-  pageId: string
-  error: string
-}
+export type PendingDecision = import("@adt/types").PendingDecision
 
 export interface StageRunStatus {
   summary?: import("@adt/types").PipelineResumeSummary
@@ -816,7 +811,9 @@ export interface LlmLogEntry {
   timestamp: string
   step: string
   itemId: string
-  data: {
+  data: import("@adt/types").LLMCallDiagnostics & {
+    requestId?: string
+    attempt?: number
     promptName: string
     requestedPromptName?: string
     modelId: string
@@ -1287,18 +1284,17 @@ export const api = {
     throw new Error(text || `Cancel failed: ${res.status}`)
   },
 
-  /** Resolve a pending page-error decision. A 409 (already resolved by
-   *  timeout/cancel) is treated as success — the caller drops the stale dialog. */
+  /** Resolve a pending decision; stale/invalid submissions remain visible until refreshed. */
   resolveDecision: async (
     label: string,
-    body: { decisionId: string; action: "skip" | "stop"; applyToAll?: boolean },
+    body: import("@adt/types").DecisionBody,
   ): Promise<void> => {
     const res = await fetch(`${BASE_URL}/books/${label}/stages/decision`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
-    if (res.ok || res.status === 409) return
+    if (res.ok) return
     const text = await res.text().catch(() => "")
     throw new Error(text || `Decision failed: ${res.status}`)
   },

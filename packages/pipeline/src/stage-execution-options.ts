@@ -46,6 +46,9 @@ export interface StageRunOptions {
     step: StepName
     pageId: string
     error: string
+    signal?: AbortSignal
+    errorClass?: import("@adt/types").LLMErrorClass
+    attemptCount?: number
   }) => Promise<PageErrorAction>
 }
 

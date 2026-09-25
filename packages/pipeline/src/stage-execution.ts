@@ -25,6 +25,8 @@ import { publishSpeechOutput, assertExtractionReadable, createBookStorage, withB
 import type { Storage } from "@adt/storage"
 import {
   AiProviderError,
+  classifyLLMError,
+  LLMCallError,
   createLLMModel,
   createPromptEngine,
   promptRoots,
@@ -277,11 +279,7 @@ interface PageFailureContext {
   stepController: AbortController
   gate: AdmissionGate
   policy: PageErrorPolicy
-  requestDecision?: (input: {
-    step: StepName
-    pageId: string
-    error: string
-  }) => Promise<PageErrorAction>
+  requestDecision?: StageRunOptions["requestPageDecision"]
 }
 
 /** Shared handling for a page failure inside a per-page step. Covers all six
@@ -315,6 +313,8 @@ async function handlePageFailure(ctx: PageFailureContext): Promise<void> {
         step: ctx.step,
         pageId: ctx.pageId,
         error: msg,
+        errorClass: classifyLLMError(ctx.err).errorClass,
+        attemptCount: ctx.err instanceof LLMCallError ? ctx.err.attempts : undefined,
       })
     } finally {
       ctx.gate.open()
@@ -3488,6 +3488,8 @@ async function runSpeechStep(
                 failedByLang.get(group.language)?.push({
                   textId: e.id,
                   error: msg,
+        errorClass: classifyLLMError(ctx.err).errorClass,
+        attemptCount: ctx.err instanceof LLMCallError ? ctx.err.attempts : undefined,
                   voiceSlot: group.voiceSlot,
                 })
                 geminiFailedItems.push(`${e.id}: ${msg}`)
@@ -3724,6 +3726,8 @@ async function runSpeechStep(
           cached: false,
           attempt: attemptCount,
           error: msg,
+        errorClass: classifyLLMError(ctx.err).errorClass,
+        attemptCount: ctx.err instanceof LLMCallError ? ctx.err.attempts : undefined,
           params: logParams,
         })
         storage.appendLlmLog(logEntry)

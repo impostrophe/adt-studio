@@ -1653,6 +1653,13 @@ msgstr "Attach font files or pick Google Fonts for this book. The AI assigns whe
 msgid "Attached fonts"
 msgstr "Attached fonts"
 
+msgid "Attempt"
+msgstr "Attempt"
+
+#. placeholder {0}: current.attemptCount
+msgid "Attempts made: {0}"
+msgstr "Attempts made: {0}"
+
 msgid "Audience or reading level"
 msgstr "Audience or reading level"
 
@@ -2136,6 +2143,9 @@ msgstr "Cancel download"
 
 msgid "Cancel run"
 msgstr "Cancel run"
+
+msgid "Cancelled"
+msgstr "Cancelled"
 
 msgid "Cancelling {stageLabel}"
 msgstr "Cancelling {stageLabel}"
@@ -2637,8 +2647,14 @@ msgstr "Connected successfully."
 msgid "Connected through the login already present on this machine."
 msgstr "Connected through the login already present on this machine."
 
+msgid "Connection closed"
+msgstr "Connection closed"
+
 msgid "Connection not checked yet."
 msgstr "Connection not checked yet."
+
+msgid "Connection timeout"
+msgstr "Connection timeout"
 
 msgid "Consulting the style council..."
 msgstr "Consulting the style council..."
@@ -3755,6 +3771,9 @@ msgstr "EPUB Export"
 
 msgid "Error"
 msgstr "Error"
+
+msgid "Error class"
+msgstr "Error class"
 
 msgid "Error output"
 msgstr "Error output"
@@ -5651,6 +5670,9 @@ msgstr "Lower values produce more consistent styling across pages."
 msgid "Make sure you're uploading a .zip file exported from ADT Studio."
 msgstr "Make sure you're uploading a .zip file exported from ADT Studio."
 
+msgid "Malformed model output"
+msgstr "Malformed model output"
+
 msgid "Manage all sections"
 msgstr "Manage all sections"
 
@@ -6544,6 +6566,9 @@ msgstr "Nodes"
 msgid "noise"
 msgstr "noise"
 
+msgid "Non-retryable error"
+msgstr "Non-retryable error"
+
 msgid "None"
 msgstr "None"
 
@@ -6932,6 +6957,9 @@ msgstr "Out for processing"
 
 msgid "Out of date"
 msgstr "Out of date"
+
+msgid "Outcome"
+msgstr "Outcome"
 
 msgid "Outline ID:"
 msgstr "Outline ID:"
@@ -7597,6 +7625,9 @@ msgstr "Provider \"{providerId}\" is not registered. Add its API keys in Setting
 #~ msgid "Provider available"
 #~ msgstr "Provider available"
 
+msgid "Provider call"
+msgstr "Provider call"
+
 #~ msgid "Provider coming soon"
 #~ msgstr "Provider coming soon"
 
@@ -7786,6 +7817,9 @@ msgstr "Quote"
 
 msgid "Radius"
 msgstr "Radius"
+
+msgid "Rate limit"
+msgstr "Rate limit"
 
 msgid "Re-enable type"
 msgstr "Re-enable type"
@@ -7985,6 +8019,9 @@ msgstr "Refresh audio status before uploading a recording."
 
 msgid "Refresh provider availability, versions, auth state and model metadata in the background. Set to 0 seconds to rely on manual refreshes."
 msgstr "Refresh provider availability, versions, auth state and model metadata in the background. Set to 0 seconds to rely on manual refreshes."
+
+msgid "Refresh status"
+msgstr "Refresh status"
 
 msgid "Refresh validation"
 msgstr "Refresh validation"
@@ -8201,8 +8238,14 @@ msgstr "Report an issue"
 msgid "Request failed: {0}"
 msgstr "Request failed: {0}"
 
+msgid "Request ID"
+msgstr "Request ID"
+
 msgid "Request settings"
 msgstr "Request settings"
+
+msgid "Request timeout"
+msgstr "Request timeout"
 
 msgid "Require comment on failure"
 msgstr "Require comment on failure"
@@ -8312,6 +8355,9 @@ msgstr "Retry Export"
 
 msgid "Retry preparation"
 msgstr "Retry preparation"
+
+msgid "Retrying"
+msgstr "Retrying"
 
 msgid "Return to coordinator"
 msgstr "Return to coordinator"
@@ -9077,6 +9123,9 @@ msgstr "serious"
 
 msgid "Serious"
 msgstr "Serious"
+
+msgid "Server error"
+msgstr "Server error"
 
 msgid "Session comments"
 msgstr "Session comments"
@@ -10032,6 +10081,9 @@ msgstr "The credits page."
 msgid "The data sent within the body of a request or response message."
 msgstr "The data sent within the body of a request or response message."
 
+msgid "The decision was not accepted. Refresh its status before trying again."
+msgstr "The decision was not accepted. Refresh its status before trying again."
+
 msgid "The default TTS instruction applied to every language unless overridden below. OpenAI uses it as a voice instruction and Gemini as in-prompt accent steering; Azure and ElevenLabs ignore it."
 msgstr "The default TTS instruction applied to every language unless overridden below. OpenAI uses it as a voice instruction and Gemini as in-prompt accent steering; Azure and ElevenLabs ignore it."
 
@@ -10826,6 +10878,9 @@ msgstr "Unknown author"
 
 msgid "Unknown criterion"
 msgstr "Unknown criterion"
+
+msgid "Unknown error"
+msgstr "Unknown error"
 
 msgid "Unknown stage"
 msgstr "Unknown stage"

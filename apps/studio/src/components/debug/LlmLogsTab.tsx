@@ -1,3 +1,4 @@
+import { getLlmErrorClassLabel } from "@/lib/llm-error-class-i18n"
 import { useState, useEffect } from "react"
 import { RefreshCw, AlertTriangle, MinusCircle } from "lucide-react"
 import { Trans } from "@lingui/react/macro"
@@ -144,7 +145,7 @@ export function ParamGrid({ title, data }: { title: string; data: Record<string,
 }
 
 function LogDetail({ data, label }: { data: LlmLogEntry["data"]; label: string }) {
-  const { t } = useLingui()
+  const { t, i18n } = useLingui()
 
   return (
     <td colSpan={8} className="p-0">
@@ -178,6 +179,11 @@ function LogDetail({ data, label }: { data: LlmLogEntry["data"]; label: string }
               {data.skippedReason ? "—" : data.cacheHit ? t`Hit` : t`Miss`}
             </div>
           </div>
+          {data.attempt !== undefined && <div><Trans>Attempt</Trans><div>{data.attempt + 1}{data.maxAttempts ? `/${data.maxAttempts}` : ""}</div></div>}
+          {data.errorClass && <div><Trans>Error class</Trans><div>{getLlmErrorClassLabel(i18n, data.errorClass)}</div></div>}
+          {data.providerCall !== undefined && <div><Trans>Provider call</Trans><div>{data.providerCall ? t`Yes` : t`No`}</div></div>}
+          {data.outcome && <div><Trans>Outcome</Trans><div>{data.outcome === "success" ? t`Success` : data.outcome === "retrying" ? t`Retrying` : data.outcome === "cancelled" ? t`Cancelled` : t`Failed`}</div></div>}
+          {data.requestId && <div><Trans>Request ID</Trans><div>{data.requestId}</div></div>}
           {data.usage && (
             <>
               <div>
