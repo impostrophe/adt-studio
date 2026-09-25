@@ -2983,6 +2983,9 @@ msgstr "Fuente actual del libro"
 msgid "Current effective values"
 msgstr "Valores efectivos actuales"
 
+msgid "Current output cannot be validated. Existing findings remain available; restore eligible Storyboard output before refreshing validation."
+msgstr "No se puede validar el resultado actual. Los hallazgos existentes siguen disponibles; restaure contenido válido de Storyboard antes de actualizar la validación."
+
 msgid "Current Preview Page"
 msgstr "Página Actual de la Vista Previa"
 
@@ -4074,6 +4077,9 @@ msgstr "Error al leer el archivo"
 
 msgid "Failed to save metadata. Please try again."
 msgstr "No se pudieron guardar los metadatos. Inténtalo de nuevo."
+
+msgid "Failed to save reviewer changes"
+msgstr "No se pudieron guardar los cambios de la revisión"
 
 msgid "Failed:"
 msgstr "Error:"
@@ -10184,6 +10190,9 @@ msgstr "El PDF ha cambiado. Impórtalo como un libro nuevo; el libro existente s
 msgid "The PDF or extraction settings are invalid. Check the source and page range."
 msgstr "El PDF o la configuración de extracción no son válidos. Comprueba el archivo de origen y el intervalo de páginas."
 
+msgid "The original assessment is no longer available. Refresh validation when Storyboard output is ready; no finding has been marked resolved."
+msgstr "La evaluación original ya no está disponible. Actualice la validación cuando el resultado de Storyboard esté listo; ningún hallazgo se ha marcado como resuelto."
+
 msgid "The original assessment is no longer current. Showing the available assessment; navigation has not changed any verdict."
 msgstr "La evaluación original ya no está vigente. Se muestra la evaluación disponible; la navegación no ha cambiado ningún veredicto."
 
@@ -10258,6 +10267,9 @@ msgstr "La estrategia de renderización usada para secciones sin un mapeo explí
 
 msgid "The requested section is no longer available. Opened the page instead."
 msgstr "La sección solicitada ya no está disponible. Se abrió la página en su lugar."
+
+msgid "The review source is unavailable. Your unsaved notes have been kept."
+msgstr "El origen de la revisión no está disponible. Se han conservado sus notas sin guardar."
 
 #~ msgid "The river meets the sea"
 #~ msgstr "El río se encuentra con el mar"
@@ -11597,6 +11609,9 @@ msgstr "Tus páginas {displayStart}–{displayEnd}"
 
 msgid "Your saved source is retained. Review the affected sections below; repair is available only where their identity and generated origin are verified."
 msgstr "Se conserva el contenido fuente guardado. Revisa las secciones afectadas a continuación; la reparación solo está disponible cuando se han verificado su identidad y su origen generado."
+
+msgid "Your unsaved review still belongs to the page shown below. Save or discard it before reviewing another page."
+msgstr "Su revisión sin guardar sigue correspondiendo a la página que se muestra a continuación. Guárdela o descártela antes de revisar otra página."
 
 msgid "Z → A"
 msgstr "Z → A"
