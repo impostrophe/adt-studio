@@ -439,6 +439,7 @@ export {
   ReviewerValidationStatus,
   ReviewerValidationFieldType,
   ValidationFixStage,
+  ValidationNavigationContext,
   ReviewerValidationIdentificationField,
   ReviewerValidationInstruction,
   ReviewerValidationCriterion,
