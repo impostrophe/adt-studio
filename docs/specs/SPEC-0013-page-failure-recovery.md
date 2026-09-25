@@ -8,15 +8,17 @@ issues: ["#685"]
 prs: ["#889"]
 adr: ""
 created: 2026-09-22
-updated: 2026-09-25
+updated: 2026-09-26
 ---
 
-## Implementation status (2026-09-25)
+## Implementation status (2026-09-26)
 
 Implementation before approval was explicitly authorized for this PR. Human
 review remains pending; status and approvers are unchanged. The local branch
 contains the bounded HTTP retry/classification, cache/cancellation, diagnostic
-and run-owned decision-handling slice. **The full spec is not implemented.**
+and run-owned decision-handling slice, including persistent Skip diagnostics.
+Actual external CLI tests still expose a request-budget failure.
+**The full spec is not implemented.**
 Interactive Meaningfulness Retry, safe replacement and qualified skipped-result
 readiness remain blocked on shared admission/protection/freshness mechanisms.
 Retry is rejected without consuming the pending decision; no alternate

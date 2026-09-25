@@ -10,7 +10,7 @@ not constitute the pending human approval. No commits were pushed.
 completion is approximately **60% of the original behavioral contract**. This is
 a judgment weighted toward user behavior, not a test-count or lines-of-code
 metric. Eleven criteria have evidence within the scopes in the
-[acceptance matrix](SPEC-0013-implementation-evidence.md); seven remain blocked
+[acceptance matrix](SPEC-0013-implementation-evidence.md); seven remain unsatisfied
 in full. The missing criteria include the central protected page Retry behavior.
 Confidence in the implemented HTTP retry, decision and diagnostic slice is
 **moderately high (8/10)** after remediation. Confidence is insufficient to
@@ -59,15 +59,16 @@ headless path and storage startup interruption behavior were also reviewed.
 4. **Remaining SPEC-0013 work / [issue #685](https://github.com/unicef/adt-studio/issues/685).**
    Once the shared contracts exist, this PR still needs the page-only manual
    Retry loop, captured-version conflict validation, protected publication,
-   explicit page-specific skipped-with-error persistence, downstream cardinality
-   and qualified completion UI. These are unfinished implementation tasks here,
+   downstream cardinality and qualified completion UI. The September 26
+   follow-up below implements page-specific skipped-with-error diagnostics.
+   The remaining tasks belong here,
    not changes that another spec will automatically deliver. Current Skip can
    still emit ordinary step completion with a count; it does not satisfy AC-16.
 5. **External CLI request-budget boundary — AC-5/6.**
    Codex and Claude executables can make hidden requests beyond one adapter
    invocation. Their invalid-output usage is now preserved and absent usage is
-   honestly unknown, but the actual wire-request budget remains uncontrolled
-   and unverified. A controllable transport boundary is required, or a separately
+   honestly unknown. The September 26 tests below demonstrate a remaining
+   wire-budget failure despite mitigation. A controllable boundary is required, or a separately
    approved, explicit spec amendment. The current acceptance criteria stand.
 
 Interactive Retry therefore remains unavailable everywhere, including
@@ -121,3 +122,103 @@ Local remediation commits: `382261fb` (concurrent decisions), `ac311a75`
 (provider diagnostics/usage), and `310f1fca` (API/Studio accounting and locales).
 The final documentation commit records these tested changes without publishing
 them.
+
+
+## Immediate follow-up: owned work and CLI request counts (2026-09-26)
+
+Items 4 and 5 above do not justify waiting for another specification to be
+approved. Shared protection is necessary before enabling manual Retry, but
+page-level diagnostic persistence and executable retry investigation can proceed
+independently. This follow-up does that work without a separate preservation
+subsystem or a change to CLI login/billing identity.
+
+### Skipped-page outcome persistence
+
+The existing progress channel now records a `page-error-skipped` event and
+appends a `skipped-with-error` control record to the book's existing `llm_log`
+when the runner consumes Skip. It contains the page, step, error class and the
+original request identity/attempt when available. It has `providerCall: false`,
+no manufactured usage, and is excluded from provider-call, latency and error
+aggregates. Studio Debug shows a distinct translated **Skipped after error**
+status and explanation. No entity versions, filtering values or assets are
+rewritten by this diagnostic record.
+
+A real SQLite runner test reopens storage after Skip followed by a sibling Stop:
+the page-specific record persists and all pre-existing node rows are unchanged.
+Actual Hono Debug routes expose the record and keep call accounting unchanged.
+Rebuilt Studio browser acceptance verifies the label/explanation, reload
+persistence, zero JavaScript errors and unchanged fixture DB after inspection.
+Both new messages are translated in all five locales.
+
+This is durable diagnostic evidence, not the full qualified completion/readiness
+read model: AC-16 remains incomplete. It does not protect data deleted by
+existing pre-run cleanup, enable Retry, or prove downstream page cardinality.
+
+### External CLI investigation and partial mitigation
+
+All executable experiments used synthetic loopback HTTP/SSE responses, fake
+credentials and isolated temporary configuration. No paid-provider request was
+made. Installed versions: Claude Code `2.1.260`; Codex
+`0.155.0-alpha.9.2`. The tests count HTTP requests at the local server, not
+mocked helper invocations.
+
+- Before controls, one Claude invocation sent five HTTP requests in 15 seconds
+  on a persistent 503, before the probe cancelled it.
+- The production Claude adapter now sets `CLAUDE_CODE_MAX_RETRIES=0`,
+  `MAX_STRUCTURED_OUTPUT_RETRIES=0` and
+  `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK=1`. These keep transport retry,
+  schema repair and streaming fallback in the facade's budget for the tested
+  executable. The separate stream fallback is documented in the
+  [official environment reference](https://code.claude.com/docs/en/env-vars).
+  Reported HTTP status and structured-output exhaustion now reach the shared
+  classifier/feedback path, with available usage preserved.
+- The real CLI initially sent six requests for three facade attempts when the
+  stream ended early. Disabling non-streaming fallback corrected this to three.
+- Seven real-executable acceptance cases pass: 503, temporary 429, permanent
+  403, malformed structured output, interrupted stream, valid output and
+  cancellation. For `maxRetries=2`, the failure cases make three requests;
+  permanent failure and success make one. Cancellation sends no further request.
+- **Known failure: token truncation still sends twelve requests for three
+  facade attempts.** Claude's internal output-token continuation does not obey
+  these controls. A tested one-turn cap did not fix it and is not shipped.
+  The original three-request assertion remains failing in the opt-in acceptance
+  test; the criterion has not been weakened or marked complete.
+- Codex rejects retry overrides for its reserved built-in `openai` provider.
+  A synthetic custom-provider configuration with request/stream retries set to
+  zero did make one request. Switching production configuration without proving
+  the existing API-key and CLI-login paths would risk authentication and
+  compatibility, so the Codex adapter is unchanged. This is remaining adapter
+  engineering work, not a dependency on SPEC-0001/0002/0010.
+
+Repeat the executable acceptance with:
+
+```sh
+ADT_CLAUDE_BUDGET_EXECUTABLE="$(command -v claude)" pnpm exec vitest run packages/llm/src/__tests__/claude-wire-budget.test.ts --maxWorkers=1
+```
+
+It currently reports **7 passed / 1 failed** on the version above. Without that
+explicit executable setting, the default repository suite skips these eight
+acceptance tests. CI cannot be represented as proving this executable contract.
+Older CLI versions, subscription login, other gateways and packaged platforms
+have not been verified. The existing CLI version floor is unchanged; older
+executables may ignore the new environment controls.
+
+The remaining request-count guarantee needs a supported way to disable every
+internal continuation, or a controllable provider transport preserving the
+existing authentication behavior. A narrower CLI guarantee would be a material
+spec amendment requiring explicit review; it is not implied by this mitigation.
+No unrelated PR or provider login configuration was modified.
+
+Follow-up verification: `pnpm test --maxWorkers=2 --testTimeout=30000`
+passed **283 files / 3,688 tests**, with **one file / eight opt-in CLI tests
+skipped**, in 195.59 seconds; its pretest build passed. Running that opt-in CLI
+suite separately produced **seven passes and one failure**, as detailed above.
+Typecheck, Studio lint (zero errors, eight baseline warnings), production Studio
+build, API/Electron API bundles, Lingui extraction and strict compilation passed.
+All 3,625 messages are translated in the five locales. The skipped-page Debug
+browser check passed, including reload persistence and no script errors. No
+current-head Docker, packaged Desktop, release or paid-provider verification is
+claimed.
+
+Follow-up implementation commits: `8a34a18d` (Claude controls and executable
+acceptance), `65047445` (persisted Skip diagnostics and translated Studio view).
