@@ -292,6 +292,8 @@ describe("Debug routes", () => {
       expect(ttsStep.cacheMisses).toBe(1)
       expect(ttsStep.avgDurationMs).toBe(900)
       expect(body.totals.calls).toBe(1)
+      expect(body.totals.unknownUsageCalls).toBe(1)
+      expect(body.totals.errorCount).toBe(0)
 
       // The row still has to be inspectable — it explains the missing audio.
       const logsRes = await app.request(`/api/books/${skippedLabel}/debug/llm-logs`)

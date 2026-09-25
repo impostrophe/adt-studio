@@ -11007,6 +11007,9 @@ msgstr "Ngarko ZIP ose tërhiq dhe lësho"
 msgid "Uploading..."
 msgstr "Po ngarkohet..."
 
+msgid "Usage is unavailable for {unknownUsageCalls} provider calls. Token totals include recorded usage only."
+msgstr "Përdorimi për {unknownUsageCalls} thirrje te ofruesi nuk është i disponueshëm. Totalet e tokenëve përfshijnë vetëm përdorimin e regjistruar."
+
 msgid "Use \"{trimmedQuery}\""
 msgstr "Përdor \"{trimmedQuery}\""
 

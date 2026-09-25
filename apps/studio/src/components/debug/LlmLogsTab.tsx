@@ -32,13 +32,14 @@ interface LlmLogsTabProps {
   isRunning: boolean
 }
 
-type RowStatus = "success" | "cached" | "error" | "skipped"
+type RowStatus = "success" | "cached" | "error" | "skipped" | "cancelled"
 
 const STATUS_DOT: Record<RowStatus, string> = {
   success: "bg-green-500",
   cached: "bg-yellow-400",
   error: "bg-red-500",
   skipped: "bg-slate-400",
+  cancelled: "bg-slate-400",
 }
 
 function formatSeconds(ms: number): string {
@@ -52,6 +53,7 @@ function formatSeconds(ms: number): string {
  * cache hit is the part worth pinning down.
  */
 export function getStatus(entry: LlmLogEntry): RowStatus {
+  if (entry.data.outcome === "cancelled") return "cancelled"
   if (entry.data.success === false) return "error"
   if (
     entry.data.success === undefined &&
@@ -176,7 +178,7 @@ function LogDetail({ data, label }: { data: LlmLogEntry["data"]; label: string }
             {/* A skipped call never consulted the cache, so "Miss" would be a
                 lie about a lookup that never happened. */}
             <div className="font-medium">
-              {data.skippedReason ? "—" : data.cacheHit ? t`Hit` : t`Miss`}
+              {data.skippedReason || (data.providerCall === false && !data.cacheHit) ? "—" : data.cacheHit ? t`Hit` : t`Miss`}
             </div>
           </div>
           {data.attempt !== undefined && <div><Trans>Attempt</Trans><div>{data.attempt + 1}{data.maxAttempts ? `/${data.maxAttempts}` : ""}</div></div>}
@@ -315,6 +317,7 @@ function HistoryLogRow({ entry, label }: { entry: LlmLogEntry; label: string }) 
     cached: t`Cached`,
     error: t`Error`,
     skipped: t`No audio`,
+    cancelled: t`Cancelled`,
   }
 
   function formatTimestamp(iso: string): string {

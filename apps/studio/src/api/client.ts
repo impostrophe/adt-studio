@@ -848,6 +848,7 @@ export interface LlmLogsResponse {
 }
 
 export interface StepStats {
+  unknownUsageCalls?: number
   step: string
   calls: number
   cacheHits: number
@@ -864,6 +865,7 @@ export interface StepStats {
 export interface PipelineStatsResponse {
   steps: StepStats[]
   totals: {
+    unknownUsageCalls?: number
     calls: number
     cacheHits: number
     cacheMisses: number

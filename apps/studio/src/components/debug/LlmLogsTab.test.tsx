@@ -134,3 +134,9 @@ describe("getStatus", () => {
     expect(getStatus(entry({ success: true, cacheHit: true }))).toBe("cached")
   })
 })
+
+
+it("distinguishes cancellation from provider failure", () => {
+  const entry = (data: Record<string, unknown>) => ({ data } as Parameters<typeof getStatus>[0])
+  expect(getStatus(entry({ success: false, cacheHit: false, providerCall: false, outcome: "cancelled" }))).toBe("cancelled")
+})

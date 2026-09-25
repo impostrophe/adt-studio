@@ -11007,6 +11007,9 @@ msgstr "Téléchargez le ZIP ou glissez-déposez"
 msgid "Uploading..."
 msgstr "Téléversement..."
 
+msgid "Usage is unavailable for {unknownUsageCalls} provider calls. Token totals include recorded usage only."
+msgstr "Les données d’utilisation de {unknownUsageCalls} appels au fournisseur ne sont pas disponibles. Les totaux de jetons incluent uniquement l’utilisation enregistrée."
+
 msgid "Use \"{trimmedQuery}\""
 msgstr "Utiliser \"{trimmedQuery}\""
 

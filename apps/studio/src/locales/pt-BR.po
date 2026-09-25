@@ -11005,6 +11005,9 @@ msgstr "Envie um ZIP ou arraste e solte"
 msgid "Uploading..."
 msgstr "Enviando..."
 
+msgid "Usage is unavailable for {unknownUsageCalls} provider calls. Token totals include recorded usage only."
+msgstr "O uso de {unknownUsageCalls} chamadas ao provedor não está disponível. Os totais de tokens incluem apenas o uso registrado."
+
 msgid "Use \"{trimmedQuery}\""
 msgstr "Usar \"{trimmedQuery}\""
 
