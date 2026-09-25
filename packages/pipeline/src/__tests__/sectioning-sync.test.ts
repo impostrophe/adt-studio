@@ -30,6 +30,19 @@ function assertRetained(input: SectioningSyncInput, status: string) {
 }
 
 describe("Sectioning synchronization classifier (SPEC-0012)", () => {
+  it.each(["image", "container"])("retains changed text without a supported text projection on a %s node", (kind) => {
+    const input = fixture()
+    for (const tree of [input.source, input.priorSource!]) {
+      tree.sections[0].nodes.push({ nodeId: "non-text", isPruned: false,
+        ...(kind === "image" ? { role: "image" } : { structure: "group", children: [] }),
+        text: tree === input.source ? "Changed description" : "Original description",
+      })
+    }
+    input.rendering!.sections[0].html = input.rendering!.sections[0].html.replace("</section>",
+      (kind === "image" ? '<img data-id="non-text" src="keep.png" alt="Original description">' : '<div data-id="non-text">Original description</div>') + "</section>")
+    assertRetained(input, "structural-drift")
+  })
+
   it("patches only escaped text bytes without provider/network access or input mutation", () => {
     const input = fixture()
     const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("No provider calls allowed"))
@@ -206,6 +219,13 @@ describe("conservative projection boundaries", () => {
   it("retains source characters that cannot be represented losslessly in HTML", () => {
     const input = fixture()
     input.source.sections[0].nodes[0].text = "nul\u0000byte"
+    assertRetained(input, "structural-drift")
+  })
+
+  it.each(["high\ud800surrogate", "low\udc00surrogate"])("retains text that would be corrupted by HTML UTF-8 serialization: %j", (text) => {
+    const input = fixture()
+    input.source.sections[0].nodes[0].text = text
+    expect(Buffer.from(text, "utf8").toString("utf8")).not.toBe(text)
     assertRetained(input, "structural-drift")
   })
 

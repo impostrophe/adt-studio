@@ -45,10 +45,12 @@ function activeNodes(nodes: ContentNodeData[]): ContentNodeData[] {
   ])
 }
 
-/** Exact structure comparison: text is the ONLY permitted changing field. */
+/** Only ordinary leaf text has a supported projection; retain other fields. */
 function structure(section: PageSectioningSection): string {
-  const withoutText = (nodes: ContentNodeData[]): unknown => nodes.map(({ text: _text, children, ...node }) => ({
-    ...node, ...(children ? { children: withoutText(children) } : {}),
+  const withoutText = (nodes: ContentNodeData[]): unknown => nodes.map(({ text, children, ...node }) => ({
+    ...node,
+    ...(!node.role || node.role === "image" ? { text } : {}),
+    ...(children ? { children: withoutText(children) } : {}),
   }))
   const { nodes, ...rest } = section
   return JSON.stringify({ ...rest, nodes: withoutText(nodes) })
@@ -135,8 +137,10 @@ function patchSection(before: PageSectioningSection, after: PageSectioningSectio
     const renderedText = textNode?.data ?? ""
     const projected = projectText(node.text ?? "", next.text ?? "", renderedText)
     if (projected === null) return fail("protected-divergence", `Rendered text differs from the recorded source: ${node.nodeId}`)
-    // Neither a literal NUL nor a numeric reference survives HTML parsing.
-    if (projected.includes("\u0000")) return fail("structural-drift", `Text cannot be represented losslessly in HTML: ${node.nodeId}`)
+    // NUL is lost in HTML parsing; unpaired surrogates become replacement
+    // characters in UTF-8 files/responses. The Unicode regex leaves valid
+    // surrogate pairs (e.g. emoji) intact.
+    if (/[\u0000\uD800-\uDFFF]/u.test(projected)) return fail("structural-drift", `Text cannot be represented losslessly in HTML: ${node.nodeId}`)
     if (projected === renderedText) continue
     let start = textNode?.startIndex ?? null
     let end = textNode && textNode.endIndex !== null ? textNode.endIndex + 1 : null
