@@ -2809,6 +2809,9 @@ msgstr "Não foi possível remover {failed} de {total} vídeos — tente novamen
 msgid "Could not save Sectioning mode."
 msgstr "Não foi possível salvar o modo de divisão em seções."
 
+msgid "Could not resolve the repair destination. Your finding is unchanged. Try again."
+msgstr "Não foi possível determinar o destino da correção. A constatação permanece inalterada. Tente novamente."
+
 #. placeholder {0}: getStageLabelI18n(fromStage)
 msgid "Could not start {0}: {detail}"
 msgstr "Não foi possível iniciar {0}: {detail}"
@@ -4159,19 +4162,17 @@ msgstr "O primeiro idioma é o padrão"
 msgid "Fit"
 msgstr "Ajustar"
 
-<<<<<<< HEAD
 msgid "Fit to panel · showing {display}% of full size"
 msgstr "Ajustado ao painel · exibindo {display}% do tamanho original"
 
 msgid "Fix"
 msgstr "Corrigir"
-=======
+
 msgid "Fix destination"
 msgstr "Destino da correção"
 
-msgid "Fix in {fixStageLabel}"
-msgstr "Corrigir em {fixStageLabel}"
->>>>>>> 3fb10367 (feat(validation): open findings in fix stages)
+#~ msgid "Fix in {fixStageLabel}"
+#~ msgstr "Corrigir em {fixStageLabel}"
 
 msgid "Fixed layout"
 msgstr "Layout fixo"
@@ -6761,7 +6762,12 @@ msgstr "abrir"
 msgid "Open"
 msgstr "Abrir"
 
-#. placeholder {0}: formatFindingPageLabel(i18n, page)
+#. placeholder {0}: entry.sectionId ?? entry.pageId
+#. placeholder {1}: i18n._(STAGE_LABEL_MESSAGES[routeOverrides[`${activeSessionId}:${entry.pageId}:${entry.criterionId}`] ?? entry.fixStage])
+msgid "Open {0} in {1}"
+msgstr "Abrir {0} em {1}"
+
+#. placeholder {0}: page.sectionId ? `${formatFindingPageLabel(i18n, page)} (${page.sectionId})` : formatFindingPageLabel(i18n, page)
 msgid "Open {0} in {fixStageLabel}"
 msgstr "Abrir {0} em {fixStageLabel}"
 
@@ -6803,7 +6809,7 @@ msgstr "Abrir painel de edição"
 msgid "Open image preview"
 msgstr "Ampliar imagem"
 
-#. placeholder {0}: i18n._(STAGE_LABEL_MESSAGES[entry.fixStage])
+#. placeholder {0}: i18n._(STAGE_LABEL_MESSAGES[routeOverrides[`${activeSessionId}:${entry.pageId}:${entry.criterionId}`] ?? entry.fixStage])
 msgid "Open in {0}"
 msgstr "Abrir em {0}"
 
@@ -8217,6 +8223,9 @@ msgstr "O reparo regenera apenas estas seções e pode usar geração paga:"
 msgid "Repair status is unavailable. The saved rendering and drift are retained. Refresh or retry the repair."
 msgstr "O status do reparo não está disponível. A renderização salva e a divergência são preservadas. Atualize ou tente o reparo novamente."
 
+msgid "Repair suggestion. Review decisions remain unchanged."
+msgstr "Sugestão de correção. As decisões de revisão permanecem inalteradas."
+
 msgid "Replace"
 msgstr "Substituir"
 
@@ -8389,6 +8398,9 @@ msgstr "Tentando novamente"
 
 msgid "Return to coordinator"
 msgstr "Devolver ao coordenador"
+
+msgid "Return to Validation"
+msgstr "Voltar à Validação"
 
 msgid "Revert language change"
 msgstr "Reverter alteração de idioma"
@@ -10172,6 +10184,12 @@ msgstr "O PDF foi alterado. Importe-o como um novo livro; o livro existente ser�
 msgid "The PDF or extraction settings are invalid. Check the source and page range."
 msgstr "O PDF ou as configurações de extração são inválidos. Verifique a origem e o intervalo de páginas."
 
+msgid "The original assessment is no longer current. Showing the available assessment; navigation has not changed any verdict."
+msgstr "A avaliação original não está mais atualizada. Exibindo a avaliação disponível; a navegação não alterou nenhum veredito."
+
+msgid "The original reviewer session is no longer available. Showing available reviews."
+msgstr "A sessão original do revisor não está mais disponível. Exibindo as revisões disponíveis."
+
 msgid "The process plants use to turn sunlight, water, and carbon dioxide into food."
 msgstr "O processo que as plantas usam para transformar luz solar, água e dióxido de carbono em alimento."
 
@@ -10235,19 +10253,17 @@ msgstr "A renderização está ausente ou não pode ser associada com segurança
 msgid "The rendering strategy used for sections without an explicit mapping."
 msgstr "A estratégia de renderização usada para seções sem um mapeamento explícito."
 
-<<<<<<< HEAD
-msgid "The same edition in every language."
-msgstr "A mesma edição em todos os idiomas."
-=======
-msgid "The requested section is no longer available. Opened the first section instead."
-msgstr "A seção solicitada não está mais disponível. A primeira seção foi aberta em seu lugar."
+#~ msgid "The requested section is no longer available. Opened the first section instead."
+#~ msgstr "A seção solicitada não está mais disponível. A primeira seção foi aberta em seu lugar."
 
 msgid "The requested section is no longer available. Opened the page instead."
 msgstr "A seção solicitada não está mais disponível. A página foi aberta em seu lugar."
 
-msgid "The river meets the sea"
-msgstr "O rio encontra o mar"
->>>>>>> 3fb10367 (feat(validation): open findings in fix stages)
+#~ msgid "The river meets the sea"
+#~ msgstr "O rio encontra o mar"
+
+msgid "The same edition in every language."
+msgstr "A mesma edição em todos os idiomas."
 
 msgid "The saved translation review is stale. Run Review again for the visible translations."
 msgstr "A revisão de tradução salva está desatualizada. Execute a revisão novamente para as traduções visíveis."
