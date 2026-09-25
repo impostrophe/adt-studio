@@ -4,6 +4,11 @@ This is the first, read-only rollout slice of SPEC-0012, not the full implementa
 The specification remains in review, with no approvers. Implementation before
 approval was explicitly authorized on 2026-09-25. No release verification is claimed.
 
+The subsequent [independent implementation review](SPEC-0012-independent-review.md)
+records additional fixes, refreshed dependency status, the current verification
+results and an updated AC-to-evidence matrix. It supersedes the initial dependency
+snapshot and earlier test totals below.
+
 ## Refreshed inputs and dependency decision
 
 - Base: develop `737d3314`; published #888: `b850875c` (preserved as
@@ -11,9 +16,11 @@ approval was explicitly authorized on 2026-09-25. No release verification is cla
   develop, dropping the unrelated inherited documentation stack.
 - Read complete published spec, #515/#580/#731 and their comments, #888/#581
   discussions and inline reviews (none), and #879/#880 review feedback.
-- #879 `375081fc`, #880 `5eeaab68`, #884 `04250fda` are documentation only.
-  Local #884/#886 worktrees also have no committed implementation of the shared
-  writer admission. #887 prompt persistence is not an implementation prerequisite.
+- Published #879 `375081fc`, #880 `5eeaab68`, #884 `04250fda` are documentation only.
+  The initial local inspection found no committed shared writer admission; the
+  independent review subsequently found committed SPEC-0003 implementation at
+  `d9be75df` with an actively changing working tree. That is an integration
+  prerequisite, not absent code. #887 prompt persistence is not a prerequisite.
 - Current `saveStoryboardNode` still calls book-wide `clearCaptionData`;
   the atomic Storyboard route exists but has no expected source/render version
   contract, shared writer admission or protection/freshness metadata. The task
@@ -189,9 +196,10 @@ and blocked integration requirements in the matrix above remain unchanged.
   ephemeral and has no production persistence adapter in this slice.
 - Ratify fixed-layout explanation/support routing as the B1 scope; no positioned
   text synchronization is claimed.
-- #884 mode/writer work is now in progress locally but remains uncommitted at the
-  inspected point; remote #884 is still documentation only. Do not import another
-  task's unfinished work or infer that its tests have passed.
+- #884 mode/writer work has since acquired committed local implementation; see
+  the independent review for the exact observation and focused working-tree test
+  limits. It is not integrated into this branch. Do not import another task's
+  unfinished changes or infer that joint save/task/CLI behavior has passed.
 - Rechecked #888/#879/#880/#884 remote heads: unchanged from preparation. No push
   or merge performed. The local target branch is rebased onto develop; retain the
   published PR's original base until the rebased head is pushed, so the remote
