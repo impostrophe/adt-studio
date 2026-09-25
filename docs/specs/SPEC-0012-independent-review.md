@@ -1,5 +1,9 @@
 # SPEC-0012 implementation review — 25 September 2026
 
+This is the 25 September review snapshot. The subsequent
+[26 September continuation](SPEC-0012-force-fresh-evidence.md) implements the
+force-fresh prerequisite and updates completion/dependency evidence.
+
 The implementation is a **safe classifier/read-projection/notice slice**, not the
 complete specification. Estimated completion is **35% (roughly 30–40%)** of the
 original functional contract. Confidence is **high, about 8/10, for this bounded

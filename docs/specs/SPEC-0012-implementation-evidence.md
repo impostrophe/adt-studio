@@ -4,6 +4,8 @@ This is the first, read-only rollout slice of SPEC-0012, not the full implementa
 The specification remains in review, with no approvers. Implementation before
 approval was explicitly authorized on 2026-09-25. No release verification is claimed.
 
+Latest update: [26 September force-fresh continuation](SPEC-0012-force-fresh-evidence.md).
+
 The subsequent [independent implementation review](SPEC-0012-independent-review.md)
 records additional fixes, refreshed dependency status, the current verification
 results and an updated AC-to-evidence matrix. It supersedes the initial dependency

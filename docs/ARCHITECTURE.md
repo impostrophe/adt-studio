@@ -250,6 +250,18 @@ is still an unresolved dependency, not a preservation guarantee.
 
 ---
 
+### Explicit rerender cache policy
+
+Explicit rerenders set the shared LLM model's `forceFresh` default, which applies
+to render, answer-generation and review calls through the existing resolver.
+It bypasses current and legacy cache reads without changing cache keys. Accepted
+fresh output writes through; validation retries also update the original request
+key for ordinary identical-input reuse. Provider failure, cancellation and
+rejected fresh output retain prior cache entries. Ordinary pipeline calls retain
+their existing caching behavior. This policy does not establish content provenance
+or authorize replacing protected output; SPEC-0012's targeted repair integration
+still requires shared protection, admission and scoped invalidation.
+
 ## Real-Time Progress: SSE
 
 Pipeline progress streams from the API to the frontend via Server-Sent Events (SSE). The connection opens when a book view mounts and stays open until unmount — no toggle, no manual reconnect. `EventSource` handles reconnection natively.
