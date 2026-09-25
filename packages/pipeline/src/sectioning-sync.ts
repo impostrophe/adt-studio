@@ -15,7 +15,13 @@ const VOID_TAGS = new Set([
 
 function inspectHtml(html: string) {
   let malformed = false
+  let attributes = new Set<string>()
   const parser = new Parser({
+    onopentagname() { attributes = new Set() },
+    onattribute(name) {
+      if (attributes.has(name)) malformed = true
+      attributes.add(name)
+    },
     onclosetag(name, implied) {
       if (implied && !VOID_TAGS.has(name)) malformed = true
     },
@@ -77,7 +83,10 @@ function patchSection(before: PageSectioningSection, after: PageSectioningSectio
   const byId = new Map<string, typeof elements>()
   for (const element of elements) {
     const id = element.attribs["data-id"]
-    if (!id) continue
+    if (!id) {
+      if (element.name === "img") return fail("structural-drift", "An image has no stable identity.")
+      continue
+    }
     const matches = byId.get(id) ?? []
     matches.push(element)
     byId.set(id, matches)
@@ -104,7 +113,7 @@ function patchSection(before: PageSectioningSection, after: PageSectioningSectio
     if (element.children.length !== 1 || element.children[0].type !== "text") {
       return fail("structural-drift", `Text projection contains unsupported markup: ${node.nodeId}`)
     }
-    if (["script", "style", "textarea", "title"].includes(element.name)) return fail("structural-drift", `Text projection is not ordinary display text: ${node.nodeId}`)
+    if (["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "plaintext"].includes(element.name)) return fail("structural-drift", `Text projection is not ordinary display text: ${node.nodeId}`)
     const textNode = element.children[0]
     const projected = projectText(node.text ?? "", next.text ?? "", textNode.data)
     if (projected === null) return fail("protected-divergence", `Rendered text differs from the recorded source: ${node.nodeId}`)
@@ -145,6 +154,10 @@ export function classifySectioningSynchronization(input: SectioningSyncInput): S
       continue
     }
     const matches = parsed.filter((entry) => entry.sections.some((el) => el.attribs["data-section-id"] === section.sectionId))
+    if (matches.length === 0 && !activeNodes(section.nodes).some((node) => node.role)) {
+      add("current", "No active renderable content requires an output.")
+      continue
+    }
     if (matches.length === 0) {
       // Identityless legacy output must never be assigned by sectionIndex.
       const ambiguous = parsed.some((entry) => entry.sections.length === 0 || entry.sections.some((el) => !el.attribs["data-section-id"]))

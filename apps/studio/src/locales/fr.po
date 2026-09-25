@@ -3612,9 +3612,6 @@ msgstr "Langue d'édition"
 msgid "Edits go to this Tailwind variant prefix"
 msgstr "Les modifications vont à ce préfixe de variante Tailwind"
 
-msgid "Edits here change semantic content, but do not change the visible positioned page. Use Storyboard to edit that page. Rerendering semantic text cannot synchronize it."
-msgstr "Les modifications ici changent le contenu sémantique, mais pas la page visible avec ses éléments positionnés. Utilisez Storyboard pour modifier cette page. Un nouveau rendu du texte sémantique ne peut pas la synchroniser."
-
 msgid "Effort"
 msgstr "Effort"
 
@@ -9901,6 +9898,9 @@ msgstr "Couleur du texte"
 #. placeholder {0}: section.textColor
 msgid "Text color: {0}"
 msgstr "Texte couleur: {0}"
+
+msgid "Text edits in Sectioning change semantic content, but do not change the visible positioned page. Use Storyboard to edit that page. Rerendering semantic text cannot synchronize it."
+msgstr "Les modifications de texte dans Sectioning changent le contenu sémantique, mais pas la page visible avec ses éléments positionnés. Utilisez Storyboard pour modifier cette page. Un nouveau rendu du texte sémantique ne peut pas la synchroniser."
 
 msgid "Text normalization"
 msgstr "Normalisation du texte"

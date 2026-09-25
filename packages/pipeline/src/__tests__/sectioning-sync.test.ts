@@ -172,3 +172,34 @@ describe("Sectioning synchronization classifier (SPEC-0012)", () => {
     assertRetained(input, "fixed-layout-unmapped")
   })
 })
+
+describe("conservative projection boundaries", () => {
+  it("does not return a partial section patch if a later leaf diverged manually", () => {
+    const input = fixture()
+    for (const tree of [input.source, input.priorSource!]) tree.sections[0].nodes.push({ nodeId: "second", role: "text", text: "Source", isPruned: false })
+    input.rendering!.sections[0].html = input.rendering!.sections[0].html.replace("</section>", "<p data-id='second'>Manual</p></section>")
+    assertRetained(input, "protected-divergence")
+  })
+
+  it("rejects ambiguous attributes and never replaces raw script content", () => {
+    const duplicate = fixture()
+    duplicate.rendering!.sections[0].html = duplicate.rendering!.sections[0].html.replace("data-id='text-1'", "data-id='text-1' data-id='other'")
+    assertRetained(duplicate, "invalid-rendering")
+    const script = fixture(`<section data-section-id='${sectionId}' data-section-type='text'><script data-id='text-1'>Old & safe</script></section>`)
+    assertRetained(script, "structural-drift")
+  })
+
+  it("does not invent a missing rendering for an empty section the renderer skips", () => {
+    const input = fixture()
+    input.source.sections[0].nodes = []
+    input.rendering = null
+    input.proofs = []
+    assertRetained(input, "current")
+  })
+
+  it("preserves unmatched images even when they have no data-id", () => {
+    const input = fixture()
+    input.rendering!.sections[0].html = input.rendering!.sections[0].html.replace("</section>", "<img src='custom.png'></section>")
+    assertRetained(input, "structural-drift")
+  })
+})

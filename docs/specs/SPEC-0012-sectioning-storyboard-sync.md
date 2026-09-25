@@ -5,10 +5,10 @@ status: in-review
 owner: "@ksokolovic"
 approvers: []
 issues: ["#515", "#580"]
-prs: []
+prs: ["#888"]
 adr: ""
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-25
 ---
 
 ## Decision under review
@@ -160,6 +160,14 @@ Expected implementation areas: `packages/pipeline` pure classifier/HTML fixtures
 PR #581 explicitly reports no real-book verification. Its synthetic tests are useful inputs, not sufficient evidence of this full contract. No runtime tests were executed while drafting.
 
 ## Rollout
+
+Implementation began before approval under explicit task authorization on 2026-09-25.
+The first slice implements the pure classifier, read-only correspondence projection and
+Studio notices. Automatic save propagation, transactional version/protection integration
+and targeted repair remain blocked on the shared dependencies. Existing saves still
+have the downstream-clearing limitation. See [implementation evidence](SPEC-0012-implementation-evidence.md)
+for the complete AC matrix and verification limits. This is not full implementation,
+spec approval, release verification, or completion of #515/#580.
 
 Land the pure classifier and authoritative read projection, then integrate the current save transaction and UI. Enable deterministic propagation only for proven compatible/protected-safe inputs; leave ambiguous cases visible for review. Integrate scoped downstream invalidation before claiming #580 fully addressed. A rollback can disable patching and retain drift notices; it cannot erase semantic edits, historical render versions or provenance.
 

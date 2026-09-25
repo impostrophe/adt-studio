@@ -1180,7 +1180,11 @@ export function createPageRoutes(
 
       return c.json(result)
     } finally {
-      try { db.exec("ROLLBACK") } finally { db.close() }
+      try {
+        db.exec("ROLLBACK")
+      } finally {
+        db.close()
+      }
     }
   })
 

@@ -228,6 +228,28 @@ The `.db` file uses entity versioning — `node_data` rows are never overwritten
 
 ---
 
+## Sectioning and Storyboard correspondence
+
+The page detail GET returns `sectioningSynchronization`, a read-only projection of
+the active semantic and rendering versions. It reads current version pointers and
+the active section ownership graph in one database read snapshot. Stable section
+IDs in stored HTML are matched exactly; rendering array indices are not identity.
+The pure classifier lives in `packages/pipeline/src/sectioning-sync.ts`, its shared
+Zod contracts in `packages/types/src/sectioning-sync.ts`, and its read adapter in
+`apps/api/src/services/sectioning-sync.ts`. Studio shows persistent notices in the
+Sectioning and Storyboard editors, including the fixed-layout semantic boundary.
+
+This is the first SPEC-0012 rollout slice. Legacy renderings have no trusted source
+and protection provenance and remain unverified even when their text matches. GET
+never patches them. The classifier can produce a narrow text candidate from an
+explicit trusted proof, but no production writer supplies that proof yet. Save
+propagation and targeted repair must integrate shared writer admission, protection,
+scoped freshness, mode preflight and force-fresh rendering before activation. The
+existing atomic Storyboard save remains in place; its downstream deletion behavior
+is still an unresolved dependency, not a preservation guarantee.
+
+---
+
 ## Real-Time Progress: SSE
 
 Pipeline progress streams from the API to the frontend via Server-Sent Events (SSE). The connection opens when a book view mounts and stays open until unmount — no toggle, no manual reconnect. `EventSource` handles reconnection natively.

@@ -29,10 +29,10 @@ export function SectioningSyncNotice({ synchronization, bookLabel, pageId, showS
     <aside role="status" aria-live="polite" aria-label={t`Sectioning and Storyboard correspondence`} className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950 space-y-2">
       <p className="font-semibold">{fixed ? t`Fixed-layout text editing` : t`Storyboard correspondence needs review`}</p>
       <p>{fixed
-        ? t`Edits here change semantic content, but do not change the visible positioned page. Use Storyboard to edit that page. Rerendering semantic text cannot synchronize it.`
+        ? t`Text edits in Sectioning change semantic content, but do not change the visible positioned page. Use Storyboard to edit that page. Rerendering semantic text cannot synchronize it.`
         : t`Review the saved source and preview before making further changes. Automatic synchronization and targeted repair are not available for these sections.`}</p>
       {!fixed && affected.length > 0 && (
-        <ul className="list-disc pl-4 space-y-1">
+        <ul className="max-h-32 overflow-y-auto list-disc pl-4 space-y-1">
           {affected.map((section, index) => (
             <li key={`${section.sectionId}:${index}`}><span className="font-mono">{section.sectionId}</span>{": "}{description(section.status)}</li>
           ))}
