@@ -591,3 +591,5 @@ export {
   StoryboardSaveResponse,
   SectioningRepairRequest,
 } from "./sectioning-sync.js"
+
+export { LLMErrorClass, LLMErrorClassification, LLMCallDiagnostics } from "./llm-error.js"
