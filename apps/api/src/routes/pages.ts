@@ -1048,7 +1048,16 @@ export function createPageRoutes(
       // rolling back to an older version is reflected here.
       const getNodeData = (node: string): { data: unknown; version: number } | null => {
         const row = readCurrentNodeRow(db, node, pageId)
-        return row ? { data: JSON.parse(row.data), version: row.version } : null
+        if (!row) return null
+        try {
+          return { data: JSON.parse(row.data), version: row.version }
+        } catch (error) {
+          // Keep corrupt correspondence inputs inspectable through the drift
+          // diagnostic instead of failing before it can reach Studio. This is
+          // a read projection only: retain the stored blob and its version.
+          if (node === "page-sectioning" || node === "web-rendering") return { data: null, version: row.version }
+          throw error
+        }
       }
 
       const sectioningNode = getNodeData("page-sectioning")
@@ -1106,6 +1115,12 @@ export function createPageRoutes(
         const parsed = PageSectioningOutput.safeParse(sectioningNode.data)
         if (parsed.success) sectioningTreeForUI = parsed.data
       }
+      // Studio's preview expects a rendering sections array. Invalid legacy
+      // blobs still reach the classifier for diagnostics, but must not reach
+      // preview consumers as an object on which .sections.find() can throw.
+      const renderingForUI = WebRenderingOutput.safeParse(renderingNode?.data).success
+        ? renderingNode!.data
+        : null
 
       // Cross-check the empty text layer against the Sectioning step's
       // vision-recovered text (see classifyExtractionWarning). Read from the raw
@@ -1162,7 +1177,7 @@ export function createPageRoutes(
         sectioningTree: sectioningTreeForUI,
         imageClassification: imageClassNode?.data ?? null,
         imageCropping: imageCroppingNode?.data ?? null,
-        rendering: renderingNode?.data ?? null,
+        rendering: renderingForUI,
         imageCaptioning: imageCaptioningNode?.data ?? null,
         imagesMeta,
         fonts: derivePageFonts(positionedTextNode?.data),

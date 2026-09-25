@@ -29,7 +29,7 @@ const appFor = (root: string) => {
 async function get(root = dir) {
   const response = await appFor(root).request(`/api/books/${label}/pages/${pageId}`)
   expect(response.status).toBe(200)
-  return await response.json() as { sectioningSynchronization: SectioningSynchronization; rendering: unknown; versions: { sectioning: number; rendering: number } }
+  return await response.json() as { sectioningSynchronization: SectioningSynchronization; sectioningTree: unknown; rendering: unknown; extractionWarning: string | null; versions: { sectioning: number; rendering: number } }
 }
 function write(fn: (storage: ReturnType<typeof createBookStorage>) => void) {
   const storage = createBookStorage(label, dir)
@@ -159,6 +159,14 @@ describe("read-only synchronization projection", () => {
     expect(snapshot()).toEqual(before)
   })
 
+  it("keeps valid rendering metadata and custom HTML intact in the response", async () => {
+    const value = { ...rendering, retainedMetadata: { provenance: "unknown" } }
+    write((storage) => storage.putNodeData("web-rendering", pageId, value))
+    const before = snapshot()
+    expect((await get()).rendering).toEqual(value)
+    expect(snapshot()).toEqual(before)
+  })
+
   it("reads restored source/render pointers and preserves all historical versions", async () => {
     write((storage) => {
       const edited = structuredClone(source)
@@ -193,7 +201,7 @@ describe("read-only synchronization projection", () => {
     const before = snapshot()
     const body = await get()
     expect(body.sectioningSynchronization.sections).toMatchObject([{ sectionId, status: "invalid-rendering" }])
-    expect(body.rendering).toEqual(value)
+    expect(body.rendering).toEqual(value && !Array.isArray(value.sections) ? null : value)
     expect(snapshot()).toEqual(before)
   })
 
@@ -201,6 +209,29 @@ describe("read-only synchronization projection", () => {
     write((storage) => storage.putNodeData("page-sectioning", pageId, { legacy: true }))
     const before = snapshot()
     expect((await get()).sectioningSynchronization.diagnostics).not.toHaveLength(0)
+    expect(snapshot()).toEqual(before)
+  })
+
+  it.each(["page-sectioning", "web-rendering"])("survives malformed persisted JSON in %s without changing stored bytes", async (node) => {
+    const db = openBookDb(path.join(dir, label, `${label}.db`))
+    try { db.run("UPDATE node_data SET data = ? WHERE node = ? AND item_id = ?", ["{broken", node, pageId]) } finally { db.close() }
+    const before = snapshot()
+    const body = await get()
+    expect(body.sectioningSynchronization.diagnostics.length).toBeGreaterThan(0)
+    expect(body.versions).toMatchObject({ sectioning: 1, rendering: 1 })
+    expect(node === "page-sectioning" ? body.sectioningTree : body.rendering).toBeNull()
+    expect(snapshot()).toEqual(before)
+  })
+
+  it.each([null, { nodes: [null] }, { nodes: {} }])("returns drift for malformed source on an image-only page: %j", async (invalidSection) => {
+    write((storage) => storage.putNodeData("page-sectioning", pageId, { sections: [invalidSection] }))
+    const db = openBookDb(path.join(dir, label, `${label}.db`))
+    try { db.run("UPDATE pages SET text = ? WHERE page_id = ?", ["", pageId]) } finally { db.close() }
+    const before = snapshot()
+    const body = await get()
+    expect(body.sectioningSynchronization.diagnostics.length).toBeGreaterThan(0)
+    expect(body.sectioningTree).toBeNull()
+    expect(body.extractionWarning).toBeNull()
     expect(snapshot()).toEqual(before)
   })
 
