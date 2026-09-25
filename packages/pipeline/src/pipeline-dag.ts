@@ -5,6 +5,7 @@ import { outputEvidence, inputSignature } from "./output-freshness.js"
 import { reconcileTextCatalog, buildImageInventory } from "./catalog-reconciliation.js"
 import { withBookWriter, withNewBookWriter, ownsBookWriter, resolveBookPaths } from "@adt/storage"
 import { reconcileSpeechInputs } from "./speech-inputs.js"
+import { prepareSectioningRun, completeSectioning, createStoryboardPublication } from "./sectioning-lifecycle.js"
 import fs from "node:fs"
 import path from "node:path"
 import { createBookStorage } from "@adt/storage"
@@ -161,7 +162,16 @@ export interface FullPipelineOptions {
  *
  * Run the full pipeline using the DAG runner for CLI use.
  */
-export async function runFullPipeline(
+export async function runFullPipeline(options: FullPipelineOptions, progress: Progress = nullProgress): Promise<PipelineDAGResult> {
+  const bookDir = path.join(path.resolve(options.booksRoot), options.label)
+  fs.mkdirSync(bookDir, { recursive: true })
+  return withBookWriter(bookDir, async () => {
+    prepareSectioningRun(options.label, options.booksRoot, "extract", "package", options.configPath)
+    return runAdmittedFullPipeline(options, progress)
+  })
+}
+
+async function runAdmittedFullPipeline(
   options: FullPipelineOptions,
   progress: Progress = nullProgress,
 ): Promise<PipelineDAGResult> {
@@ -627,12 +637,16 @@ export async function runFullPipeline(
     })
 
     executors.set("web-rendering", async (p) => {
+      completeSectioning(label, booksRoot, config, configPath)
+      const publication = createStoryboardPublication(storage, label, booksRoot, configPath)
+      const renderingStorage = publication.storage
       if (isFixedLayout) {
         // Fixed-layout: build the positioned tree (into `fixed-layout-sectioning`)
         // and render from it. Driven off positioned-text + image-filtering; no
         // LLM call. `page-sectioning` (semantic) is left intact.
         const imageUrlPrefix = `/api/books/${label}/images`
-        processFixedLayoutPages(storage, imageUrlPrefix)
+        processFixedLayoutPages(renderingStorage, imageUrlPrefix)
+        publication.publish()
         p.emit({ type: "step-progress", step: "web-rendering", message: "fixed-layout pages" })
         return
       }
@@ -648,24 +662,24 @@ export async function runFullPipeline(
         }
         return model
       }
-      const pages = storage.getPages()
+      const pages = renderingStorage.getPages()
       const totalPages = pages.length
       // Resolve once per book — every page shares the same typography.
-      const typography = readTypography(storage)
+      const typography = readTypography(renderingStorage)
       await processWithConcurrency(pages, effectiveConcurrency, async (page) => {
-        const structuringRow = storage.getLatestNodeData("page-sectioning", page.pageId)
-        const imageClassRow = storage.getLatestNodeData("image-filtering", page.pageId)
+        const structuringRow = renderingStorage.getLatestNodeData("page-sectioning", page.pageId)
+        const imageClassRow = renderingStorage.getLatestNodeData("image-filtering", page.pageId)
         if (!structuringRow || !imageClassRow) return
         const sectioning = structuringRow.data as PageSectioningOutput
         const imageClassification = imageClassRow.data as ImageClassificationOutput
         const unprunedImageIds = imageClassification.images
           .filter((img) => !img.isPruned)
           .map((img) => img.imageId)
-        const pageDims = new Map(storage.getPageImages(page.pageId).map((img) => [img.imageId, { width: img.width, height: img.height }]))
+        const pageDims = new Map(renderingStorage.getPageImages(page.pageId).map((img) => [img.imageId, { width: img.width, height: img.height }]))
         const renderImages = new Map<string, { base64: string; width?: number; height?: number }>()
         for (const imageId of unprunedImageIds) {
           const dims = pageDims.get(imageId)
-          renderImages.set(imageId, { base64: storage.getImageBase64(imageId), width: dims?.width, height: dims?.height })
+          renderImages.set(imageId, { base64: renderingStorage.getImageBase64(imageId), width: dims?.width, height: dims?.height })
         }
         // Sections can reference images extracted on other pages (cross-page
         // merges, images added from another page) — those are not in this
@@ -673,19 +687,19 @@ export async function runFullPipeline(
         for (const imageId of collectReferencedImageIds(sectioning.sections)) {
           if (renderImages.has(imageId)) continue
           try {
-            const dims = storage.getImageDimensions(imageId)
-            renderImages.set(imageId, { base64: storage.getImageBase64(imageId), width: dims?.width ?? undefined, height: dims?.height ?? undefined })
+            const dims = renderingStorage.getImageDimensions(imageId)
+            renderImages.set(imageId, { base64: renderingStorage.getImageBase64(imageId), width: dims?.width ?? undefined, height: dims?.height ?? undefined })
           } catch {
             // Image file no longer exists — leave it out; the renderer emits
             // the URL reference without pixels.
           }
         }
-        const pageImageBase64 = storage.getPageImageBase64(page.pageId)
+        const pageImageBase64 = renderingStorage.getPageImageBase64(page.pageId)
         // Page images for content merged in from other pages (cross-page
         // merges) — per-section provenance recorded in sourcePageIds.
         const sourcePageImages = collectSourcePageImages(
           sectioning.sections,
-          (id) => storage.getPageImageBase64(id)
+          (id) => renderingStorage.getPageImageBase64(id)
         )
         const result = await renderPage(
           {
@@ -695,14 +709,14 @@ export async function runFullPipeline(
             sectioning: sectioning,
             images: renderImages,
             sourcePageImages,
-            bookFonts: buildBookFontsPromptContext(storage),
+            bookFonts: buildBookFontsPromptContext(renderingStorage),
             typography,
           },
           resolveRenderConfig,
           resolveRenderModel,
           templateEngine,
         )
-        storage.putNodeData("web-rendering", page.pageId, result)
+        renderingStorage.putNodeData("web-rendering", page.pageId, result)
         p.emit({
           type: "step-progress",
           step: "web-rendering",
@@ -711,7 +725,7 @@ export async function runFullPipeline(
           totalPages,
         })
       })
-
+      publication.publish()
     })
 
     // ── Quizzes stage ───────────────────────────────────────────

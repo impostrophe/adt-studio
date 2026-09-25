@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from "hono"
-import { resolveBookPaths, withBookWriter } from "@adt/storage"
+import { resolveBookPaths, withBookWriter, recoverSectioningTransition } from "@adt/storage"
 
 /** Adapted from published SPEC-0010/#886. Reads remain read-only; queued runs
  * and cancellation are admitted by their service when execution starts. */
@@ -11,6 +11,9 @@ export function bookWriterMiddleware(booksDir: string): MiddlewareHandler {
     const suffix = c.req.path.split(`/books/${encodeURIComponent(label)}`)[1] ?? ""
     if (suffix === "" && c.req.method === "POST" && ["import", "preview-import"].includes(label)) return next()
     if (suffix.startsWith("/stages") || suffix.startsWith("/tasks")) return next()
-    return withBookWriter(resolveBookPaths(label, booksDir).bookDir, next)
+    return withBookWriter(resolveBookPaths(label, booksDir).bookDir, () => {
+      recoverSectioningTransition(resolveBookPaths(label, booksDir).bookDir)
+      return next()
+    })
   }
 }
