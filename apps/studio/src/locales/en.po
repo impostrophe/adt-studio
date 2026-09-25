@@ -2243,8 +2243,14 @@ msgstr "Change"
 msgid "Change language"
 msgstr "Change language"
 
+msgid "Change mode"
+msgstr "Change mode"
+
 msgid "Change Preset"
 msgstr "Change Preset"
+
+msgid "Change Sectioning mode?"
+msgstr "Change Sectioning mode?"
 
 msgid "Change the book language?"
 msgstr "Change the book language?"
@@ -2808,6 +2814,9 @@ msgstr "Could not remove {failed} of {total} videos. Please try again."
 
 msgid "Could not revert this page. Your edits were kept. Try again."
 msgstr "Could not revert this page. Your edits were kept. Try again."
+
+msgid "Could not save Sectioning mode."
+msgstr "Could not save Sectioning mode."
 
 #. placeholder {0}: getStageLabelI18n(fromStage)
 msgid "Could not start {0}: {detail}"
@@ -8718,6 +8727,9 @@ msgstr "Save your work first if you want to keep these changes."
 msgid "Saved content is unavailable; your draft is retained"
 msgstr "Saved content is unavailable; your draft is retained"
 
+msgid "Saved output is retained, but Sectioning and later stages are not current."
+msgstr "Saved output is retained, but Sectioning and later stages are not current."
+
 msgid "Saved. Re-package Preview to apply."
 msgstr "Saved. Re-package Preview to apply."
 
@@ -8919,6 +8931,9 @@ msgstr "Section Types"
 
 msgid "Sectioning"
 msgstr "Sectioning"
+
+msgid "Sectioning and later stages will need to run again. Saved versions are kept."
+msgstr "Sectioning and later stages will need to run again. Saved versions are kept."
 
 msgid "Sectioning has changed since these pages were rendered. Re-run Storyboard to regenerate them."
 msgstr "Sectioning has changed since these pages were rendered. Re-run Storyboard to regenerate them."
@@ -9655,6 +9670,9 @@ msgstr "Stored locally on this computer"
 
 msgid "Storyboard"
 msgstr "Storyboard"
+
+msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Affected pages: {pages}."
+msgstr "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Affected pages: {pages}."
 
 msgid "Storyboard has already been run. Changes made here will not take effect until storyboard is re-run."
 msgstr "Storyboard has already been run. Changes made here will not take effect until storyboard is re-run."
@@ -11224,6 +11242,9 @@ msgstr "Wait for glossary generation to finish"
 
 msgid "Wait for storyboard to complete"
 msgstr "Wait for storyboard to complete"
+
+msgid "Wait for the current operation to finish."
+msgstr "Wait for the current operation to finish."
 
 msgid "Waiting for API output…"
 msgstr "Waiting for API output…"
