@@ -12,6 +12,8 @@ export interface RequestDecisionInput {
   step: string
   pageId: string
   error: string
+  /** Step-scoped stop must also dismiss sibling pending page decisions. */
+  signal?: AbortSignal
   errorClass?: PendingDecision["errorClass"]
   attemptCount?: number
 }
@@ -35,6 +37,7 @@ interface PendingEntry {
   value: PendingDecision
   resolve: (action: PageErrorAction) => void
   timer?: ReturnType<typeof setInterval>
+  detachAbort?: () => void
 }
 
 /** In-memory decisions belong to one live run. No paid work resumes after restart. */
@@ -45,6 +48,7 @@ export function createPageErrorDecisions(eventBus: BookEventBus): PageErrorDecis
   function finish(entry: PendingEntry, action: PageErrorAction): void {
     if (!pending.delete(entry.value.decisionId)) return
     if (entry.timer) clearInterval(entry.timer)
+    entry.detachAbort?.()
     entry.resolve(action)
   }
   function clearForRun(label: string, action: "skip" | "stop" = "stop", runId?: string): void {
@@ -62,7 +66,8 @@ export function createPageErrorDecisions(eventBus: BookEventBus): PageErrorDecis
     },
     requestDecision(input) {
       const run = runs.get(input.label)
-      if (!run || run.id !== input.runId || run.signal?.aborted) return Promise.resolve("stop")
+      if (!run || run.id !== input.runId || run.signal?.aborted || input.signal?.aborted)
+        return Promise.resolve("stop")
       if (run.bulk) return Promise.resolve(run.bulk)
       const value: PendingDecision = {
         decisionId: crypto.randomUUID(),
@@ -79,6 +84,14 @@ export function createPageErrorDecisions(eventBus: BookEventBus): PageErrorDecis
       return new Promise((resolve) => {
         const entry: PendingEntry = { label: input.label, value, resolve }
         pending.set(value.decisionId, entry)
+        const signals = [run.signal, input.signal].filter(
+          (signal): signal is AbortSignal => !!signal,
+        )
+        const onAbort = () => finish(entry, "stop")
+        entry.detachAbort = () => {
+          for (const signal of signals) signal.removeEventListener("abort", onAbort)
+        }
+        for (const signal of signals) signal.addEventListener("abort", onAbort, { once: true })
         const startedAt = Date.now()
         let connectedAt: number | undefined
         let disconnectedAt: number | undefined = startedAt

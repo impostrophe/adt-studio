@@ -247,21 +247,22 @@ interface FailedPage {
 
 /** One-shot admission gate for processWithConcurrency. Closed while a page-error
  *  decision is pending (interactive mode) so no new items start; in-flight work
- *  continues. Opened again once the decision resolves. */
+ *  continues. Opened again once all pending decisions resolve. */
 class AdmissionGate {
-  private closed = false
+  private pending = 0
   private waiters: Array<() => void> = []
   close(): void {
-    this.closed = true
+    this.pending++
   }
   open(): void {
-    this.closed = false
+    this.pending = Math.max(0, this.pending - 1)
+    if (this.pending > 0) return
     const waiters = this.waiters
     this.waiters = []
     for (const w of waiters) w()
   }
   wait(): Promise<void> {
-    if (!this.closed) return Promise.resolve()
+    if (this.pending === 0) return Promise.resolve()
     return new Promise((resolve) => this.waiters.push(resolve))
   }
 }
@@ -313,6 +314,7 @@ async function handlePageFailure(ctx: PageFailureContext): Promise<void> {
         step: ctx.step,
         pageId: ctx.pageId,
         error: msg,
+        signal: stepController.signal,
         errorClass: classifyLLMError(ctx.err).errorClass,
         attemptCount: ctx.err instanceof LLMCallError ? ctx.err.attempts : undefined,
       })
@@ -527,6 +529,8 @@ export async function processWithConcurrency<T>(
       // `concurrency` items are in flight, completions pace the rest, so no ramp.
       if (rampMs > 0 && launched > 0 && launched < concurrency) {
         await sleep(rampMs, controls?.runSignal)
+        // A failure may have closed admission during the launch ramp.
+        if (controls?.gate) await controls.gate.wait()
         if (controls?.runSignal?.aborted) throw new RunCancelledError()
         if (controls?.stopSignal?.aborted) break
       }

@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { PIPELINE, type AppConfig, type ProgressEvent } from "@adt/types"
 import { computeSpeechCacheKey, stripEmojis, retireSectionIds, outputEvidence } from "@adt/pipeline"
 import { createBookStorage, openBookDb, writeSectioningLifecycle } from "@adt/storage"
+import { createBookEventBus } from "./book-event-bus.js"
+import { createPageErrorDecisions } from "./page-error-decisions.js"
 import {
   buildStageRunnerImageClassifyConfig,
   createStageRunner,
@@ -2992,4 +2994,122 @@ describe("processWithConcurrency launch ramp", () => {
     // The remaining wave never launched — no need to advance the ramp timer.
     expect(started).toEqual([0])
   })
+})
+
+describe("concurrent page decisions", () => {
+  it.each(["stop", "skip"] as const)(
+    "%s handles the entire paused work group safely",
+    async (action) => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "spec0013-paused-group-"))
+      const booksDir = path.join(dir, "books")
+      const configPath = path.join(dir, "config.yaml")
+      writeBaseConfig(configPath)
+      fs.appendFileSync(configPath, "concurrency: 2\n")
+      seedCaptionBook(booksDir, "paused")
+      const storage = createBookStorage("paused", booksDir)
+      for (let n = 2; n <= 3; n++) {
+        const pageId = `pg00${n}`
+        storage.putExtractedPage({
+          pageId,
+          pageNumber: n,
+          text: "keep",
+          pageImage: {
+            imageId: `${pageId}_page`,
+            buffer: pngBuffer(),
+            format: "png",
+            hash: pageId,
+            width: 4,
+            height: 6,
+          },
+          images: [
+            {
+              imageId: `${pageId}_im001`,
+              buffer: pngBuffer(),
+              format: "png",
+              hash: `${pageId}_image`,
+              width: 4,
+              height: 6,
+            },
+          ],
+        })
+        storage.putNodeData("web-rendering", pageId, {
+          sections: [
+            {
+              sectionIndex: 0,
+              sectionType: "content",
+              reasoning: "",
+              html: `<img data-id="${pageId}_im001" />`,
+            },
+          ],
+        })
+      }
+      storage.close()
+      const failures: Array<() => void> = []
+      captionPageImagesMock.mockReset()
+      captionPageImagesMock
+        .mockImplementationOnce(
+          () =>
+            new Promise((_resolve, reject) => {
+              failures.push(() => reject(new Error("first failed")))
+            }),
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise((_resolve, reject) => {
+              failures.push(() => reject(new Error("second failed")))
+            }),
+        )
+        .mockResolvedValue({ captions: [] })
+      const bus = createBookEventBus()
+      const unsubscribe = bus.addListener("paused", () => {})
+      const broker = createPageErrorDecisions(bus)
+      const controller = new AbortController()
+      broker.beginRun("paused", "run", controller.signal)
+      let settled = false
+      const running = createStageRunner()
+        .run(
+          "paused",
+          {
+            booksDir,
+            configPath,
+            promptsDir: dir,
+            fromStage: "captions",
+            toStage: "captions",
+            credentials: { openai: { apiKey: "test" } },
+            pageErrorPolicy: "ask",
+            signal: controller.signal,
+            requestPageDecision: (input) =>
+              broker.requestDecision({ ...input, label: "paused", runId: "run" }),
+          },
+          { emit() {} },
+        )
+        .catch((error) => error)
+        .finally(() => {
+          settled = true
+        })
+      try {
+        await vi.waitFor(() => expect(failures).toHaveLength(2))
+        for (const fail of failures) fail()
+        await vi.waitFor(() => expect(broker.getPendingDecisions("paused")).toHaveLength(2))
+        const first = broker.getPendingDecisions("paused")[0]
+        broker.resolveDecision("paused", { decisionId: first.decisionId, action })
+        if (action === "skip") {
+          await new Promise((resolve) => setTimeout(resolve, 200))
+          expect(captionPageImagesMock).toHaveBeenCalledTimes(2)
+          const last = broker.getPendingDecisions("paused")[0]
+          broker.resolveDecision("paused", { decisionId: last.decisionId, action: "stop" })
+        }
+        await vi.waitFor(() => expect(settled).toBe(true), { timeout: 1000 })
+        expect(broker.getPendingDecisions("paused")).toEqual([])
+        expect(captionPageImagesMock).toHaveBeenCalledTimes(2)
+      } finally {
+        controller.abort()
+        broker.clearForRun("paused")
+        await running
+        unsubscribe()
+        captionPageImagesMock.mockReset().mockResolvedValue({ captions: [] })
+        fs.rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  )
 })
