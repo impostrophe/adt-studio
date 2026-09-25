@@ -54,9 +54,9 @@ is pending.
 | 1 | Passed | `errors.test.ts` covers bounded nested transient classification; `client-retry-integration.test.ts` counts real SDK transport calls for socket/DNS, timeout and HTTP transient failures. `maxRetries: 2` permits three calls. |
 | 2 | Passed | Structured/nested quota, auth, permission and model classification tests; permanent HTTP failures stop after one actual transport request, including quota inside 429. |
 | 3 | Passed | Unknown errors, malformed JSON/schema/tool output and semantic rejection exhaust the shared budget. Parse repair now returns feedback to that budget; tests observe requests and feedback. |
-| 4 | Passed | Tests cancel before admission, during transport, admission wait and backoff, and combine model/per-call signals. No subsequent HTTP request. Existing runner cancellation and new broker cancellation tests prevent an actionable recovery decision. |
+| 4 | Passed | Tests cancel before admission, during transport, admission wait and backoff, and combine model/per-call signals. No subsequent HTTP request. Runner and broker tests prevent an actionable recovery decision; concurrent-page regressions prove step Stop dismisses sibling decisions and Skip does not reopen admission while another page waits. |
 | 5 | Blocked | HTTP native-schema, JSON, tool and parse-repair strategies are tested over the actual SDK with stub fetch; hidden parse-repair multiplication is removed. External Codex/Claude executables can make opaque internal requests: their wire budget is not proven or controlled by this change. |
-| 6 | Blocked | Real filesystem cache tests pass for invalid/legacy output, valid hits, eviction, unrelated entries, semantic validation and cache publication failure without another provider call. HTTP usage/cache/control-row diagnostics pass. External CLI internal request counts and unknown usage/cost reporting are not fully verified; the whole criterion remains open. |
+| 6 | Blocked | Real filesystem cache tests pass for invalid/legacy output, valid hits, eviction, unrelated entries, semantic validation and cache publication failure without another provider call. HTTP usage/cache/control-row diagnostics pass. Review fixes now preserve unknown usage and explain incomplete totals in Studio, including CLI adapters. External CLI internal request counts remain uncontrolled and unverified; the whole criterion remains open. |
 | 7 | Blocked | No interactive Retry loop is enabled. Shared non-destructive admission, protected output replacement and input-version rechecks are unavailable. Three-page isolated-retry integration is not run. |
 | 8 | Blocked | Automatic rounds are bounded and retry-all is rejected without consumption, but granting a new manual page round is intentionally unavailable under the same safety prerequisite. |
 | 9 | Blocked | Real SQLite decision-route tests retain both filtering versions byte-for-byte; this proves decisions do not mutate content, not protected runner Skip behavior. Missing-input downstream blocking and manual-prune preservation across reruns require shared mechanisms. |
@@ -65,9 +65,9 @@ is pending.
 | 12 | Passed | API tests reject wrong book/run/step/page, strict invalid bodies, stale and cancelled decisions; concurrent duplicate submissions yield one 200 and one 409. Legacy clients may omit additive context: the opaque ID still binds to the URL book and active run. |
 | 13 | Passed | Broker fake-time tests exercise initial/subsequent disconnect, reconnect, 30-second grace and ten-minute timeout. API polling matches SSE. Production Studio browser acceptance recovers after reload and removes a decision resolved in a second tab. |
 | 14 | Passed at committed decision boundary | Broker lifecycle tests cover run-end/cancel and bulk-policy isolation. `page-error-restart.test.ts` kills a real process with a pending decision and open storage, then uses production startup cleanup and actual decision/status routes in a new process: old ID returns 409, step reports Interrupted, no worker resumes, committed node histories and referenced asset bytes are unchanged. This does not test a crash inside a write transaction; CLI step-run persistence remains outside this evidence. |
-| 15 | Passed | Actual compiled CLI on a fresh one-page representative-book fixture exits 1 in 5.6 seconds with no dialog after six stubbed outbound requests: three metadata and three Meaningfulness. Existing DAG/runner failure tests pass. This is not a protected rerun or crash-recovery acceptance. |
+| 15 | Passed | Actual compiled CLI on a fresh one-page representative-book fixture exits 1 in 8.7 seconds after the review fixes with no dialog after six stubbed outbound requests: three metadata and three Meaningfulness. Existing DAG/runner failure tests pass. This is not a protected rerun or crash-recovery acceptance. |
 | 16 | Blocked | Durable page-specific skipped-with-error summaries, downstream cardinality and freshness-qualified readiness are not implemented by this slice. Existing Skip/Stop behavior must not be described as satisfying this criterion. |
-| 17 | Passed | Shared additive diagnostics expose request/attempt identity, class, terminal outcome, cache/provider-call flags and available usage. Typed errors do not expose raw provider bodies; Debug tests exclude no-call cancellation rows from provider totals while retaining inspectability. Real CLI SQLite logs show three correlated attempts per work unit. External CLI accounting limitation remains under AC-6. |
+| 17 | Passed | Shared additive diagnostics expose request/attempt identity, class, terminal outcome, cache/provider-call flags and available usage. Typed errors do not expose raw provider bodies; Debug tests exclude no-call cancellation rows from provider totals while retaining inspectability. Real CLI SQLite logs show three correlated attempts per work unit. Review regressions retain invalid output while redacting server-resolved credentials, distinguish cancellation, and explain unknown token totals/cost. External CLI accounting limitation remains under AC-6. |
 | 18 | Passed | New diagnostic/error labels and existing Skip/Stop dialog are translated in all five locales. Component tests cover accessible alert, duplicate disabling and rejection retention. Production Studio acceptance covers failed submission, refresh, Stop, reload and two tabs; no stage advertises Retry. Future Retry and qualified completion controls remain blocked under AC-7/16. |
 
 Test paths above are under `packages/llm/src/__tests__/`. Decision coverage is in
@@ -82,14 +82,14 @@ The SQLite tests verify the decision boundary, not a missing recovery transactio
 | Check | Result |
 |---|---|
 | Untouched develop baseline: `pnpm test --maxWorkers=2 --testTimeout=30000` | 277 files, 3,604 tests passed before changes. |
-| Final `pnpm test --maxWorkers=2 --testTimeout=30000` | 282 files, 3,673 tests passed after the confidence follow-up (419.72 seconds with other suites running concurrently). Its pretest runs `pnpm build`, which passed. The earlier implementation run passed 281 files / 3,661 tests. |
-| Focused retry/cache/classification/decision/Studio tests | 10 files, 125 tests passed before the full run; final formatting check reran decision-route/dialog tests. |
+| Final `pnpm test --maxWorkers=2 --testTimeout=30000` | 283 files, 3,684 tests passed after review remediation (627.60 seconds with other suites running concurrently). Its pretest runs `pnpm build`, which passed. Earlier verified revisions passed 282 files / 3,673 tests and 281 files / 3,661 tests. |
+| Focused retry/cache/classification/decision/Studio tests | 12 files, 257 tests passed during implementation review, including the reproduced concurrency and diagnostic failures. |
 | `pnpm typecheck` | Passed. |
 | `pnpm lint` | Passed with zero errors and eight unused-suppression warnings, matching a separately exercised untouched-develop baseline. |
-| `pnpm --filter @adt/studio extract` and `pnpm --filter @adt/studio exec lingui compile --strict` | Passed; 3,622 messages, zero missing translations in es/fr/pt-BR/sq. English source catalog updated too. |
+| `pnpm --filter @adt/studio extract` and `pnpm --filter @adt/studio exec lingui compile --strict` | Passed after review; 3,623 messages, zero missing translations in es/fr/pt-BR/sq. English source catalog updated too. |
 | `pnpm --filter @adt/studio build` | Production build passed, with chunk-size warning. |
 | `node apps/api/scripts/bundle-server.mjs` and `node apps/api/scripts/bundle-electron-server.mjs` | Bundles built; this does not prove packaged Desktop runtime or installer behavior. |
-| `docker build --target app -t adt-studio-spec0013:local --progress plain .` | Combined release-target image built. Disposable loopback container served `/api/health` with status ok and Studio `/` with HTTP 200. No host books mounted. |
+| `docker build --target app -t adt-studio-spec0013:local --progress plain .` | Earlier implementation revision only, not rerun for review fixes: combined release-target image built. Disposable loopback container served `/api/health` with status ok and Studio `/` with HTTP 200. No host books mounted. |
 | Production Studio representative-book acceptance | Real built SPA, actual API decision routes/broker and disposable momograde1 copy. Provider execution disabled. Reload recovery, rejection alert, refresh/Stop and two-tab resolution passed without JavaScript errors. Book DB unchanged by decisions after the copy's initial schema migration. Original book untouched. |
 | Fresh-book CLI acceptance | Actual compiled CLI, representative PDF first page, all provider traffic intercepted at fetch with 503. Exit 1, six actual transport calls total, one source page and filtering version retained. No credentials/live paid traffic used. |
 | Final diff and document checks | `git diff origin/develop --check` passed; spec front matter, all 18 AC IDs, INDEX status/link, local documentation links and absence of conflict markers verified. Final review removed inherited INDEX entries and rebase markers. |
@@ -166,3 +166,31 @@ submission, refresh/Stop and two-tab resolution with no JavaScript errors and
 unchanged fixture book data. The initial failing UI regression and all follow-up
 logs are retained in `tmp/acceptance/`. No Docker/installer rerun or release
 verification is claimed for this UI-only runtime fix.
+
+
+## Implementation review and remediation (2026-09-25)
+
+The [review report](SPEC-0013-review.md) records severity-ranked findings, fixes,
+verification and the remaining implementation/dependency gaps. The new runner
+regressions reproduced premature admission after Skip and sibling decisions
+remaining pending after Stop; both are fixed using the existing gate and broker.
+The review also corrected missing/invalid usage accounting, invalid-output
+inspection, server-credential redaction, CLI validation feedback and wrapped
+timeout/cancellation classification. Unknown usage now remains unknown through
+API statistics and the translated Studio view.
+
+Estimated full-contract completion remains approximately 60%; confidence in the
+implemented slice is 8/10, not approval of full page recovery. AC-5/6, AC-7–10
+and AC-16 remain blocked in full. No criterion or human approval was weakened
+to fit the partial implementation.
+
+Review verification: 283 files / 3,684 tests passed in the full suite (627.60
+seconds), including pretest build; 12 files / 257 focused tests passed. Typecheck,
+lint (the same eight warnings), Studio production build, API/Electron API
+bundles, Lingui extraction and strict compile passed. All 3,623 messages are
+translated in five locales. Rebuilt browser acceptance passed with an unchanged
+fixture DB and no JavaScript errors. Fresh-book CLI acceptance exited 1 in 8.7
+seconds after exactly six intercepted requests. No Docker/installer rerun or
+release verification is claimed for these fixes. The dependency check was
+refreshed through local SPEC-0010 `d8be3223`; it still refuses unsupported
+downstream resume. Remediation commits: `382261fb`, `ac311a75`, `310f1fca`.
