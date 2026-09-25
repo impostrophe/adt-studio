@@ -1,4 +1,5 @@
 import { STAGE_ORDER, type OutputRunScope, type OutputIdentity, type ProgressEvent } from "@adt/types"
+import { prepareSectioningRun, SectioningPreflightError } from "@adt/pipeline"
 import type { StageName, StepName, PageErrorPolicy, PageErrorAction } from "@adt/types"
 import { createBookStorage, resolveBookPaths, withBookWriter } from "@adt/storage"
 import type { ResolvedCredentials } from "@adt/llm"
@@ -145,6 +146,7 @@ export function createStageService(
     try {
       await withBookWriter(resolveBookPaths(label, options.booksDir).bookDir, async () => {
         job.controller.signal.throwIfAborted()
+        prepareSectioningRun(label, options.booksDir, options.fromStage as StageName, options.toStage as StageName, options.configPath)
         options.beforeRun?.()
         await runner.run(label, effectiveOptions, progress)
       })
@@ -178,7 +180,7 @@ export function createStageService(
         job.status = "failed"
         job.error = message
         job.completedAt = Date.now()
-        eventBus.emit(label, { type: "stage-run-error", label, error: message })
+        eventBus.emit(label, { type: "stage-run-error", label, error: message, ...(err instanceof SectioningPreflightError ? { sectioningPreflight: err.details } : {}) })
       }
     } finally {
       // Clear any per-run page-error policy / pending decisions so they never

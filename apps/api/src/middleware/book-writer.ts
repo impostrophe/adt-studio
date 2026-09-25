@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from "hono"
 import fs from "node:fs"
 import { HTTPException } from "hono/http-exception"
-import { resolveBookPaths, withBookWriter } from "@adt/storage"
+import { resolveBookPaths, withBookWriter, recoverSectioningTransition } from "@adt/storage"
 
 /** Adapted from published SPEC-0010/#886. Reads remain read-only; queued runs
  * and cancellation are admitted by their service when execution starts. */
@@ -16,6 +16,9 @@ export function bookWriterMiddleware(booksDir: string): MiddlewareHandler {
     const bookDir = resolveBookPaths(label, booksDir).bookDir
     // Match #886: admission must not recreate a book after its deletion.
     if (!fs.existsSync(bookDir)) throw new HTTPException(404, { message: `Book not found: ${label}` })
-    return withBookWriter(bookDir, next)
+    return withBookWriter(bookDir, () => {
+      recoverSectioningTransition(bookDir)
+      return next()
+    })
   }
 }

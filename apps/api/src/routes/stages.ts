@@ -4,12 +4,13 @@ import { Hono } from "hono"
 import { streamSSE } from "hono/streaming"
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
-import { createBookStorage, openBookDb } from "@adt/storage"
+import { createBookStorage, openBookDb, withBookWriter, readSectioningLifecycle } from "@adt/storage"
 import type { Storage } from "@adt/storage"
 import { AuthoredRunOptions, OutputSkipRequest, OutputRunScope, StageName, STAGE_ORDER, PIPELINE, parseBookLabel, getStageRerunClearNodes, getStageClearOrder, PageErrorPolicy, DecisionBody, TTSOutput, WordTimestampOutput, parseVoiceSlotEntryId, sectionIdOfAnswerTextId } from "@adt/types"
 import { assertStageRunModelCredentials } from "@adt/llm"
 import {
   loadBookConfig,
+  prepareSectioningRun,
   collectSpentSectionIds,
   retireSectionIds,
   NOTHING_RETIRED,
@@ -123,11 +124,12 @@ export function retireSectionIdsForClearedSectioning(
 
 /** Invalidate downstream execution status while retaining authored output.
  *  The returned function is idempotent — only runs once even if called multiple times.
- *  Exported so tests can pin the real preparation boundary. */
-export function makeBeforeRun(label: string, fromStage: StageName, toStage: StageName, booksDir: string): () => void {
+ *  Exported so tests can pin the preserve-retirement-clear boundary. */
+export function makeBeforeRun(label: string, fromStage: StageName, toStage: StageName, booksDir: string, configPath?: string): () => void {
   let ran = false
   return () => {
     if (ran) return
+    prepareSectioningRun(label, booksDir, fromStage, toStage, configPath)
     const storage = createBookStorage(label, booksDir)
     try {
       if (fromStage === "extract" && storage.getPages().length) {
@@ -158,9 +160,6 @@ export function makeBeforeRun(label: string, fromStage: StageName, toStage: Stag
         const nodes = getStageRerunClearNodes(fromStage, toStage)
         if (nodes.length > 0) {
           storage.clearNodesByType(nodes)
-        }
-        if (fromStage === "storyboard" && typeof storage.clearDebugImages === "function") {
-          storage.clearDebugImages()
         }
         // Clear step run records for all downstream stages
         const stagesToClear = getStageClearOrder(fromStage)
@@ -231,12 +230,14 @@ export function createStageRoutes(
       `credentialProviders=${Object.keys(credentials).join(",") || "(none)"}`,
     )
 
-    const prepare = makeBeforeRun(label, fromStage, toStage, booksDir)
+    if (!stageService.getStatus(label).active) {
+      withBookWriter(path.join(path.resolve(booksDir), parseBookLabel(label)), () => prepareSectioningRun(label, booksDir, fromStage, toStage, configPath))
+    }
+    const prepare = makeBeforeRun(label, fromStage, toStage, booksDir, configPath)
     const clearData = () => {
       const storage = createBookStorage(label, booksDir)
-      try {
-        assertAuthoredReplacement(storage, { fromStage, toStage, replaceManual, protectedReplacements })
-      } finally { storage.close() }
+      try { assertAuthoredReplacement(storage, { fromStage, toStage, replaceManual, protectedReplacements }) }
+      finally { storage.close() }
       prepare()
     }
 
@@ -415,7 +416,8 @@ export function createStageRoutes(
 
     // Check if ADT is packaged (preview stage)
     const adtDir = path.join(resolvedDir, safeLabel, "adt")
-    if (fs.existsSync(adtDir)) stages.preview = "done"
+    const lifecycle = readSectioningLifecycle(path.join(resolvedDir, safeLabel))
+    if (fs.existsSync(adtDir) && (!lifecycle || lifecycle.sectioningReady)) stages.preview = "done"
 
     const hasStepErrors = Object.keys(stepErrors).length > 0
     const hasStepMessages = Object.keys(stepMessages).length > 0
@@ -498,6 +500,7 @@ export function createStageRoutes(
                   data: JSON.stringify({
                     label: event.label,
                     error: event.error,
+                    sectioningPreflight: event.sectioningPreflight,
                   }),
                 })
               } else if (event.type === "stage-run-cancelled") {

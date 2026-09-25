@@ -1,5 +1,6 @@
 import { createOutputRoutes } from "./routes/outputs.js"
 import path from "node:path"
+import { bookWriterMiddleware } from "./middleware/book-writer.js"
 import fs from "node:fs"
 import os from "node:os"
 import { unzipSync } from "fflate"

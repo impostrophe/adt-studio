@@ -496,3 +496,5 @@ export { authoredImageAlts } from "./catalog-reconciliation.js"
 export { outputSkipped } from "./output-freshness.js"
 
 export { captureOutputReferences } from "./output-references.js"
+export { preflightSectioning, SectioningPreflightError } from "./sectioning-preflight.js"
+export { SectioningSafetyError, effectiveSectioningMode, sectioningInvalidationSteps, activeSectioningPages, assertPersistedSectioning, assertSectioningCurrent, assertSectioningReplacementSafe, prepareSectioningRun, completeSectioning, createStoryboardPublication } from "./sectioning-lifecycle.js"
