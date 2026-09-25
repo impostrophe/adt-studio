@@ -53,6 +53,7 @@ import { useActiveConfig } from "@/hooks/use-debug"
 import { usePage } from "@/hooks/use-pages"
 import { useBookTasks } from "@/hooks/use-book-tasks"
 import { useBookRun } from "@/hooks/use-book-run"
+import { SectioningSyncNotice } from "../../../components/SectioningSyncNotice"
 import { invalidateStoryboardDependents } from "@/hooks/use-page-mutations"
 import { useStepHeader } from "../../../components/StepViewRouter"
 import { LoadingState } from "../../../components/LoadingState"
@@ -2689,6 +2690,7 @@ export function StoryboardSectionDetail({
     {headerSlotEl && createPortal(headerControls, headerSlotEl)}
     <div className="h-full flex overflow-hidden">
     <div className="flex-1 flex flex-col min-w-0 relative overflow-hidden">
+      <SectioningSyncNotice synchronization={pageDetail?.sectioningSynchronization} bookLabel={bookLabel} pageId={pageId} />
       {/* Error bar below header */}
       {aiError && (
         <div className="px-4 py-1.5 border-b shrink-0 text-xs bg-muted/30">

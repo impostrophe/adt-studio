@@ -45,6 +45,7 @@ import {
   TextCatalogOutput,
   type TTSOutput,
   type WordTimestampOutput,
+  type SectioningSynchronization,
 } from "@adt/types"
 import type { ContentNodeData, ExtractionWarning } from "@adt/types"
 import { classifyExtractionWarning, flattenVisibleSectioningText } from "../services/extraction-warning.js"
@@ -70,6 +71,8 @@ import {
 } from "@adt/pipeline"
 import { samplePageEdges, extractPages, computeGroups, countPdfPages } from "@adt/pdf"
 import { reRenderPage, reRenderPages, aiEditSection } from "../services/page-edit-service.js"
+
+import { readSectioningSynchronization } from "../services/sectioning-sync.js"
 import {
   getBookStyleguidesDir,
   getGeneratedStyleguideName,
@@ -147,6 +150,7 @@ interface PageSummary {
 }
 
 interface PageDetail {
+  sectioningSynchronization: SectioningSynchronization
   pageId: string
   pageNumber: number
   text: string
@@ -1023,6 +1027,8 @@ export function createPageRoutes(
 
     const db = openBookDb(dbPath)
     try {
+      // Keep source, rendering and graph ownership in one read snapshot.
+      db.exec("BEGIN")
       // Get page data
       const pageRows = db.all(
         "SELECT page_id, page_number, text FROM pages WHERE page_id = ?",
@@ -1064,9 +1070,11 @@ export function createPageRoutes(
       // and for the Merriweather default. Mirrors resolveReflowableFontChain so
       // the storyboard preview shell can apply the same font packaging does.
       let reflowableFontFamily: string | null = null
+      let synchronizationLayout: SectioningSynchronization["layout"] = "unknown"
       try {
         const cfg = loadBookConfig(safeLabel, booksDir, configPath)
         const fixedLayout = isFixedLayoutBook(cfg)
+        synchronizationLayout = fixedLayout ? "fixed" : "reflowable"
         if (!fixedLayout) {
           const registryRows = db.all(
             "SELECT data FROM node_data WHERE node = 'font-registry' AND item_id = 'book' ORDER BY version DESC LIMIT 1",
@@ -1146,6 +1154,8 @@ export function createPageRoutes(
       finally { catalogStorage.close() }
       const result: PageDetail = {
         captionSourceSignature,
+
+        sectioningSynchronization: readSectioningSynchronization(db, pageId, sectioningNode, renderingNode, synchronizationLayout),
         pageId: page.page_id,
         pageNumber: page.page_number,
         text: page.text,
@@ -1170,7 +1180,7 @@ export function createPageRoutes(
 
       return c.json(result)
     } finally {
-      db.close()
+      try { db.exec("ROLLBACK") } finally { db.close() }
     }
   })
 

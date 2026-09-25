@@ -34,6 +34,7 @@ import { useStepHeader } from "../../components/StepViewRouter"
 import { usePendingChanges } from "../../components/change-summary"
 import { useFloatingSave } from "../../components/floating-save"
 import { CascadeResetDialog } from "../../components/CascadeResetDialog"
+import { SectioningSyncNotice } from "../../components/SectioningSyncNotice"
 import { useDownstreamWithOutput } from "@/hooks/use-downstream-with-output"
 
 export function SectioningPageDetail({
@@ -459,6 +460,8 @@ export function SectioningPageDetail({
       </div>
       <div className="w-1/2 min-w-0 overflow-auto p-4 space-y-4">
         {page.sectioningTree && <AuthorshipBadge source={page.sectioningTree.source} />}
+
+        <SectioningSyncNotice synchronization={page.sectioningSynchronization} bookLabel={bookLabel} pageId={pageId} showStoryboardLink />
         {page.extractionWarning && (
           <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
             <Eye className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />

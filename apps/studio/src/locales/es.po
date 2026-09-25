@@ -3610,6 +3610,9 @@ msgstr "Idioma de edición"
 msgid "Edits go to this Tailwind variant prefix"
 msgstr "Las ediciones van a este prefijo de variante Tailwind"
 
+msgid "Edits here change semantic content, but do not change the visible positioned page. Use Storyboard to edit that page. Rerendering semantic text cannot synchronize it."
+msgstr "Las ediciones aquí cambian el contenido semántico, pero no la página visible con elementos posicionados. Usa Storyboard para editar esa página. Volver a renderizar el texto semántico no puede sincronizarla."
+
 msgid "Effort"
 msgstr "Esfuerzo"
 
@@ -4151,6 +4154,9 @@ msgstr "Plantilla de diseño fijo de dos columnas"
 
 msgid "Fixed-layout books use the original page images as backgrounds with positioned text extracted from the PDF. Activities detection, figure extraction, and image cropping or segmentation don't apply to this layout."
 msgstr "Los libros de diseño fijo usan las imágenes originales de las páginas como fondo con texto posicionado extraído del PDF. La detección de actividades, extracción de figuras, recorte o segmentación de imágenes no aplican a este diseño."
+
+msgid "Fixed-layout text editing"
+msgstr "Edición de texto de diseño fijo"
 
 msgid "Flag severity threshold"
 msgstr "Umbral de severidad para marcar"
@@ -6776,6 +6782,9 @@ msgstr "Abrir solicitud de cambios {0}"
 msgid "Open source PDF in a new tab"
 msgstr "Abrir el PDF de origen en una nueva pestaña"
 
+msgid "Open Storyboard"
+msgstr "Abrir Storyboard"
+
 msgid "Open the Quizzes stage to edit this quiz"
 msgstr "Abre la etapa de Cuestionarios para editar este cuestionario"
 
@@ -8116,6 +8125,9 @@ msgstr "Razonamiento de renderizado"
 msgid "Render Strategy"
 msgstr "Estrategia de renderización"
 
+msgid "Rendered text is protected or differs from its source. Review it before replacing it."
+msgstr "El texto renderizado está protegido o difiere de su fuente. Revísalo antes de reemplazarlo."
+
 msgid "Rendering Prompt"
 msgstr "Prompt de renderización"
 
@@ -8353,6 +8365,9 @@ msgstr "Estilo de revisión"
 
 msgid "Review the project details below and confirm the import."
 msgstr "Revisa los detalles del proyecto a continuación y confirma la importación."
+
+msgid "Review the saved source and preview before making further changes. Automatic synchronization and targeted repair are not available for these sections."
+msgstr "Revisa la fuente guardada y la vista previa antes de hacer más cambios. La sincronización automática y la reparación específica no están disponibles para estas secciones."
 
 msgid "Review the source PDF details below and continue to configure how your book will be converted into an Accessible Digital Textbook."
 msgstr "Revisa los detalles del PDF fuente a continuación y continúa configurando cómo se convertirá tu libro en un Libro de Texto Digital Accesible."
@@ -8836,6 +8851,9 @@ msgstr "Seccionamiento"
 msgid "Sectioning and later stages will need to run again. Saved versions are kept."
 msgstr "Será necesario volver a ejecutar el seccionado y las etapas posteriores. Se conservan las versiones guardadas."
 
+msgid "Sectioning and Storyboard correspondence"
+msgstr "Correspondencia entre secciones y Storyboard"
+
 msgid "Sectioning has changed since these pages were rendered. Re-run Storyboard to regenerate them."
 msgstr "La segmentación ha cambiado desde que se renderizaron estas páginas. Vuelve a ejecutar Storyboard para regenerarlas."
 
@@ -8998,6 +9016,9 @@ msgstr "Seleccionar \\\"Ninguno\\\" permite al LLM elegir su propio estilo para 
 
 msgid "Self-contained ADT web app"
 msgstr "Aplicación web ADT autónoma"
+
+msgid "Semantic text does not update the positioned page."
+msgstr "El texto semántico no actualiza la página con elementos posicionados."
 
 msgid "Send a sample notification using these settings."
 msgstr "Enviar una notificación de muestra usando estos ajustes."
@@ -9298,6 +9319,9 @@ msgstr "Algunas páginas no tienen capa de texto incrustado — el texto se recu
 msgid "Some requested outputs remain unresolved. Protected content has been kept. Review the output warnings before retrying."
 msgstr "Algunos resultados solicitados siguen sin resolverse. Se ha conservado el contenido protegido. Revisa las advertencias de los resultados antes de volver a intentarlo."
 
+msgid "Some source or rendering data could not be verified. Review this page in Storyboard."
+msgstr "No se pudieron verificar algunos datos de la fuente o del renderizado. Revisa esta página en Storyboard."
+
 msgid "Something went wrong"
 msgstr "Algo salió mal"
 
@@ -9564,6 +9588,9 @@ msgstr "Storyboard"
 
 msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Incompatible manual or unknown-origin pages require explicit replacement confirmation. Affected pages: {pages}."
 msgstr "Storyboard no puede ejecutarse en el modo Por página: {total} páginas no contienen exactamente una sección válida. Vuelva a ejecutar Sectioning e inténtelo de nuevo. Las páginas incompatibles manuales o de origen desconocido requieren una confirmación explícita de reemplazo. Páginas afectadas: {pages}."
+
+msgid "Storyboard correspondence needs review"
+msgstr "La correspondencia con Storyboard necesita revisión"
 
 msgid "Storyboard has already been run. Changes made here will not take effect until storyboard is re-run."
 msgstr "El storyboard ya se ejecutó. Los cambios realizados aquí no tendrán efecto hasta que se vuelva a ejecutar el storyboard."
@@ -10086,6 +10113,12 @@ msgstr "El veloz zorro marrón salta sobre el perro perezoso."
 msgid "The reader experience"
 msgstr "La experiencia del lector"
 
+msgid "The relationship between this source and the saved rendering is unverified."
+msgstr "La relación entre esta fuente y el renderizado guardado no está verificada."
+
+msgid "The rendering is missing or cannot be matched safely."
+msgstr "Falta el renderizado o no se puede asociar de forma segura."
+
 msgid "The rendering strategy used for sections without an explicit mapping."
 msgstr "La estrategia de renderización usada para secciones sin un mapeo explícito."
 
@@ -10094,6 +10127,9 @@ msgstr "La misma edición en cada idioma."
 
 msgid "The saved translation review is stale. Run Review again for the visible translations."
 msgstr "La revisión de traducción guardada está obsoleta. Vuelve a ejecutar Revisar para las traducciones visibles."
+
+msgid "The section structure or identity no longer matches the rendering."
+msgstr "La estructura o la identidad de la sección ya no coincide con el renderizado."
 
 msgid "The section was edited after conversion — use \"Rebuild from page\" to refresh the steps."
 msgstr "La sección se editó después de la conversión: usa «Reconstruir desde la página» para actualizar los pasos."

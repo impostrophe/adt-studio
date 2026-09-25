@@ -10,6 +10,7 @@ import type { SectioningModeState } from "@adt/types"
 import { isElectron } from "@/lib/utils"
 import type {
   AccessibilityAssessmentOutput,
+  SectioningSynchronization,
   BookDetail,
   BookFont,
   BookFontRole,
@@ -497,6 +498,9 @@ export interface AiEditHistoryTurn {
 
 export interface PageDetail {
   captionSourceSignature: string
+
+  /** Optional for compatibility with older API versions; read-only drift. */
+  sectioningSynchronization?: SectioningSynchronization
   pageId: string
   pageNumber: number
   text: string
