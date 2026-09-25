@@ -5,11 +5,25 @@ status: in-review
 owner: "@ksokolovic"
 approvers: []
 issues: ["#685"]
-prs: []
+prs: ["#889"]
 adr: ""
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-25
 ---
+
+## Implementation status (2026-09-25)
+
+Implementation before approval was explicitly authorized for this PR. Human
+review remains pending; status and approvers are unchanged. The local branch
+contains the bounded HTTP retry/classification, cache/cancellation, diagnostic
+and run-owned decision-handling slice. **The full spec is not implemented.**
+Interactive Meaningfulness Retry, safe replacement and qualified skipped-result
+readiness remain blocked on shared admission/protection/freshness mechanisms.
+Retry is rejected without consuming the pending decision; no alternate
+preservation subsystem is introduced. See the complete
+[AC-to-evidence matrix](SPEC-0013-implementation-evidence.md) for executed checks,
+dependency evidence and remaining limits. These local commits have not been
+pushed or release-verified.
 
 ## Decision under review
 

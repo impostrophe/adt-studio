@@ -13,7 +13,7 @@ Implementation before human approval was explicitly authorized on 2026-09-25. Th
 
 ## Acceptance plan
 
-Every criterion is mapped before code changes. Final results will replace planned status only with executed evidence.
+Every criterion is mapped before code changes. The original pre-edit map is retained below; executed results follow it.
 
 | AC | Current behavior / required change | Concrete verification planned |
 |---|---|---|
@@ -39,3 +39,92 @@ Every criterion is mapped before code changes. Final results will replace planne
 ## Contract boundaries
 
 Preserve configured counts, exponential jitter/backoff and timeouts, valid cache identities, source page IDs and content. No new provider, queue, dependency, durable decision database or automatic paid-work restart. Additive diagnostics keep old logs readable. Unknown provider cost remains unknown. Broader editing safety is a prerequisite, not functionality to recreate here.
+
+
+## Final acceptance evidence (2026-09-25)
+
+**Safe partial implementation; the full spec is not implemented.** Passed entries
+refer to the stated exercised scope, not release certification or approval of the
+spec. In particular, HTTP wire verification does not prove external CLI request
+or billing behavior. Acceptance checkboxes remain unchecked while human review
+is pending.
+
+| AC | Status | Executed evidence and remaining scope |
+|---|---|---|
+| 1 | Passed | `errors.test.ts` covers bounded nested transient classification; `client-retry-integration.test.ts` counts real SDK transport calls for socket/DNS, timeout and HTTP transient failures. `maxRetries: 2` permits three calls. |
+| 2 | Passed | Structured/nested quota, auth, permission and model classification tests; permanent HTTP failures stop after one actual transport request, including quota inside 429. |
+| 3 | Passed | Unknown errors, malformed JSON/schema/tool output and semantic rejection exhaust the shared budget. Parse repair now returns feedback to that budget; tests observe requests and feedback. |
+| 4 | Passed | Tests cancel before admission, during transport, admission wait and backoff, and combine model/per-call signals. No subsequent HTTP request. Existing runner cancellation and new broker cancellation tests prevent an actionable recovery decision. |
+| 5 | Blocked | HTTP native-schema, JSON, tool and parse-repair strategies are tested over the actual SDK with stub fetch; hidden parse-repair multiplication is removed. External Codex/Claude executables can make opaque internal requests: their wire budget is not proven or controlled by this change. |
+| 6 | Blocked | Real filesystem cache tests pass for invalid/legacy output, valid hits, eviction, unrelated entries, semantic validation and cache publication failure without another provider call. HTTP usage/cache/control-row diagnostics pass. External CLI internal request counts and unknown usage/cost reporting are not fully verified; the whole criterion remains open. |
+| 7 | Blocked | No interactive Retry loop is enabled. Shared non-destructive admission, protected output replacement and input-version rechecks are unavailable. Three-page isolated-retry integration is not run. |
+| 8 | Blocked | Automatic rounds are bounded and retry-all is rejected without consumption, but granting a new manual page round is intentionally unavailable under the same safety prerequisite. |
+| 9 | Blocked | Real SQLite decision-route tests retain both filtering versions byte-for-byte; this proves decisions do not mutate content, not protected runner Skip behavior. Missing-input downstream blocking and manual-prune preservation across reruns require shared mechanisms. |
+| 10 | Blocked | No retry replacement is introduced. Existing pre-run clearing and unguarded Meaningfulness writes prevent a full preservation claim. Concurrent edit, protected output, media/history and failure-during-publication acceptance remain open. |
+| 11 | Passed | Actual Hono routes return 400 for ineligible Retry/retry-all, retaining the same pending decision. Retry is unavailable for every stage until safe support exists. |
+| 12 | Passed | API tests reject wrong book/run/step/page, strict invalid bodies, stale and cancelled decisions; concurrent duplicate submissions yield one 200 and one 409. Legacy clients may omit additive context: the opaque ID still binds to the URL book and active run. |
+| 13 | Passed | Broker fake-time tests exercise initial/subsequent disconnect, reconnect, 30-second grace and ten-minute timeout. API polling matches SSE. Production Studio browser acceptance recovers after reload and removes a decision resolved in a second tab. |
+| 14 | Not run | Broker tests pass for run-end/cancel cleanup, run-scoped bulk policy, rejecting old run callbacks and fresh-broker stale IDs. Actual process-kill/restart with persisted interrupted-state verification was not exercised; CLI step-run persistence is also absent in the exercised flow. No durable restart guarantee is claimed. |
+| 15 | Passed | Actual compiled CLI on a fresh one-page representative-book fixture exits 1 in 5.6 seconds with no dialog after six stubbed outbound requests: three metadata and three Meaningfulness. Existing DAG/runner failure tests pass. This is not a protected rerun or crash-recovery acceptance. |
+| 16 | Blocked | Durable page-specific skipped-with-error summaries, downstream cardinality and freshness-qualified readiness are not implemented by this slice. Existing Skip/Stop behavior must not be described as satisfying this criterion. |
+| 17 | Passed | Shared additive diagnostics expose request/attempt identity, class, terminal outcome, cache/provider-call flags and available usage. Typed errors do not expose raw provider bodies; Debug tests exclude no-call cancellation rows from provider totals while retaining inspectability. Real CLI SQLite logs show three correlated attempts per work unit. External CLI accounting limitation remains under AC-6. |
+| 18 | Passed | New diagnostic/error labels and existing Skip/Stop dialog are translated in all five locales. Component tests cover accessible alert, duplicate disabling and rejection retention. Production Studio acceptance covers failed submission, refresh, Stop, reload and two tabs; no stage advertises Retry. Future Retry and qualified completion controls remain blocked under AC-7/16. |
+
+Test paths above are under `packages/llm/src/__tests__/`. Decision coverage is in
+`apps/api/src/routes/stages-decision.test.ts`,
+`apps/api/src/services/page-error-decisions.test.ts`, and
+`apps/api/src/services/stage-service.test.ts`; dialog coverage is in
+`apps/studio/src/components/pipeline/components/PageErrorDecisionDialog.test.tsx`.
+The SQLite tests verify the decision boundary, not a missing recovery transaction.
+
+## Executed checks
+
+| Check | Result |
+|---|---|
+| Untouched develop baseline: `pnpm test --maxWorkers=2 --testTimeout=30000` | 277 files, 3,604 tests passed before changes. |
+| Final `pnpm test --maxWorkers=2 --testTimeout=30000` | 281 files, 3,661 tests passed. Its pretest runs `pnpm build`, which passed. Subsequent source edits were formatting only; affected tests were rerun. |
+| Focused retry/cache/classification/decision/Studio tests | 10 files, 125 tests passed before the full run; final formatting check reran decision-route/dialog tests. |
+| `pnpm typecheck` | Passed. |
+| `pnpm lint` | Passed with zero errors and eight unused-suppression warnings, matching a separately exercised untouched-develop baseline. |
+| `pnpm --filter @adt/studio extract` and `pnpm --filter @adt/studio exec lingui compile --strict` | Passed; 3,622 messages, zero missing translations in es/fr/pt-BR/sq. English source catalog updated too. |
+| `pnpm --filter @adt/studio build` | Production build passed, with chunk-size warning. |
+| `node apps/api/scripts/bundle-server.mjs` and `node apps/api/scripts/bundle-electron-server.mjs` | Bundles built; this does not prove packaged Desktop runtime or installer behavior. |
+| `docker build --target app -t adt-studio-spec0013:local --progress plain .` | Combined release-target image built. Disposable loopback container served `/api/health` with status ok and Studio `/` with HTTP 200. No host books mounted. |
+| Production Studio representative-book acceptance | Real built SPA, actual API decision routes/broker and disposable momograde1 copy. Provider execution disabled. Reload recovery, rejection alert, refresh/Stop and two-tab resolution passed without JavaScript errors. Book DB unchanged by decisions after the copy's initial schema migration. Original book untouched. |
+| Fresh-book CLI acceptance | Actual compiled CLI, representative PDF first page, all provider traffic intercepted at fetch with 503. Exit 1, six actual transport calls total, one source page and filtering version retained. No credentials/live paid traffic used. |
+| Final diff and document checks | `git diff origin/develop --check` passed; spec front matter, all 18 AC IDs, INDEX status/link, local documentation links and absence of conflict markers verified. Final review removed inherited INDEX entries and rebase markers. |
+| `pnpm lint:invariants` | Not available in this repository. Added HTTP budget invariant is exercised by the full Vitest suite; no invented aggregate check is claimed. |
+
+Logs and local browser/CLI harnesses are retained under the worktree's
+`tmp/acceptance/`; they are local verification artifacts, not application code.
+No hosted CI was run for unpublished commits. No signed installer, packaged
+Desktop launch, Windows, paid-provider, release/upgrade or complete protected
+three-page recovery flow was exercised. The Docker smoke is a development check,
+not release verification. Browser verification uses an injected pending decision
+with the real API broker: it does not exercise an enabled manual Retry worker.
+
+## Prerequisites and outstanding decisions
+
+- #879/SPEC-0001 inspected head: `375081fc3ba84b185861c7977623ae2d589eb34a`;
+  #880/SPEC-0002 inspected head: `5eeaab68665f594f828dcf448b30e52dc109ba7a`.
+  Both remain proposed documents. The inspected #886 local safe-extraction work
+  has shared writer admission but refuses downstream resume; importing it alone
+  would not make Meaningfulness retry safe.
+- Integrate implemented and tested shared admission, source/config/filter/output
+  version checks, manual/unknown-origin protection, non-destructive cleanup and
+  qualified freshness before enabling page Retry. This is a dependency gap, not
+  a request to ratify destructive behavior. Existing unsafe rerun paths are not
+  repaired or represented as safe by this PR.
+- Full provider-wire guarantees require a controllable/testable boundary for
+  external CLI providers. If their executables cannot expose that boundary,
+  explicitly review a spec amendment defining their supported guarantee; the
+  current acceptance criterion has not been silently weakened.
+- Product review of retained-result Skip/readiness semantics remains pending,
+  as does human approval of the specification. No approvers were fabricated.
+- The local branch contains only this spec and its implementation over develop,
+  preserving its INDEX entry. The remote PR still has its original documentation
+  head/base because pushing is prohibited. Retarget to develop alongside a later
+  authorized publication; changing only its base now would expose unrelated
+  inherited stack content. The original remote stack is recoverable from the
+  backup ref above. PR #712 is unchanged and remains attributed as the starting
+  point for classification, HTTP-budget tests and decision/UI adaptation.
