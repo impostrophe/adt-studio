@@ -301,9 +301,10 @@ describe("createCodexStructuredTextBackend", () => {
   it("rejects output that does not match the schema", async () => {
     const fake = fakeCli(successTurn({ finalMessage: '{"title":"Atlas"}' }))
 
-    await expect(backendWith(fake).generateStructured(makeRequest())).rejects.toThrow(
-      /did not match the schema/,
-    )
+    await expect(backendWith(fake).generateStructured(makeRequest())).rejects.toMatchObject({
+      name: "LLMValidationError",
+      feedback: [expect.stringContaining("did not match the schema")],
+    })
   })
 
   it("names the configured API key when OpenAI rejects it", async () => {
@@ -661,5 +662,16 @@ describe("codex toJsonSchema", () => {
 
     expect(toJsonSchema(plain)).toBe(plain)
     expect(() => toJsonSchema("nope")).toThrow(/Codex structured output/)
+  })
+})
+
+it("keeps absent Codex usage unknown and preserves usage on schema rejection", async () => {
+  const missing = fakeCli(successTurn({ usage: undefined }))
+  expect((await backendWith(missing).generateStructured(makeRequest())).usage).toBeUndefined()
+  const invalid = fakeCli(successTurn({ finalMessage: '{"title":"bad","pages":"wrong"}' }))
+  await expect(backendWith(invalid).generateStructured(makeRequest())).rejects.toMatchObject({
+    name: "LLMValidationError",
+    usage: { inputTokens: 10, outputTokens: 6 },
+    output: { title: "bad", pages: "wrong" },
   })
 })

@@ -32,7 +32,8 @@ import {
 } from "./errors.js"
 import { NoObjectGeneratedError } from "ai"
 import { asZodLike } from "./providers/shared/json-schema.js"
-import type { ResolvedCredentials } from "./credentials.js"
+import { resolveProviderCredentials, type ResolvedCredentials } from "./credentials.js"
+import { knownTokenUsage } from "./token-usage.js"
 import {
   mergeResolvedCredentials,
   toResolvedCredentials,
@@ -134,7 +135,8 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
       const requestId = randomUUID()
 
       let currentMessages = messages
-      let totalUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 }
+      const totalUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 }
+      let totalUsageKnown = true
 
       const label = opts.log
         ? `${opts.log.taskType}${opts.log.pageId ? ` ${opts.log.pageId}` : ""}`
@@ -205,18 +207,18 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
       const legacyReadable = isLegacyCacheReadable(resolved.fingerprint)
 
       let providerCalls = 0
-      const secrets = Object.values(providerCredentials)
-        .flatMap((values) =>
-          Object.entries(values)
-            .filter(([key, value]) => /key|token|secret/i.test(key) && typeof value === "string")
-            .map(([, value]) => String(value)),
-        )
-        .filter(Boolean)
-      const scrub = (message: string): string => {
-        let safe = message.slice(0, 4096)
+      const provider = registry.get(resolved.providerId)
+      const effectiveCredentials = resolveProviderCredentials(provider, providerCredentials)
+      const secrets = provider.manifest.credentialFields
+        .filter((field) => field.kind === "secret")
+        .map((field) => effectiveCredentials[field.key])
+        .filter((secret): secret is string => !!secret)
+      const redact = (message: string): string => {
+        let safe = message
         for (const secret of secrets) safe = safe.split(secret).join("[redacted]")
         return safe
       }
+      const scrub = (message: string) => redact(message).slice(0, 4096)
 
       let originalHash: string | undefined
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -272,7 +274,14 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
             attempt,
             durationMs: Date.now() - attemptStartedAt,
             usage: attemptUsage,
-            messages: sanitizeMessages(buildLogMessages(system, currentMessages, output)),
+            messages: sanitizeMessages(buildLogMessages(system, currentMessages, output)).map(
+              (message) => ({
+                ...message,
+                content: message.content.map((part) =>
+                  part.type === "text" ? { ...part, text: redact(part.text) } : part,
+                ),
+              }),
+            ),
             ...fields,
           })
         }
@@ -303,9 +312,11 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
               timeoutMs: effectiveTimeoutMs,
               signal: externalSignal,
             })
-            attemptUsage = generated.usage
-            totalUsage.inputTokens += generated.usage.inputTokens
-            totalUsage.outputTokens += generated.usage.outputTokens
+            attemptUsage = knownTokenUsage(generated.usage)
+            if (attemptUsage) {
+              totalUsage.inputTokens += attemptUsage.inputTokens
+              totalUsage.outputTokens += attemptUsage.outputTokens
+            } else totalUsageKnown = false
             result = generated.object
           }
           externalSignal?.throwIfAborted()
@@ -334,7 +345,11 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
           }
           record({ success: true, outcome: "success" }, result)
           log.info(`[LLM] ${label} | ${cacheHit ? "cached" : "ok"} | ${Date.now() - t0}ms`)
-          return { object: result as T, usage: totalUsage, cached: cacheHit }
+          return {
+            object: result as T,
+            usage: totalUsageKnown ? totalUsage : undefined,
+            cached: cacheHit,
+          }
         } catch (err) {
           const classification = externalSignal?.aborted
             ? { errorClass: "cancelled" as const, retryable: false }
@@ -352,38 +367,50 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
                       outputTokens: err.usage.completionTokens,
                     }
                   : undefined
-            if (usage) {
-              attemptUsage = usage
-              totalUsage.inputTokens += usage.inputTokens
-              totalUsage.outputTokens += usage.outputTokens
+            attemptUsage = knownTokenUsage(usage)
+            if (attemptUsage) {
+              totalUsage.inputTokens += attemptUsage.inputTokens
+              totalUsage.outputTokens += attemptUsage.outputTokens
             }
           }
+          if (providerCall && !attemptUsage) totalUsageKnown = false
           const validation = classification.errorClass === "model-output"
           if (validation && cacheDir && cachedHash) bustCache(cacheDir, cachedHash)
-          const feedback = err instanceof LLMValidationError ? err.feedback : [message]
+          const feedback = err instanceof LLMValidationError ? err.feedback.map(scrub) : [message]
+          const failedOutput = validation
+            ? err instanceof LLMValidationError
+              ? err.output
+              : NoObjectGeneratedError.isInstance(err)
+                ? err.text
+                : null
+            : null
           const retry = classification.retryable && attempt < maxRetries
           // Validation retries keep their existing immediate feedback behavior.
           const delayMs =
             retry && !validation ? boundedRetryDelay(err, backoffDelay(attempt)) : undefined
-          record({
-            ...classification,
-            errorCount: feedback.length,
-            validationErrors: feedback,
-            error: validation ? undefined : message,
-            finalError: !retry,
-            retryDelayMs: delayMs,
-            outcome:
-              classification.errorClass === "cancelled"
-                ? "cancelled"
-                : retry
-                  ? "retrying"
-                  : "failed",
-          })
+          record(
+            {
+              ...classification,
+              errorCount: feedback.length,
+              validationErrors: feedback,
+              error: validation ? undefined : message,
+              finalError: !retry,
+              retryDelayMs: delayMs,
+              outcome:
+                classification.errorClass === "cancelled"
+                  ? "cancelled"
+                  : retry
+                    ? "retrying"
+                    : "failed",
+            },
+            failedOutput ?? null,
+          )
           if (validation)
             currentMessages = appendValidationFeedback(
               currentMessages,
-              err instanceof LLMValidationError ? (err.output ?? null) : null,
+              failedOutput ?? null,
               feedback,
+              redact,
             )
           if (!retry) throw new LLMCallError(classification, attempt + 1, providerCalls, requestId)
           if (delayMs !== undefined) {
@@ -504,12 +531,13 @@ function appendValidationFeedback(
   messages: Message[],
   failedResult: unknown,
   errors: string[],
+  redact: (message: string) => string,
 ): Message[] {
   return [
     ...messages,
     {
       role: "assistant" as const,
-      content: JSON.stringify(failedResult, null, 2),
+      content: redact(JSON.stringify(failedResult, null, 2)),
     },
     {
       role: "user" as const,

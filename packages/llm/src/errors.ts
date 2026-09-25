@@ -83,12 +83,21 @@ function status(value: unknown): number | undefined {
   return typeof code === "number" && Number.isInteger(code) ? code : undefined
 }
 
+// DOMException names are native accessors rather than own data properties.
+// Call the native getter directly so an untrusted own getter is never invoked.
+function errorName(value: unknown): string {
+  if (value instanceof DOMException) {
+    try {
+      return Object.getOwnPropertyDescriptor(DOMException.prototype, "name")?.get?.call(value) ?? ""
+    } catch {
+      return ""
+    }
+  }
+  return str(field(value, "name"))
+}
+
 export function classifyLLMError(error: unknown): LLMErrorClassification {
   if (error instanceof LLMCallError) return error.classification
-  if (error instanceof DOMException && error.name === "TimeoutError")
-    return { errorClass: "request-timeout", retryable: true }
-  if (error instanceof DOMException && error.name === "AbortError")
-    return { errorClass: "cancelled", retryable: false }
   const values = chain(error)
   const http = values.map(status).find((s) => s !== undefined)
   const result = (
@@ -110,7 +119,7 @@ export function classifyLLMError(error: unknown): LLMErrorClassification {
     )
   )
     return result("non-retryable", false)
-  if (values.some((v) => str(field(v, "name")) === "AbortError")) return result("cancelled", false)
+  if (values.some((v) => errorName(v) === "AbortError")) return result("cancelled", false)
   if (values.some((v) => APICallError.isInstance(v) && v.isRetryable === false))
     return result("non-retryable", false)
   if (http === 408) return result("request-timeout", true)
@@ -121,21 +130,20 @@ export function classifyLLMError(error: unknown): LLMErrorClassification {
       (v) =>
         v instanceof LLMValidationError ||
         NoObjectGeneratedError.isInstance(v) ||
-        ["AI_TypeValidationError", "AI_JSONParseError", "ZodError"].includes(str(field(v, "name"))),
+        ["AI_TypeValidationError", "AI_JSONParseError", "ZodError"].includes(errorName(v)),
     )
   )
     return result("model-output", true)
   for (const v of values) {
     const code = str(field(v, "code")).toUpperCase()
     if (CONNECT.has(code)) return result("connect-timeout", true)
-    if (TIMEOUT.has(code) || str(field(v, "name")) === "TimeoutError")
-      return result("request-timeout", true)
+    if (TIMEOUT.has(code) || errorName(v) === "TimeoutError") return result("request-timeout", true)
     if (CLOSED.has(code)) return result("connection-closed", true)
   }
   // Text is a fallback only; trusted typed signals above take precedence.
   const messages = values.map((v) => str(field(v, "message")) || str(v)).join(" ")
   if (
-    /invalid[_ ]api[_ ]key|incorrect api key|insufficient[_ ]quota|billing hard limit|unauthorized|forbidden|unsupported (?:provider|model)|model (?:is )?not found/i.test(
+    /invalid[_ ]api[_ ]key|incorrect api key|insufficient[_ ]quota|billing hard limit|unauthorized|forbidden|unsupported (?:provider|model)|model (?:is )?not found|usage limit reached/i.test(
       messages,
     )
   )

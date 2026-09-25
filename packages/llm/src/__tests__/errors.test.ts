@@ -104,3 +104,15 @@ it("bounds provider retry-after without shortening exponential backoff", () => {
   expect(boundedRetryDelay(error("0.1"), 2000)).toBe(2000)
   expect(boundedRetryDelay(error("invalid"), 1000)).toBe(1000)
 })
+
+it("classifies native timeout and abort causes behind SDK or CLI wrappers", () => {
+  expect(
+    classifyLLMError(new Error("wrapped", { cause: new DOMException("timeout", "TimeoutError") })),
+  ).toMatchObject({ errorClass: "request-timeout", retryable: true })
+  expect(
+    classifyLLMError(new Error("wrapped", { cause: new DOMException("stop", "AbortError") })),
+  ).toMatchObject({ errorClass: "cancelled", retryable: false })
+  expect(
+    classifyLLMError(new Error("Codex returned no structured output: usage limit reached")),
+  ).toMatchObject({ retryable: false })
+})

@@ -1,3 +1,5 @@
+import { LLMValidationError } from "../../errors.js"
+import { knownTokenUsage } from "../../token-usage.js"
 import { tmpdir } from "node:os"
 import type {
   BackendContext,
@@ -14,10 +16,7 @@ import {
   type ClaudeAgentUsage,
   type ClaudeCliRunner,
 } from "./cli.js"
-import {
-  MISSING_CLAUDE_CLI_MESSAGE,
-  resolveClaudeAgentExecutable,
-} from "./executable.js"
+import { MISSING_CLAUDE_CLI_MESSAGE, resolveClaudeAgentExecutable } from "./executable.js"
 import { asZodLike, toJsonSchema, toPromptBlocks } from "./request.js"
 
 /** A type alias, not an interface: `ProviderCredentialValues` needs an implicit index signature. */
@@ -65,9 +64,7 @@ export function createClaudeAgentStructuredTextBackend(
   const cwd = options.scratchDir ?? tmpdir()
 
   return {
-    async generateStructured<T>(
-      request: StructuredTextRequest,
-    ): Promise<StructuredTextResult<T>> {
+    async generateStructured<T>(request: StructuredTextRequest): Promise<StructuredTextResult<T>> {
       const executable = resolveExecutable()
       if (!executable) {
         throw new Error(MISSING_CLAUDE_CLI_MESSAGE)
@@ -117,8 +114,10 @@ export function createClaudeAgentStructuredTextBackend(
             : null
 
       if (value === null || value === undefined) {
-        throw new Error(
-          `Claude Agent returned no structured output. Response: ${(rawText ?? "").slice(0, 400)}`,
+        throw new LLMValidationError(
+          ["Claude Agent returned no structured output. Return a JSON object only."],
+          rawText,
+          usage,
         )
       }
 
@@ -129,8 +128,10 @@ export function createClaudeAgentStructuredTextBackend(
 
       const parsed = zod.safeParse(value)
       if (!parsed.success) {
-        throw new Error(
-          `Claude Agent output did not match the schema. Response: ${JSON.stringify(value).slice(0, 400)}`,
+        throw new LLMValidationError(
+          ["Claude Agent output did not match the schema. Return corrected JSON."],
+          value,
+          usage,
         )
       }
       return { object: parsed.data as T, usage, ...(rawText ? { rawText } : {}) }
@@ -189,14 +190,15 @@ function buildAbortSignal(request: StructuredTextRequest): AbortSignal {
 }
 
 /** Session-cumulative in the CLI's result event, which equals the turn for a single round. */
-function toTokenUsage(usage: ClaudeAgentUsage | undefined): TokenUsage {
-  return {
+function toTokenUsage(usage: ClaudeAgentUsage | undefined): TokenUsage | undefined {
+  if (!usage) return undefined
+  return knownTokenUsage({
     inputTokens:
-      (usage?.input_tokens ?? 0) +
+      (usage.input_tokens ?? NaN) +
       (usage?.cache_creation_input_tokens ?? 0) +
       (usage?.cache_read_input_tokens ?? 0),
-    outputTokens: usage?.output_tokens ?? 0,
-  }
+    outputTokens: usage.output_tokens,
+  })
 }
 
 function formatErrors(result: ClaudeAgentResultEvent): string {

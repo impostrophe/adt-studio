@@ -1,3 +1,5 @@
+import { LLMValidationError } from "../../errors.js"
+import { knownTokenUsage } from "../../token-usage.js"
 import type {
   BackendContext,
   StructuredTextBackend,
@@ -32,9 +34,7 @@ export function createCodexStructuredTextBackend(
   const runTurn = options.runTurn ?? runCodexCli
 
   return {
-    async generateStructured<T>(
-      request: StructuredTextRequest,
-    ): Promise<StructuredTextResult<T>> {
+    async generateStructured<T>(request: StructuredTextRequest): Promise<StructuredTextResult<T>> {
       const apiKey = context.credentials.apiKey
       const schema = toJsonSchema(request.schema)
       const native = request.strategy === "native-schema"
@@ -69,8 +69,13 @@ export function createCodexStructuredTextBackend(
       const value = rawText ? extractJsonObject(rawText) : null
 
       if (value === null || value === undefined) {
-        throw new Error(
-          `Codex returned no structured output${formatAdvisoryErrors(turn.advisoryErrors)}. Response: ${rawText.slice(0, 400)}`,
+        // CLI-reported failures are provider errors, not invalid model output.
+        if (turn.advisoryErrors.length)
+          throw new Error(`Codex returned no structured output: ${turn.advisoryErrors.join("; ")}`)
+        throw new LLMValidationError(
+          ["Codex returned no structured output. Return a JSON object only."],
+          rawText,
+          usage,
         )
       }
 
@@ -81,8 +86,10 @@ export function createCodexStructuredTextBackend(
 
       const parsed = zod.safeParse(value)
       if (!parsed.success) {
-        throw new Error(
-          `Codex output did not match the schema. Response: ${JSON.stringify(value).slice(0, 400)}`,
+        throw new LLMValidationError(
+          ["Codex output did not match the schema. Return corrected JSON."],
+          value,
+          usage,
         )
       }
       return { object: parsed.data as T, usage, ...(rawText ? { rawText } : {}) }
@@ -111,10 +118,6 @@ function authFailureHint(apiKey: string | undefined, message: string): string {
   return ". No API key is configured and no Codex CLI login was found — sign in from Settings → Providers, run `codex login` on this machine, or set an API key"
 }
 
-function formatAdvisoryErrors(messages: readonly string[]): string {
-  return messages.length ? ` (${messages.join("; ")})` : ""
-}
-
 function buildAbortSignal(request: StructuredTextRequest): AbortSignal {
   const timeout = AbortSignal.timeout(request.timeoutMs ?? DEFAULT_TIMEOUT_MS)
   return request.signal ? AbortSignal.any([timeout, request.signal]) : timeout
@@ -124,9 +127,10 @@ function buildAbortSignal(request: StructuredTextRequest): AbortSignal {
  * The CLI reports OpenAI Responses usage, where cached input and reasoning output
  * are subsets of their totals rather than additional tokens.
  */
-function toTokenUsage(usage: CodexCliUsage | undefined): TokenUsage {
-  return {
-    inputTokens: usage?.input_tokens ?? 0,
-    outputTokens: usage?.output_tokens ?? 0,
-  }
+function toTokenUsage(usage: CodexCliUsage | undefined): TokenUsage | undefined {
+  if (!usage) return undefined
+  return knownTokenUsage({
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+  })
 }

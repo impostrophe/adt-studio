@@ -118,7 +118,7 @@ async function generateWithParseRepair<T>(
   }
   const extracted = extractJsonObject(generated.text)
   if (extracted === null) {
-    throw new LLMValidationError(["That was not valid JSON. Return a JSON object only."], undefined, usage)
+    throw new LLMValidationError(["That was not valid JSON. Return a JSON object only."], generated.text, usage)
   }
   if (!zod) return { object: extracted as T, usage, rawText: generated.text }
   const parsed = zod.safeParse(extracted)

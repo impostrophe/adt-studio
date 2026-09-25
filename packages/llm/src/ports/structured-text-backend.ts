@@ -29,7 +29,7 @@ export interface StructuredTextRequest {
 
 export interface StructuredTextResult<T> {
   object: T
-  usage: TokenUsage
+  usage?: TokenUsage
   /** Present only when the adapter parsed the object client-side. */
   rawText?: string
 }

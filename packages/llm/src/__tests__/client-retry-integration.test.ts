@@ -449,3 +449,55 @@ describe("retry timing and concurrent callers", () => {
     expect(new Set(logs.map((entry) => entry.requestId)).size).toBe(2)
   })
 })
+
+describe("review diagnostic regressions", () => {
+  it("keeps unavailable provider usage unknown rather than returning zero or NaN", async () => {
+    const logs: LlmLogEntry[] = []
+    fetchMock.mockImplementation(async () => {
+      const body = await response('{"ok":true}').json()
+      delete body.usage
+      return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
+    })
+    const result = await model({ onLog: (entry) => logs.push(entry) }).generateObject(request)
+    expect(result.usage).toBeUndefined()
+    expect(logs[0].usage).toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+  it("retains the failed model response for inspection while redacting resolved server credentials", async () => {
+    vi.stubEnv("CUSTOM_OPENAI_API_KEY", "server-secret-value")
+    const logs: LlmLogEntry[] = []
+    try {
+      fetchMock.mockImplementation(async () => response('{"ok":"wrong-shape server-secret-value"}'))
+      await exhaust(
+        model({
+          credentials: { customBaseUrl: "http://provider.test/v1" },
+          onLog: (entry) => logs.push(entry),
+        }).generateObject({ ...request, maxRetries: 0 }),
+      )
+      expect(JSON.stringify(logs[0].messages)).toContain("wrong-shape")
+      expect(JSON.stringify(logs)).not.toContain("server-secret-value")
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+  it("redacts server credentials from semantic feedback and later request logs", async () => {
+    vi.stubEnv("CUSTOM_OPENAI_API_KEY", "server-secret-value")
+    const logs: LlmLogEntry[] = []
+    try {
+      fetchMock.mockImplementation(async () => response('{"ok":true}'))
+      await exhaust(
+        model({
+          credentials: { customBaseUrl: "http://provider.test/v1" },
+          onLog: (entry) => logs.push(entry),
+        }).generateObject({
+          ...request,
+          validate: () => ({ valid: false, errors: ["Rejected server-secret-value"] }),
+        }),
+      )
+      expect(JSON.stringify(logs)).not.toContain("server-secret-value")
+      expect(String(fetchMock.mock.calls[1][1]?.body)).not.toContain("server-secret-value")
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+})
