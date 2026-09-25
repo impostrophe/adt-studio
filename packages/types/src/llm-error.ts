@@ -1,8 +1,15 @@
 import { z } from "zod"
 
 export const LLMErrorClass = z.enum([
-  "connect-timeout", "request-timeout", "connection-closed", "model-output",
-  "rate-limit", "server-error", "unknown", "non-retryable", "cancelled",
+  "connect-timeout",
+  "request-timeout",
+  "connection-closed",
+  "model-output",
+  "rate-limit",
+  "server-error",
+  "unknown",
+  "non-retryable",
+  "cancelled",
 ])
 export type LLMErrorClass = z.infer<typeof LLMErrorClass>
 export const LLMErrorClassification = z.object({

@@ -23,7 +23,13 @@ import {
 } from "./cache.js"
 import { sanitizeMessages, type LlmLogEntry } from "./log.js"
 import { createLogger, type LogLevel } from "./logger.js"
-import { boundedRetryDelay, classifyLLMError, safeLLMErrorMessage, LLMCallError, LLMValidationError } from "./errors.js"
+import {
+  boundedRetryDelay,
+  classifyLLMError,
+  safeLLMErrorMessage,
+  LLMCallError,
+  LLMValidationError,
+} from "./errors.js"
 import { NoObjectGeneratedError } from "ai"
 import { asZodLike } from "./providers/shared/json-schema.js"
 import type { ResolvedCredentials } from "./credentials.js"
@@ -71,7 +77,16 @@ export interface CreateLLMModelOptions {
  * retries, inspectable logging and optional prompt rendering.
  */
 export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
-  const { modelId, cacheDir, promptEngine, onLog, rateLimiter, credentials, logLevel, signal: modelSignal } = options
+  const {
+    modelId,
+    cacheDir,
+    promptEngine,
+    onLog,
+    rateLimiter,
+    credentials,
+    logLevel,
+    signal: modelSignal,
+  } = options
   const log = createLogger(logLevel)
   const registry = options.registry ?? getDefaultProviderRegistry()
   const providerCredentials = mergeResolvedCredentials(
@@ -80,19 +95,14 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
   )
 
   return {
-    async renderPrompt(
-      name: string,
-      context: Record<string, unknown>,
-    ): Promise<Message[]> {
+    async renderPrompt(name: string, context: Record<string, unknown>): Promise<Message[]> {
       if (!promptEngine) {
         throw new Error("promptEngine required for renderPrompt")
       }
       return promptEngine.renderPrompt(name, context, { modelId })
     },
 
-    async generateObject<T>(
-      opts: GenerateObjectOptions
-    ): Promise<GenerateObjectResult<T>> {
+    async generateObject<T>(opts: GenerateObjectOptions): Promise<GenerateObjectResult<T>> {
       // Resolve prompt to system + messages if needed
       let system = opts.system
       let messages = opts.messages ?? []
@@ -110,16 +120,9 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
           throw new Error("promptEngine required when using prompt option")
         }
         resolvedPromptName = promptEngine.resolvePrompt(opts.prompt, { modelId }).resolvedName
-        const allMessages = await promptEngine.renderPrompt(
-          opts.prompt,
-          context,
-          { modelId },
-        )
+        const allMessages = await promptEngine.renderPrompt(opts.prompt, context, { modelId })
         const systemMsg = allMessages.find((m) => m.role === "system")
-        system =
-          typeof systemMsg?.content === "string"
-            ? systemMsg.content
-            : undefined
+        system = typeof systemMsg?.content === "string" ? systemMsg.content : undefined
         messages = allMessages.filter((m) => m.role !== "system")
       }
 
@@ -202,10 +205,13 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
       const legacyReadable = isLegacyCacheReadable(resolved.fingerprint)
 
       let providerCalls = 0
-      const secrets = Object.values(providerCredentials).flatMap((values) =>
-        Object.entries(values).filter(([key, value]) => /key|token|secret/i.test(key) && typeof value === "string")
-          .map(([, value]) => String(value)),
-      ).filter(Boolean)
+      const secrets = Object.values(providerCredentials)
+        .flatMap((values) =>
+          Object.entries(values)
+            .filter(([key, value]) => /key|token|secret/i.test(key) && typeof value === "string")
+            .map(([, value]) => String(value)),
+        )
+        .filter(Boolean)
       const scrub = (message: string): string => {
         let safe = message.slice(0, 4096)
         for (const secret of secrets) safe = safe.split(secret).join("[redacted]")
@@ -219,28 +225,53 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
         let attemptUsage: TokenUsage | undefined
         let providerCall = false
         let cacheHit = false
+        let validated = false
         const hash = computeCacheKeyV2({
-          providerId: resolved.providerId, modelId: resolved.modelId,
-          fingerprint: resolved.fingerprint, operation: "structured-text",
-          system, messages: currentMessages, schema: opts.schema,
-          structuredOutputStrategy: strategy, temperature: effectiveTemperature,
+          providerId: resolved.providerId,
+          modelId: resolved.modelId,
+          fingerprint: resolved.fingerprint,
+          operation: "structured-text",
+          system,
+          messages: currentMessages,
+          schema: opts.schema,
+          structuredOutputStrategy: strategy,
+          temperature: effectiveTemperature,
           maxTokens: opts.maxTokens,
         })
         originalHash ??= hash
-        const legacyHashes = (legacyReadable
-          ? [...new Set([opts.mode, legacyModeForStrategy(strategy)])] : [])
-          .map((mode) => computeHash({ modelId, mode, system,
-            messages: currentMessages, schema: opts.schema, temperature: opts.temperature }))
+        const legacyHashes = (
+          legacyReadable ? [...new Set([opts.mode, legacyModeForStrategy(strategy)])] : []
+        ).map((mode) =>
+          computeHash({
+            modelId,
+            mode,
+            system,
+            messages: currentMessages,
+            schema: opts.schema,
+            temperature: opts.temperature,
+          }),
+        )
         let cachedHash: string | undefined
         const record = (fields: Partial<LlmLogEntry>, output: unknown | null = null) => {
           if (!opts.log || !onLog) return
           onLog({
-            requestId, timestamp: new Date().toISOString(),
-            taskType: opts.log.taskType, pageId: opts.log.pageId,
-            promptName: logPromptName ?? opts.log.promptName, requestedPromptName,
-            sectionIndex: opts.log.sectionIndex, correlationId: opts.log.correlationId,
-            modelId, cacheHit, providerCall, maxAttempts: maxRetries + 1, success: false, errorCount: 0,
-            attempt, durationMs: Date.now() - attemptStartedAt, usage: attemptUsage,
+            requestId,
+            timestamp: new Date().toISOString(),
+            taskType: opts.log.taskType,
+            pageId: opts.log.pageId,
+            promptName: logPromptName ?? opts.log.promptName,
+            requestedPromptName,
+            sectionIndex: opts.log.sectionIndex,
+            correlationId: opts.log.correlationId,
+            modelId,
+            cacheHit,
+            providerCall,
+            maxAttempts: maxRetries + 1,
+            success: false,
+            errorCount: 0,
+            attempt,
+            durationMs: Date.now() - attemptStartedAt,
+            usage: attemptUsage,
             messages: sanitizeMessages(buildLogMessages(system, currentMessages, output)),
             ...fields,
           })
@@ -250,7 +281,11 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
           if (cacheDir && !forceFresh) {
             for (const candidate of [hash, ...legacyHashes]) {
               result = readCache<T>(cacheDir, candidate)
-              if (result !== null) { cachedHash = candidate; cacheHit = true; break }
+              if (result !== null) {
+                cachedHash = candidate
+                cacheHit = true
+                break
+              }
             }
           }
           if (!cacheHit) {
@@ -259,9 +294,14 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
             providerCall = true
             providerCalls++
             const generated = await resolved.backend.generateStructured<T>({
-              system, messages: currentMessages, schema: opts.schema, strategy,
-              temperature: effectiveTemperature, maxTokens: opts.maxTokens,
-              timeoutMs: effectiveTimeoutMs, signal: externalSignal,
+              system,
+              messages: currentMessages,
+              schema: opts.schema,
+              strategy,
+              temperature: effectiveTemperature,
+              maxTokens: opts.maxTokens,
+              timeoutMs: effectiveTimeoutMs,
+              signal: externalSignal,
             })
             attemptUsage = generated.usage
             totalUsage.inputTokens += generated.usage.inputTokens
@@ -273,7 +313,11 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
           const schema = asZodLike(opts.schema)
           if (schema) {
             const parsed = schema.safeParse(result)
-            if (!parsed.success) throw new LLMValidationError(["Response must match the required JSON schema."], result)
+            if (!parsed.success)
+              throw new LLMValidationError(
+                ["Response must match the required JSON schema."],
+                result,
+              )
             result = parsed.data as T
           }
           if (opts.validate) {
@@ -282,8 +326,9 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
             if (check.cleaned !== undefined) result = check.cleaned as T
           }
           externalSignal?.throwIfAborted()
-          // Never publish an invalid response as a successful cache entry.
-          if (cacheDir) {
+          validated = true
+          // Validated fresh output replaces ordinary keys; failed fresh calls retain them.
+          if (cacheDir && (!cacheHit || cachedHash !== hash)) {
             writeCache(cacheDir, hash, result)
             if (forceFresh && originalHash !== hash) writeCache(cacheDir, originalHash, result)
           }
@@ -293,13 +338,20 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
         } catch (err) {
           const classification = externalSignal?.aborted
             ? { errorClass: "cancelled" as const, retryable: false }
-            : classifyLLMError(err)
+            : validated
+              ? { errorClass: "non-retryable" as const, retryable: false }
+              : classifyLLMError(err)
           const message = safeLLMErrorMessage(classification)
           if (!attemptUsage) {
-            const usage = err instanceof LLMValidationError ? err.usage
-              : NoObjectGeneratedError.isInstance(err) && err.usage
-                ? { inputTokens: err.usage.promptTokens, outputTokens: err.usage.completionTokens }
-                : undefined
+            const usage =
+              err instanceof LLMValidationError
+                ? err.usage
+                : NoObjectGeneratedError.isInstance(err) && err.usage
+                  ? {
+                      inputTokens: err.usage.promptTokens,
+                      outputTokens: err.usage.completionTokens,
+                    }
+                  : undefined
             if (usage) {
               attemptUsage = usage
               totalUsage.inputTokens += usage.inputTokens
@@ -311,15 +363,28 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
           const feedback = err instanceof LLMValidationError ? err.feedback : [message]
           const retry = classification.retryable && attempt < maxRetries
           // Validation retries keep their existing immediate feedback behavior.
-          const delayMs = retry && !validation ? boundedRetryDelay(err, backoffDelay(attempt)) : undefined
-          record({ ...classification, errorCount: feedback.length,
-            validationErrors: feedback, error: validation ? undefined : message,
-            finalError: !retry, retryDelayMs: delayMs,
-            outcome: classification.errorClass === "cancelled" ? "cancelled" : retry ? "retrying" : "failed",
+          const delayMs =
+            retry && !validation ? boundedRetryDelay(err, backoffDelay(attempt)) : undefined
+          record({
+            ...classification,
+            errorCount: feedback.length,
+            validationErrors: feedback,
+            error: validation ? undefined : message,
+            finalError: !retry,
+            retryDelayMs: delayMs,
+            outcome:
+              classification.errorClass === "cancelled"
+                ? "cancelled"
+                : retry
+                  ? "retrying"
+                  : "failed",
           })
-          if (validation) currentMessages = appendValidationFeedback(
-            currentMessages, err instanceof LLMValidationError ? err.output ?? null : null, feedback,
-          )
+          if (validation)
+            currentMessages = appendValidationFeedback(
+              currentMessages,
+              err instanceof LLMValidationError ? (err.output ?? null) : null,
+              feedback,
+            )
           if (!retry) throw new LLMCallError(classification, attempt + 1, providerCalls, requestId)
           if (delayMs !== undefined) {
             log.info(`[LLM] ${label} | ${message} | retrying in ${delayMs}ms`)
@@ -330,7 +395,12 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
               providerCall = false
               cacheHit = false
               attemptUsage = undefined
-              record({ ...cancelled, finalError: true, outcome: "cancelled", error: "Request cancelled" })
+              record({
+                ...cancelled,
+                finalError: true,
+                outcome: "cancelled",
+                error: "Request cancelled",
+              })
               throw new LLMCallError(cancelled, attempt + 1, providerCalls, requestId)
             }
           }
@@ -380,9 +450,7 @@ function selectStrategy(
 
 /** Maps an effective strategy back to the deprecated `mode` the v1 cache key
  *  recorded, so a legacy dual-read still lands on the original entry. */
-function legacyModeForStrategy(
-  strategy: StructuredOutputStrategy,
-): GenerateObjectOptions["mode"] {
+function legacyModeForStrategy(strategy: StructuredOutputStrategy): GenerateObjectOptions["mode"] {
   if (strategy === "json-mode") return "json"
   if (strategy === "tool-call") return "tool"
   return undefined
@@ -416,7 +484,7 @@ function backoffDelay(attempt: number): number {
 function buildLogMessages(
   system: string | undefined,
   messages: Message[],
-  finalResult: unknown | null
+  finalResult: unknown | null,
 ): Message[] {
   const log: Message[] = []
   if (system) {
@@ -435,7 +503,7 @@ function buildLogMessages(
 function appendValidationFeedback(
   messages: Message[],
   failedResult: unknown,
-  errors: string[]
+  errors: string[],
 ): Message[] {
   return [
     ...messages,
