@@ -75,7 +75,8 @@ function acquire(dir: string): Lease {
     release() {
       lease.references--
       if (lease.references !== 0) return
-      if (!fs.existsSync(lock)) return // Explicit whole-book deletion.
+      // Explicit book deletion removes its lease along with the directory.
+      if (!fs.existsSync(dir)) return
       const owner = BookWriterOwner.parse(JSON.parse(fs.readFileSync(lock, "utf8")))
       if (owner.token !== token) throw new BookBusyError("Book writer ownership changed during the operation.")
       fs.unlinkSync(lock)

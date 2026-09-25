@@ -165,7 +165,7 @@ export interface FullPipelineOptions {
  * Run the full pipeline using the DAG runner for CLI use.
  */
 export async function runFullPipeline(options: FullPipelineOptions, progress: Progress = nullProgress): Promise<PipelineDAGResult> {
-  const bookDir = path.join(path.resolve(options.booksRoot), options.label)
+  const { bookDir } = resolveBookPaths(options.label, options.booksRoot)
   fs.mkdirSync(bookDir, { recursive: true })
   return withBookWriter(bookDir, async () => {
     prepareSectioningRun(options.label, options.booksRoot, "extract", "package", options.configPath)

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { openBookDb, createBookStorage } from "@adt/storage"
+import { openBookDb, createBookStorage, writeSectioningLifecycle } from "@adt/storage"
 import { zipSync } from "fflate"
 import { SCHEMA_VERSION } from "@adt/types"
 import type { StageName } from "@adt/types"
@@ -743,6 +743,7 @@ describe("POST /books/:label/stages/run", () => {
       },
     }
 
+    writeSectioningLifecycle(path.join(tmpDir, label), "dynamic", true)
     const app = createStageRoutes(stageService, mockEventBus, mockDecisions, tmpDir, "", "", globalConfigPath)
     const res = await app.request(`/books/${label}/stages/run`, {
       method: "POST",
@@ -766,7 +767,7 @@ describe("POST /books/:label/stages/run", () => {
       expect(verifyStorage.getLatestNodeData("web-rendering", "pg001")).not.toBeNull()
       const runs = new Map(verifyStorage.getStepRuns().map((r) => [r.step, r.status]))
       expect(runs.get("page-sectioning")).toBe("done")
-      expect(runs.has("web-rendering")).toBe(false)
+      expect(runs.get("web-rendering")).toBe("done")
     } finally {
       verifyStorage.close()
     }
