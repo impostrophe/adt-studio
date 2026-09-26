@@ -386,6 +386,26 @@ describe("buildCodexArgs", () => {
     expect(args).toContain("tools.web_search=false")
   })
 
+  it("retains OpenAI authentication while disabling internal transport retries", () => {
+    expect(args).toContain('model_provider="adt_bounded_openai"')
+    expect(args).toContain("model_providers.adt_bounded_openai.requires_openai_auth=true")
+    expect(args).toContain("model_providers.adt_bounded_openai.request_max_retries=0")
+    expect(args).toContain("model_providers.adt_bounded_openai.stream_max_retries=0")
+    expect(args).toContain("model_providers.adt_bounded_openai.supports_websockets=false")
+    expect(args).toContain("features.unbounded_connection_retries=false")
+    expect(args.some((arg) => arg.startsWith("model_providers.openai."))).toBe(false)
+    // Leave the CLI free to select its API-key or subscription endpoint.
+    expect(args.some((arg) => arg.includes(".base_url="))).toBe(false)
+  })
+
+  it("preserves and safely quotes the configured base URL", () => {
+    const apiBaseUrl = 'https://gateway.example/v1?value="quoted"'
+    const configured = buildCodexArgs({ model: "gpt-5.1", workDir: "/tmp/work", apiBaseUrl })
+    expect(configured).toContain(`model_providers.adt_bounded_openai.base_url=${JSON.stringify(apiBaseUrl)}`)
+    const blank = buildCodexArgs({ model: "gpt-5.1", workDir: "/tmp/work", apiBaseUrl: "  " })
+    expect(blank.some((arg) => arg.includes(".base_url="))).toBe(false)
+  })
+
   it("pins the working directory and the model, and reads the prompt from stdin", () => {
     expect(args[args.indexOf("--cd") + 1]).toBe("/tmp/work")
     expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.1")

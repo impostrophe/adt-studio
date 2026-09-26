@@ -39,6 +39,8 @@ export interface CodexCliRequest {
   signal: AbortSignal
   executable?: string
   scratchDir?: string
+  /** Explicit transport fixture override; production leaves endpoint selection to the CLI. */
+  apiBaseUrl?: string
 }
 
 export type CodexCliRunner = (request: CodexCliRequest) => Promise<CodexCliTurn>
@@ -57,6 +59,7 @@ export interface CodexArgsOptions {
   model: string
   workDir: string
   schemaPath?: string
+  apiBaseUrl?: string
   imagePaths?: readonly string[]
 }
 
@@ -87,7 +90,37 @@ export function buildCodexArgs(options: CodexArgsOptions): string[] {
     'approval_policy="never"',
     "-c",
     "tools.web_search=false",
+    "-c",
+    'model_provider="adt_bounded_openai"',
+    "-c",
+    'model_providers.adt_bounded_openai.name="OpenAI"',
+    "-c",
+    "model_providers.adt_bounded_openai.requires_openai_auth=true",
+    "-c",
+    "model_providers.adt_bounded_openai.request_max_retries=0",
+    "-c",
+    "model_providers.adt_bounded_openai.stream_max_retries=0",
+    "-c",
+    "model_providers.adt_bounded_openai.supports_websockets=false",
+    "-c",
+    'model_providers.adt_bounded_openai.env_http_headers={OpenAI-Organization="OPENAI_ORGANIZATION",OpenAI-Project="OPENAI_PROJECT"}',
+    "-c",
+    "features.unbounded_connection_retries=false",
   )
+
+  // Built-in provider IDs cannot be overridden in current CLIs. The custom
+  // definition retains OpenAI auth (resolved CODEX_API_KEY or the CLI login),
+  // auth-dependent default endpoint and organization/project headers. Use SSE
+  // so WebSocket fallback cannot add an extra request outside the facade.
+  // This does not cap agent tool continuations (see opt-in wire acceptance).
+  // Only an explicit runner override changes that endpoint. Do not adopt an
+  // ambient OPENAI_BASE_URL belonging to a different provider.
+  if (options.apiBaseUrl?.trim()) {
+    args.push(
+      "-c",
+      `model_providers.adt_bounded_openai.base_url=${JSON.stringify(options.apiBaseUrl.trim())}`,
+    )
+  }
 
   if (options.schemaPath) args.push("--output-schema", options.schemaPath)
   args.push("-")
@@ -112,6 +145,7 @@ export const runCodexCli: CodexCliRunner = async (request) => {
     const args = buildCodexArgs({
       model: request.model,
       workDir,
+      apiBaseUrl: request.apiBaseUrl,
       ...(schemaPath ? { schemaPath } : {}),
       ...(imagePaths.length ? { imagePaths } : {}),
     })
