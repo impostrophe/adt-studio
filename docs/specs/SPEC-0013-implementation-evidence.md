@@ -55,8 +55,8 @@ is pending.
 | 2 | Passed | Structured/nested quota, auth, permission and model classification tests; permanent HTTP failures stop after one actual transport request, including quota inside 429. |
 | 3 | Passed | Unknown errors, malformed JSON/schema/tool output and semantic rejection exhaust the shared budget. Parse repair now returns feedback to that budget; tests observe requests and feedback. |
 | 4 | Passed | Tests cancel before admission, during transport, admission wait and backoff, and combine model/per-call signals. No subsequent HTTP request. Runner and broker tests prevent an actionable recovery decision; concurrent-page regressions prove step Stop dismisses sibling decisions and Skip does not reopen admission while another page waits. |
-| 5 | Failed in external CLI scope | HTTP native-schema, JSON, tool and parse-repair strategies are tested over the actual SDK with stub fetch; hidden parse-repair multiplication is removed. Real Claude 2.1.260 acceptance now passes seven cases after disabling three internal retry paths, but token truncation sends 12 HTTP requests for a three-attempt budget. Codex built-in retry overrides are rejected; its production adapter is unchanged. See the 2026-09-26 follow-up below. |
-| 6 | Blocked | Real filesystem cache tests pass for invalid/legacy output, valid hits, eviction, unrelated entries, semantic validation and cache publication failure without another provider call. HTTP usage/cache/control-row diagnostics pass. Review fixes now preserve unknown usage and explain incomplete totals in Studio, including CLI adapters. A measured Claude truncation case still makes 12 wire requests behind three facade attempts; Codex remains unverified. Complete request/cost accounting is not satisfied. |
+| 5 | Failed in external CLI scope | HTTP native-schema, JSON, tool and parse-repair strategies are tested over the actual SDK with stub fetch; hidden parse-repair multiplication is removed. Real Claude 2.1.260 acceptance now passes seven cases after disabling three internal retry paths, but token truncation sends 12 HTTP requests for a three-attempt budget. Codex now disables HTTP/stream retries, WebSocket fallback and unbounded connection recovery while retaining OpenAI auth. Ten executable cases pass, but an unexpected tool call makes two requests with a budget of one. See the latest CLI follow-up in the review report. |
+| 6 | Blocked | Real filesystem cache tests pass for invalid/legacy output, valid hits, eviction, unrelated entries, semantic validation and cache publication failure without another provider call. HTTP usage/cache/control-row diagnostics pass. Review fixes now preserve unknown usage and explain incomplete totals in Studio, including CLI adapters. A measured Claude truncation case still makes 12 wire requests behind three facade attempts; Codex tool continuation makes two requests behind one facade attempt. Complete request/cost accounting is not satisfied. |
 | 7 | Blocked | No interactive Retry loop is enabled. Shared non-destructive admission, protected output replacement and input-version rechecks are unavailable. Three-page isolated-retry integration is not run. |
 | 8 | Blocked | Automatic rounds are bounded and retry-all is rejected without consumption, but granting a new manual page round is intentionally unavailable under the same safety prerequisite. |
 | 9 | Blocked | Real SQLite decision-route tests retain both filtering versions byte-for-byte; this proves decisions do not mutate content, not protected runner Skip behavior. Missing-input downstream blocking and manual-prune preservation across reruns require shared mechanisms. |
@@ -82,8 +82,9 @@ The SQLite tests verify the decision boundary, not a missing recovery transactio
 | Check | Result |
 |---|---|
 | Untouched develop baseline: `pnpm test --maxWorkers=2 --testTimeout=30000` | 277 files, 3,604 tests passed before changes. |
-| Current default `pnpm test --maxWorkers=2 --testTimeout=30000` | 283 files / 3,688 tests passed; one file / eight opt-in CLI tests skipped (195.59 seconds). Pretest build passed. The preceding review revision passed 3,684 tests. |
+| Current default `pnpm test --maxWorkers=2 --testTimeout=30000` | 283 files / 3,690 tests passed; two files / 19 opt-in CLI tests skipped (195.38 seconds). Pretest build passed. Earlier revisions passed 3,688 and 3,684 tests. |
 | Real Claude CLI budget acceptance (explicit executable setting) | Seven passed / one failed on Claude 2.1.260: token truncation sends 12 requests against a budget of three. This known failure is not covered by the passing default suite. |
+| Real Codex CLI budget acceptance (explicit executable setting) | Ten passed / one failed on 0.155.0-alpha.9.2: an unexpected tool call sends two requests against a budget of one. Auth selection, organization/project headers, transport retries and cancellation pass. |
 | Focused retry/cache/classification/decision/Studio tests | 12 files, 257 tests passed during implementation review, including the reproduced concurrency and diagnostic failures. |
 | `pnpm typecheck` | Passed. |
 | `pnpm lint` | Passed with zero errors and eight unused-suppression warnings, matching a separately exercised untouched-develop baseline. |
@@ -219,3 +220,26 @@ All 3,625 messages are translated in the five locales. The skipped-page Debug
 browser check passed, including reload persistence and no script errors. No
 current-head Docker, packaged Desktop, release or paid-provider verification is
 claimed.
+
+
+## Codex transport follow-up (2026-09-26)
+
+The [latest CLI review](SPEC-0013-review.md#cli-transport-hardening-and-remaining-agent-continuations-2026-09-26) supersedes the earlier statement that the Codex adapter is unchanged. Its transport retry and connection-recovery loops are now disabled with OpenAI authentication retained. Ten real Codex cases pass, including synthetic login/key precedence, organization/project headers and cancellation. An unexpected tool call still produces two actual requests with `maxRetries=0`. Claude's twelve-request truncation failure is reconfirmed. AC-5 remains failed in external CLI scope; AC-6 is incomplete.
+
+`pnpm test --maxWorkers=2 --testTimeout=30000`
+passed **283 files / 3,690 tests**, with two files / 19 opt-in executable tests
+skipped, in 195.38 seconds. Its pretest build passed. `pnpm typecheck`, Studio
+lint (zero errors, eight baseline warnings), API and Electron API bundling also
+passed. The separate executable suites remain **17 passed / 2 failed**. The
+final focused Codex run including unit/login tests was 80 passed / one failed;
+that failure is the retained tool-continuation assertion. No Studio strings
+changed in this pass, and no new browser, Docker, packaged Desktop, live paid
+provider or release verification is claimed.
+
+The first full invocation selected the machine's unaccepted Xcode installation
+and failed 22 Git-based script tests. Selecting the installed Command Line
+Tools via `DEVELOPER_DIR=/Library/Developer/CommandLineTools` resolved those
+failures; the final full result above includes those tests passing. This is not
+reported as a passing first run or as an unrelated code regression.
+
+Local implementation commit: `efc49c64`. No push or merge was performed.

@@ -222,3 +222,99 @@ claimed.
 
 Follow-up implementation commits: `8a34a18d` (Claude controls and executable
 acceptance), `65047445` (persisted Skip diagnostics and translated Studio view).
+
+## CLI transport hardening and remaining agent continuations (2026-09-26)
+
+The subsequent implementation pass reduces Codex's hidden transport retries.
+It does **not** establish an overall request ceiling for either external CLI.
+AC-5 remains failed in that scope and AC-6 remains incomplete.
+
+Before editing, the acceptance targets were AC-5 (actual provider requests must
+not multiply a facade round), AC-6 (request/usage visibility), and the associated
+AC-2/4/17 compatibility checks for permanent failures, cancellation and
+credentials. The executable test below exercises the real facade, adapter,
+process runner and installed CLI; it does not count mocked helper invocations.
+
+The Codex adapter now uses an internal custom definition with OpenAI
+authentication, zero HTTP/stream retries, SSE transport, and
+`features.unbounded_connection_retries=false`. The last setting matters:
+connection failures otherwise take a separate unbounded reconnect path even
+when stream retries are zero. The model/provider selection exposed to Studio
+is unchanged. No dependency or separate recovery subsystem was added.
+
+The definition retains the CLI's API-key/subscription credential selection and
+auth-dependent default endpoint. Organization/project headers remain forwarded.
+Synthetic login-file tests prove the configured API key outranks a stored login;
+without a configured key, the CLI sends the synthetic login token and account ID.
+The production adapter does not introduce an ambient `OPENAI_BASE_URL` override.
+An explicit runner-only endpoint seam routes acceptance traffic to loopback;
+these tests never read the user's login, and all outside proxy connections are
+rejected. Live subscription entitlement and token refresh are not verified.
+
+References: [OpenAI authentication](https://learn.chatgpt.com/docs/auth#alternative-model-providers),
+[provider retry configuration](https://learn.chatgpt.com/docs/config-file/config-reference),
+and the public Codex `responses_retry.rs` implementation inspected during this
+pass. The executable under test is `0.155.0-alpha.9.2`; behavior on other CLI
+versions, corporate gateways and packaged platforms is not certified.
+
+### Actual executable acceptance
+
+A corrected baseline probe routed the original built-in provider with its explicit
+`openai_base_url` setting. One invocation made **13 HTTP POSTs plus seven
+WebSocket upgrade attempts** against synthetic 503 responses in 15 seconds,
+before the probe stopped it. An earlier environment-only probe did not reach
+the loopback endpoint and is not used as provider-count evidence. With the new
+production transport controls, the 503 acceptance makes three HTTP requests
+for three facade attempts.
+
+| Provider / condition | Result |
+|---|---|
+| Codex 503, temporary 429, malformed JSON, closed stream, reset socket, truncated response | Passed: three actual requests for `maxRetries=2`. |
+| Codex permanent 403 | Passed: one actual request. |
+| Codex valid structured output, configured API key and synthetic CLI login | Passed: one request, valid result and reported usage; configured key takes precedence and login sends the account header. Organization/project headers verified in both cases. |
+| Codex cancellation | Passed: child stops, no subsequent provider request. |
+| Codex unexpected tool call | **Failed:** two actual requests with `maxRetries=0` (budget one). The CLI processes the unavailable tool and asks the model again inside one facade invocation. This is an agent continuation, not a transport retry. |
+| Claude token truncation | **Failed again:** twelve actual requests with `maxRetries=2` (budget three). Other seven Claude cases still pass. |
+
+The Codex suite therefore has **ten passing cases and one failing case**. Its
+new failing assertion is retained; no `test.fails` annotation or relaxed request
+count conceals it. Combined executable acceptance is **17 passed / 2 failed**.
+These 19 cases are opt-in and skipped by the normal repository suite.
+
+```sh
+ADT_CODEX_BUDGET_EXECUTABLE="$(command -v codex)" pnpm exec vitest run packages/llm/src/__tests__/codex-wire-budget.test.ts --maxWorkers=1
+ADT_CLAUDE_BUDGET_EXECUTABLE="$(command -v claude)" pnpm exec vitest run packages/llm/src/__tests__/claude-wire-budget.test.ts --maxWorkers=1
+```
+
+### What still needs implementation
+
+A true total-call limit must be enforced inside the executable or before each
+provider request. No supported total-call control was found for these installed
+versions. Claude's output-token recovery loop remains separate from its retry
+and turn controls; Codex's agent/tool continuation remains separate from its
+transport controls. Killing a child after observing stdout is not a reliable
+request gate because the next request may already be in flight.
+
+The remaining choices are an executable-supported call cap, or an authenticated
+transport boundary that demonstrably preserves login, routing and streaming.
+Those require further implementation and verification; prompt instructions or a
+narrower guarantee are not substitutes for the published criterion. No vendor
+binary, external PR, user login or user configuration was modified.
+
+`pnpm test --maxWorkers=2 --testTimeout=30000`
+passed **283 files / 3,690 tests**, with two files / 19 opt-in executable tests
+skipped, in 195.38 seconds. Its pretest build passed. `pnpm typecheck`, Studio
+lint (zero errors, eight baseline warnings), API and Electron API bundling also
+passed. The separate executable suites remain **17 passed / 2 failed**. The
+final focused Codex run including unit/login tests was 80 passed / one failed;
+that failure is the retained tool-continuation assertion. No Studio strings
+changed in this pass, and no new browser, Docker, packaged Desktop, live paid
+provider or release verification is claimed.
+
+The first full invocation selected the machine's unaccepted Xcode installation
+and failed 22 Git-based script tests. Selecting the installed Command Line
+Tools via `DEVELOPER_DIR=/Library/Developer/CommandLineTools` resolved those
+failures; the final full result above includes those tests passing. This is not
+reported as a passing first run or as an unrelated code regression.
+
+Local implementation commit: `efc49c64`. No push or merge was performed.
