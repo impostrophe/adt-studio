@@ -1,5 +1,5 @@
 import { withBookWriter } from "@adt/storage"
-import { createStoryboardPublication } from "@adt/pipeline"
+import { createStoryboardPublication, FIXED_LAYOUT_SECTIONING_NODE, SectioningSafetyError } from "@adt/pipeline"
 import crypto from "node:crypto"
 import path from "node:path"
 import { createBookStorage } from "@adt/storage"
@@ -64,7 +64,7 @@ export async function reRenderPages(options: ReRenderOptions[]): Promise<ReRende
       if (options.some((item) => !pages.has(item.pageId))) throw new Error("Requested page is outside the active source-page window")
       const results: ReRenderResult[] = []
       for (const item of options) results.push(await reRenderAdmittedPage(item, publication))
-      publication.publish()
+      publication.publish(options.map((item) => item.pageId))
       return results
     } finally { storage.close() }
   })
@@ -81,6 +81,9 @@ async function reRenderAdmittedPage(
   const typography = readTypography(storage)
 
   try {
+    if (sectionIndex !== undefined && storage.getLatestNodeData(FIXED_LAYOUT_SECTIONING_NODE, pageId)?.data != null) {
+      throw new SectioningSafetyError("STORYBOARD_INPUT_CHANGED", "A positioned page must be re-rendered as a whole before re-rendering a semantic section. Existing output is kept.")
+    }
     const structuringRow = storage.getLatestNodeData("page-sectioning", pageId)
 
     if (!structuringRow) {

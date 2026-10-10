@@ -12,12 +12,10 @@
  * packaging, TTS, easy-read, glossary, toc, captions, quizzes) must read the
  * tree that matches the rendered HTML, so it goes through this resolver.
  *
- * Selection is by node presence rather than config: `fixed-layout-sectioning`
- * is a `storyboard`-stage output, so `clearNodesByType` deletes it at the start
- * of every storyboard rerun and `processFixedLayoutPages` only re-writes it for
- * fixed-layout books. Its presence therefore reliably means "this page is
- * currently rendered fixed-layout" — including after a fixed→reflowable toggle,
- * which clears it.
+ * Selection follows published output rather than config. Fixed rendering
+ * publishes its positioned tree alongside HTML. Reflowable publication appends
+ * a null positioned-tree version in that same transaction, retaining the old
+ * tree in history. A config change alone never switches the active tree.
  */
 import type { NodeDataRow, Storage } from "@adt/storage"
 import type { PageSectioningOutput } from "@adt/types"
@@ -35,10 +33,10 @@ export function getRenderSectioningRow(
   storage: Storage,
   pageId: string,
 ): NodeDataRow | null {
-  return (
-    storage.getLatestNodeData(FIXED_LAYOUT_SECTIONING_NODE, pageId) ??
-    storage.getLatestNodeData(PAGE_SECTIONING_NODE, pageId)
-  )
+  const positioned = storage.getLatestNodeData(FIXED_LAYOUT_SECTIONING_NODE, pageId)
+  return positioned && positioned.data !== null
+    ? positioned
+    : storage.getLatestNodeData(PAGE_SECTIONING_NODE, pageId)
 }
 
 /** Parsed convenience wrapper around {@link getRenderSectioningRow}. */

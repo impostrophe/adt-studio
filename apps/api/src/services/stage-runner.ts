@@ -1698,7 +1698,7 @@ async function runStoryboardStep(
       const imageUrlPrefix = `/api/books/${label}/images`
       processFixedLayoutPages(storage, imageUrlPrefix)
       if (options.signal?.aborted) throw new RunCancelledError()
-      publication.publish()
+      publication.publish(pages.map((page) => page.pageId))
       progress.emit({ type: "step-complete", step: "web-rendering" })
       console.log(`[stage-run] ${label}: fixed-layout rendering complete`)
       return
@@ -1844,7 +1844,7 @@ async function runStoryboardStep(
       throw new StepError("web-rendering", "Storyboard was not published because one or more pages did not finish. Previous output is kept.")
     }
     if (options.signal?.aborted) throw new RunCancelledError()
-    publication.publish()
+    publication.publish(pages.map((page) => page.pageId))
     finishPageStep(progress, "web-rendering", pageFailureDeps)
     console.log(`[stage-run] ${label}: storyboard complete`)
   } finally {

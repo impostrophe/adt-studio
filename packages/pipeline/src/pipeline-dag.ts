@@ -646,7 +646,7 @@ async function runAdmittedFullPipeline(
         // LLM call. `page-sectioning` (semantic) is left intact.
         const imageUrlPrefix = `/api/books/${label}/images`
         processFixedLayoutPages(renderingStorage, imageUrlPrefix)
-        publication.publish()
+        publication.publish(renderingStorage.getPages().map((page) => page.pageId))
         p.emit({ type: "step-progress", step: "web-rendering", message: "fixed-layout pages" })
         return
       }
@@ -725,7 +725,7 @@ async function runAdmittedFullPipeline(
           totalPages,
         })
       })
-      publication.publish()
+      publication.publish(pages.map((page) => page.pageId))
     })
 
     // ── Quizzes stage ───────────────────────────────────────────

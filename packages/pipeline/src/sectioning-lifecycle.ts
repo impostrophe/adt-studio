@@ -11,9 +11,10 @@ import {
 } from "@adt/storage"
 import { loadBookConfig } from "./config.js"
 import { preflightSectioning, SectioningPreflightError } from "./sectioning-preflight.js"
+import { FIXED_LAYOUT_SECTIONING_NODE } from "./render-sectioning.js"
 
 export class SectioningSafetyError extends Error {
-  constructor(readonly code: "SECTIONING_REGENERATION_BLOCKED" | "SECTIONING_STALE" | "STORYBOARD_INPUT_CHANGED", message: string) {
+  constructor(readonly code: "SECTIONING_REGENERATION_BLOCKED" | "SECTIONING_STALE" | "STORYBOARD_INPUT_CHANGED" | "STORYBOARD_PUBLICATION_INCOMPLETE", message: string) {
     super(message)
     this.name = "SectioningSafetyError"
   }
@@ -107,6 +108,7 @@ export function createStoryboardPublication(storage: Storage, label: string, boo
     pages: activeSectioningPages(storage, loadBookConfig(label, booksRoot, configPath), bookDir),
     sectioning: pages.map((page) => [page.pageId, storage.getLatestNodeData("page-sectioning", page.pageId)]),
     rendering: pages.map((page) => [page.pageId, storage.getLatestNodeData("web-rendering", page.pageId)]),
+    positioned: pages.map((page) => [page.pageId, storage.getLatestNodeData(FIXED_LAYOUT_SECTIONING_NODE, page.pageId)]),
   }))
   const captured = fingerprint()
   const pending: Array<{ node: string; itemId: string; data: unknown }> = []
@@ -125,10 +127,25 @@ export function createStoryboardPublication(storage: Storage, label: string, boo
   }
   return {
     storage: staged,
-    publish() {
+    publish(expectedPageIds: readonly string[] = []) {
       storage.transaction(() => {
         if (fingerprint() !== captured) throw new SectioningSafetyError("STORYBOARD_INPUT_CHANGED", "Configuration or Sectioning/rendering versions changed after preflight. No rendering was published; retry against current data.")
-        for (const row of pending) storage.putNodeData(row.node, row.itemId, row.data)
+        const rendered = new Set(pending.filter((row) => row.node === "web-rendering" && row.data != null).map((row) => row.itemId))
+        if (expectedPageIds.some((pageId) => !rendered.has(pageId))) {
+          throw new SectioningSafetyError("STORYBOARD_PUBLICATION_INCOMPLETE", "Storyboard did not produce output for every requested page. Previous output and render trees are kept; check the page inputs before retrying.")
+        }
+        const positioned = new Set(pending.filter((row) => row.node === FIXED_LAYOUT_SECTIONING_NODE).map((row) => row.itemId))
+        for (const row of pending) {
+          if (row.node === "web-rendering"
+            && !positioned.has(row.itemId)
+            && storage.getLatestNodeData(FIXED_LAYOUT_SECTIONING_NODE, row.itemId)?.data != null) {
+            // This page now renders from semantic Sectioning. Deactivate the
+            // old positioned tree only when its replacement HTML publishes;
+            // cancellation/conflict/transaction failure leaves both intact.
+            storage.putNodeData(FIXED_LAYOUT_SECTIONING_NODE, row.itemId, null)
+          }
+          storage.putNodeData(row.node, row.itemId, row.data)
+        }
         const downstream = getStageDependents("storyboard")
         storage.clearStepRuns(PIPELINE.filter((stage) => downstream.includes(stage.name)).flatMap((stage) => stage.steps.map((step) => step.name)))
       })
