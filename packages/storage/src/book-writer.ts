@@ -37,6 +37,9 @@ function deadOwner(lock: string): boolean {
 function acquire(dir: string): Lease {
   const lock = path.join(dir, lockName)
   const token = randomUUID()
+  // A reaper can die between removing the old owner and creating its lease.
+  // Adapted from SPEC-0010 (#886): absence of an owner is not proof that an
+  // unfinished recovery is safe to bypass. Preserve the reservation/evidence.
   if (fs.existsSync(`${lock}.recovery`)) throw new BookBusyError()
   const create = () => {
     const fd = fs.openSync(lock, "wx", 0o600)
