@@ -19,7 +19,7 @@ import {
   type WordTimestampEntry,
   type WordTimestampOutput,
 } from "@adt/types"
-import { openBookDb, createBookStorage } from "@adt/storage"
+import { openBookDb, createBookStorage, storeImmutableAsset } from "@adt/storage"
 import {
   AiProviderError,
   createAzureTTSSynthesizer,
@@ -694,6 +694,7 @@ export function createTTSRoutes(booksDir: string, configPath?: string, taskServi
         model: "uploaded",
         cached: false,
         provider: "manual",
+        source: "manual",
         voiceSlot,
         ...(voiceLabel ? { voiceLabel } : {}),
       }
@@ -705,28 +706,14 @@ export function createTTSRoutes(booksDir: string, configPath?: string, taskServi
         })
       }
 
-      const outputPath = resolvePathWithin(audioDir, nextEntry.fileName)
-      if (!outputPath) {
-        throw new HTTPException(400, { message: "Invalid audio file path" })
-      }
-
+      const bookDir = path.join(path.resolve(booksDir), safeLabel)
       const existingEntries = getLatestTtsEntries(storage, normalizedLanguage)
-      const existingEntry = existingEntries.find(
-        (entry) => entry.textId === textEntry.id && resolveEntryVoiceSlot(entry) === voiceSlot
-      )
+      const asset = storeImmutableAsset(bookDir, ["audio", normalizedLanguage], voiceSlotEntryId(textEntry.id, voiceSlot), format, buffer)
+      nextEntry.fileName = asset.fileName
+      nextEntry.audioHash = asset.contentHash
+      const outputPath = resolvePathWithin(booksDir, safeLabel, "audio", normalizedLanguage, asset.fileName)
+      if (!outputPath) throw new HTTPException(400, { message: "Invalid audio file path" })
 
-      fs.mkdirSync(audioDir, { recursive: true })
-      fs.writeFileSync(outputPath, buffer)
-
-      if (
-        existingEntry &&
-        existingEntry.fileName !== nextEntry.fileName
-      ) {
-        const previousPath = resolvePathWithin(audioDir, existingEntry.fileName)
-        if (previousPath && previousPath !== audioDir && fs.existsSync(previousPath)) {
-          fs.rmSync(previousPath, { force: true })
-        }
-      }
 
       const mergedEntries = mergeSpeechEntry(
         existingEntries,
