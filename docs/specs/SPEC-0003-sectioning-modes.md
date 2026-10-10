@@ -8,7 +8,7 @@ issues: ["#708"]
 prs: ["#884"]
 adr: "docs/DECISIONS.md#025-sectioning-mode-changes-preserve-content-and-gate-rendering"
 created: 2026-09-22
-updated: 2026-09-25
+updated: 2026-10-10
 ---
 
 ## Decision under review
@@ -21,7 +21,7 @@ The roadmap and the [scaffolding index](https://github.com/unicef/adt-studio/blo
 
 [PR #879 / SPEC-0001](https://github.com/unicef/adt-studio/pull/879) and [PR #880 / SPEC-0002](https://github.com/unicef/adt-studio/pull/880) are still proposals. References below describe required interfaces and safety properties, not approval or implementation of those PRs. This spec does not publish or depend on unpublished local revisions of them.
 
-This spec requires non-destructive admission and protection for manual or unknown-origin Sectioning output. The current preservation draft has an unresolved legacy-provenance policy; reconcile it before implementation. Mode invalidation does not silently grant replacement permission.
+This spec requires non-destructive admission and protection for manual or unknown-origin Sectioning output. The refreshed preservation proposal protects unknown provenance, but its shared production preservation and explicit replacement paths are not published implementations. Mode invalidation does not silently grant replacement permission.
 
 ## Problem (with evidence)
 
@@ -121,7 +121,7 @@ Opening a historical book does not silently migrate its trees. The preflight pro
 | SPEC-0012 | Text synchronization cannot declare an incompatible By Page tree current. |
 | B2 SPEC-0003 expansion | Decide new modes/merge policy later; preserve this B1 lifecycle boundary. |
 
-The proposed decision is recorded in [ADR 025](../DECISIONS.md#025-sectioning-mode-changes-preserve-content-and-gate-rendering). It remains proposed until this spec's blocking review questions are resolved. The same PR now carries a locally implemented B1 safe slice under explicit task authorization; approval remains pending. See the [implementation evidence and limitations](../verification/spec-0003-b1.md).
+The proposed decision is recorded in [ADR 025](../DECISIONS.md#025-sectioning-mode-changes-preserve-content-and-gate-rendering). It remains proposed until this spec's blocking review questions are resolved. The same PR carries a B1 safe slice under explicit task authorization; the October 10 continuation is committed locally without pushing, and approval remains pending. See the [implementation evidence](../verification/spec-0003-b1.md) and [refreshed 26-row audit and limitations](../verification/spec-0003-b1-continuation.md). The September 30 review proposes material contract changes; this continuation does not silently adopt them or alter the acceptance criteria.
 
 ## Acceptance criteria
 

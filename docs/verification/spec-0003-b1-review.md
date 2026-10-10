@@ -1,5 +1,31 @@
 # SPEC-0003 B1 implementation review
 
+## Continuation review (2026-10-10)
+
+The current [audit, all-26-AC matrix and limits](spec-0003-b1-continuation.md)
+supersede the historical snapshots below. Rebased runtime/test head `1d51740c`
+passed 297 files / 3,858 tests on develop `ef31494d`.
+
+New reproduced findings were corrected: an orphaned recovery reservation could
+be bypassed; fixed-to-reflowable rendering left a positioned tree active beside
+semantic HTML; positioned-tree edits after preflight escaped the publication
+comparison. The fixes preserve recovery evidence, append a versioned tree
+deactivation with HTML in one transaction, and reject stale publication. An
+incomplete requested page batch now rejects, and partial semantic rerendering
+of retained positioned output requires a whole-page operation. Positive API,
+queued, targeted and part-window publication tests complement rejection tests.
+
+Full existing-book protected regeneration/resume is still blocked by actual
+unpublished preservation dependencies. Historical cross-layout rollback still
+moves only an HTML pointer rather than a proven tree/HTML pair; no claim of
+paired restore is made. General anonymous-mutex recovery remains fail-closed.
+These are functional limits, separate from Docker, hosted CI and release checks.
+The proposed September 30 review amendments remain unadopted pending explicit
+contract reconciliation. No human approval or current completion percentage is
+inferred from this review.
+
+## Historical review (2026-09-25)
+
 Reviewed 2026-09-25 from a reviewer perspective against the complete published B1
 contract, its narrative requirements and the surrounding application. This is not
 an independent human approval. The specification remains in review.
