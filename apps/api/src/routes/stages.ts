@@ -40,8 +40,8 @@ const StageRunBody = z
  * Does this rerun delete the `page-sectioning` history that section ids are
  * allocated from?
  *
- * Only that node. `fixed-layout-sectioning` is cleared by a storyboard rerun
- * too, but its id is not allocated — `sectionFixedLayoutPage` derives the page's
+ * Only that node. Storyboard keeps `fixed-layout-sectioning` history and switches
+ * its active tree during publication. Its id is not allocated — `sectionFixedLayoutPage` derives the page's
  * single section id from the pageId alone, so regenerating it produces the same
  * id and nothing pinned to it was ever at risk. Retiring those ids would detach
  * every pinned video on each storyboard rerun of a fixed-layout book, and on a
