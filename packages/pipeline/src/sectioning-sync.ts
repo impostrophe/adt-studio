@@ -4,6 +4,7 @@ import type {
   SectioningSyncCandidate, SectioningSyncInput,
 } from "@adt/types"
 import { collectOptionalTextIds } from "./render-llm.js"
+import { isGeneratedActivityId } from "./generated-activity-identity.js"
 
 // Adapted from PR #581 (Kemal Sokolovic, 8d077980): pure classification and
 // optional-text handling. Stored HTML is deliberately NOT passed through the
@@ -107,7 +108,7 @@ function patchSection(before: PageSectioningSection, after: PageSectioningSectio
     matches.push(element)
     byId.set(id, matches)
     if (matches.length !== 1) return fail("invalid-rendering", `Duplicate rendered node: ${id}`)
-    if (!ids.has(id) && !id.startsWith("activity_gen_") && !id.startsWith(`${after.sectionId}__activity_gen_`)) return fail("structural-drift", `Unknown rendered node: ${id}`)
+    if (!ids.has(id) && !id.startsWith("activity_gen_") && !id.startsWith(`${after.sectionId}__activity_gen_`) && !isGeneratedActivityId(id, after.sectionId)) return fail("structural-drift", `Unknown rendered node: ${id}`)
   }
   const optional = collectOptionalTextIds(nodes.filter((n) => n.role && n.role !== "image").map((n) => ({
     text_id: n.nodeId, text_type: n.role!, text: n.text ?? "",
