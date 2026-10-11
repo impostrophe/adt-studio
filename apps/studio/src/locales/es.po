@@ -7522,6 +7522,9 @@ msgstr "Previsualización<0/>Compilación"
 msgid "Previewed here — enabled once the AI-agnostic update ships."
 msgstr "Previsualizado aquí — habilitado una vez que se lance la actualización AI-agnóstica."
 
+msgid "Previous content is retained. This page is not confirmed current."
+msgstr "Se conserva el contenido anterior. No se ha confirmado que esta página esté actualizada."
+
 msgid "Previous image"
 msgstr "Imagen anterior"
 
@@ -8353,8 +8356,14 @@ msgstr "Reintentar {stageLabel}"
 msgid "Retry Export"
 msgstr "Reintentar exportación"
 
+msgid "Retry only this page with another bounded round of provider calls, skip it with an error, or stop the step."
+msgstr "Reintenta solo esta página con otra ronda limitada de llamadas al proveedor, omítela con un error o detén el paso."
+
 msgid "Retry preparation"
 msgstr "Reintentar la preparación"
+
+msgid "Retry this page"
+msgstr "Reintentar esta página"
 
 msgid "Retrying"
 msgstr "Reintentando"

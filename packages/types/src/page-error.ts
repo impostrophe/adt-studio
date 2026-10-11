@@ -41,3 +41,10 @@ export const DecisionBody = z
     message: "Retry is page-scoped",
   })
 export type DecisionBody = z.infer<typeof DecisionBody>
+
+/** Durable qualified outcome projected from committed recovery control records. */
+export const PageRecoverySummary = z.object({
+  step: z.string(), pageId: z.string(), outcome: z.literal("skipped-with-error"),
+  errorClass: LLMErrorClass, attemptCount: z.number().int().nonnegative().optional(),
+})
+export type PageRecoverySummary = z.infer<typeof PageRecoverySummary>

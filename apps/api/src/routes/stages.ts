@@ -22,7 +22,7 @@ import {
 import type { SectionIdRetirementResult } from "@adt/pipeline"
 import type { StageService } from "../services/stage-service.js"
 import type { BookEventBus, BookSSEEvent } from "../services/book-event-bus.js"
-import { IneligiblePageRetryError } from "../services/page-error-decisions.js"
+import { IneligiblePageRetryError, StalePageRetryError } from "../services/page-error-decisions.js"
 import type { PageErrorDecisions } from "../services/page-error-decisions.js"
 import { readProviderCredentials } from "../middleware/provider-credentials.js"
 import { assertAuthoredReplacement, protectedAuthoredRecords } from "../services/authored-output-service.js"
@@ -314,6 +314,7 @@ export function createStageRoutes(
     try {
       ok = decisions.resolveDecision(c.req.param("label"), parsed.data)
     } catch (error) {
+      if (error instanceof StalePageRetryError) throw new HTTPException(409, { message: error.message })
       if (error instanceof IneligiblePageRetryError) throw new HTTPException(400, { message: error.message })
       throw error
     }

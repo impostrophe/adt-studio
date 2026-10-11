@@ -7522,6 +7522,9 @@ msgstr "Preview<0/>Build"
 msgid "Previewed here — enabled once the AI-agnostic update ships."
 msgstr "Previewed here — enabled once the AI-agnostic update ships."
 
+msgid "Previous content is retained. This page is not confirmed current."
+msgstr "Previous content is retained. This page is not confirmed current."
+
 msgid "Previous image"
 msgstr "Previous image"
 
@@ -8353,8 +8356,14 @@ msgstr "Retry {stageLabel}"
 msgid "Retry Export"
 msgstr "Retry Export"
 
+msgid "Retry only this page with another bounded round of provider calls, skip it with an error, or stop the step."
+msgstr "Retry only this page with another bounded round of provider calls, skip it with an error, or stop the step."
+
 msgid "Retry preparation"
 msgstr "Retry preparation"
+
+msgid "Retry this page"
+msgstr "Retry this page"
 
 msgid "Retrying"
 msgstr "Retrying"

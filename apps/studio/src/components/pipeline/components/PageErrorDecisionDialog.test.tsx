@@ -114,3 +114,26 @@ it("does not let a previous decision response unlock or report failure on the ne
   finishSecond()
   await waitFor(() => expect((nextStop as HTMLButtonElement).disabled).toBe(false))
 })
+
+
+it("offers eligible Retry as one bounded page action and refuses retry-all", async () => {
+  pendingDecisions[0].canRetry = true
+  render(<PageErrorDecisionDialog />)
+  expect(screen.getByText(/another bounded round/)).toBeTruthy()
+  const retry = screen.getByRole("button", { name: "Retry this page" }) as HTMLButtonElement
+  fireEvent.click(screen.getByRole("checkbox"))
+  expect(retry.disabled).toBe(true)
+  fireEvent.click(screen.getByRole("checkbox"))
+  fireEvent.click(retry)
+  await waitFor(() => expect(resolveDecision).toHaveBeenCalledWith("decision-1", "retry", false))
+})
+
+it("keeps Stop and Skip available after a rejected stale Retry", async () => {
+  pendingDecisions[0].canRetry = true
+  resolveDecision.mockRejectedValue(new Error("409 input changed"))
+  render(<PageErrorDecisionDialog />)
+  fireEvent.click(screen.getByRole("button", { name: "Retry this page" }))
+  await screen.findByRole("alert")
+  expect((screen.getByRole("button", { name: "Stop step" }) as HTMLButtonElement).disabled).toBe(false)
+  expect((screen.getByRole("button", { name: "Skip page and continue" }) as HTMLButtonElement).disabled).toBe(false)
+})

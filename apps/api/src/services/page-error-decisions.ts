@@ -16,6 +16,8 @@ export interface RequestDecisionInput {
   signal?: AbortSignal
   errorClass?: PendingDecision["errorClass"]
   attemptCount?: number
+  canRetry?: boolean
+  validateRetry?: () => void
 }
 
 export interface PageErrorDecisions {
@@ -28,11 +30,16 @@ export interface PageErrorDecisions {
 
 export class IneligiblePageRetryError extends Error {
   constructor() {
-    super("Page retry is unavailable until safe input and output protection is implemented")
+    super("Retry is unavailable for this page failure")
   }
 }
 
+export class StalePageRetryError extends Error {
+  constructor() { super("Page inputs changed. Stop or skip this page, then start a refreshed run.") }
+}
+
 interface PendingEntry {
+  validateRetry?: () => void
   label: string
   value: PendingDecision
   resolve: (action: PageErrorAction) => void
@@ -77,12 +84,10 @@ export function createPageErrorDecisions(eventBus: BookEventBus): PageErrorDecis
         error: input.error,
         errorClass: input.errorClass,
         attemptCount: input.attemptCount,
-        // SPEC-0013 safe fallback: #879/#880 have no replacement/provenance
-        // implementation. A retry must not bypass that missing prerequisite.
-        canRetry: false,
+        canRetry: input.step === "image-meaningfulness" && input.canRetry === true && !!input.validateRetry,
       }
       return new Promise((resolve) => {
-        const entry: PendingEntry = { label: input.label, value, resolve }
+        const entry: PendingEntry = { label: input.label, value, resolve, validateRetry: input.validateRetry }
         pending.set(value.decisionId, entry)
         const signals = [run.signal, input.signal].filter(
           (signal): signal is AbortSignal => !!signal,
@@ -142,9 +147,12 @@ export function createPageErrorDecisions(eventBus: BookEventBus): PageErrorDecis
       )
         return false
       // Invalid Retry never consumes the pending decision (adapted from #712).
-      if (body.action === "retry") throw new IneligiblePageRetryError()
-      if (body.applyToAll) {
-        run.bulk = body.action
+      if (body.action === "retry") {
+        if (!entry.value.canRetry || body.applyToAll) throw new IneligiblePageRetryError()
+        try { entry.validateRetry?.() } catch { throw new StalePageRetryError() }
+      }
+      if (body.applyToAll || body.action === "stop") {
+        run.bulk = body.action as "skip" | "stop"
         for (const other of [...pending.values()]) {
           if (other.label === label && other.value.runId === run.id) finish(other, body.action)
         }

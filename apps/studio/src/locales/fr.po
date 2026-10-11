@@ -7524,6 +7524,9 @@ msgstr "Aperçu<0/>Build"
 msgid "Previewed here — enabled once the AI-agnostic update ships."
 msgstr "Prévisualisé ici — activé une fois la mise à jour AI-agnostique déployée."
 
+msgid "Previous content is retained. This page is not confirmed current."
+msgstr "Le contenu précédent est conservé. Cette page n’est pas confirmée à jour."
+
 msgid "Previous image"
 msgstr "Image précédente"
 
@@ -8355,8 +8358,14 @@ msgstr "Réessayer {stageLabel}"
 msgid "Retry Export"
 msgstr "Réessayer Exporter"
 
+msgid "Retry only this page with another bounded round of provider calls, skip it with an error, or stop the step."
+msgstr "Réessayez uniquement cette page avec une nouvelle série limitée d’appels au fournisseur, ignorez-la avec une erreur ou arrêtez l’étape."
+
 msgid "Retry preparation"
 msgstr "Réessayer la préparation"
+
+msgid "Retry this page"
+msgstr "Réessayer cette page"
 
 msgid "Retrying"
 msgstr "Nouvelle tentative en cours"

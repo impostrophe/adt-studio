@@ -7524,6 +7524,9 @@ msgstr "Pamje paraprake<0/>Ndërtim"
 msgid "Previewed here — enabled once the AI-agnostic update ships."
 msgstr "Parapamë këtu — aktivizohet sapo të dalë përditësimi AI-agnostik."
 
+msgid "Previous content is retained. This page is not confirmed current."
+msgstr "Përmbajtja e mëparshme ruhet. Nuk është konfirmuar që kjo faqe është e përditësuar."
+
 msgid "Previous image"
 msgstr "Imazhi i mëparshëm"
 
@@ -8355,8 +8358,14 @@ msgstr "Riprovo {stageLabel}"
 msgid "Retry Export"
 msgstr "Riprovo Eksportimin"
 
+msgid "Retry only this page with another bounded round of provider calls, skip it with an error, or stop the step."
+msgstr "Provo sërish vetëm këtë faqe me një raund tjetër të kufizuar thirrjesh te ofruesi, anashkaloje me gabim ose ndalo hapin."
+
 msgid "Retry preparation"
 msgstr "Provo përsëri përgatitjen"
+
+msgid "Retry this page"
+msgstr "Provo sërish këtë faqe"
 
 msgid "Retrying"
 msgstr "Duke riprovuar"

@@ -13,7 +13,7 @@ const dirs: string[] = []
 afterEach(() => {
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
 })
-function setup() {
+function setup(retry?: { canRetry: boolean; validateRetry: () => void }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "spec0013-decisions-"))
   dirs.push(dir)
   const storage = createBookStorage("book", dir)
@@ -40,6 +40,7 @@ function setup() {
     error: "Temporary provider failure",
     errorClass: "server-error",
     attemptCount: 3,
+    ...retry,
   })
   const decision = broker.getPendingDecisions("book")[0]
   const post = (body: unknown, label = "book") =>
@@ -104,4 +105,20 @@ describe("decision API ownership and fallback", () => {
       (await (await f.app.request("/books/book/step-status")).json()).pendingDecisions,
     ).toEqual([])
   })
+})
+
+
+it("rejects stale Retry without consuming the decision, and accepts only one refreshed decision submission", async () => {
+  let stale = true
+  const f = setup({ canRetry: true, validateRetry: () => { if (stale) throw new Error("input version changed") } })
+  expect(f.decision.canRetry).toBe(true)
+  const body = { decisionId: f.decision.decisionId, runId: "run-1", step: "image-meaningfulness", pageId: "pg001", action: "retry" }
+  expect((await f.post({ ...body, applyToAll: true })).status).toBe(400)
+  expect((await f.post(body)).status).toBe(409)
+  expect(f.broker.getPendingDecisions("book")).toEqual([f.decision])
+  stale = false
+  const results = await Promise.all([f.post(body), f.post(body)])
+  expect(results.map((response) => response.status).sort()).toEqual([200, 409])
+  await expect(f.pending).resolves.toBe("retry")
+  expect(fs.readFileSync(path.join(f.dir, "book", "book.db"))).toEqual(f.before)
 })

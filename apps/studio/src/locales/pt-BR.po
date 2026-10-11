@@ -7522,6 +7522,9 @@ msgstr "Versão<0/>prévia"
 msgid "Previewed here — enabled once the AI-agnostic update ships."
 msgstr "Em prévia — será ativado quando for lançada a atualização compatível com qualquer IA."
 
+msgid "Previous content is retained. This page is not confirmed current."
+msgstr "O conteúdo anterior é mantido. Não foi confirmado que esta página está atualizada."
+
 msgid "Previous image"
 msgstr "Imagem anterior"
 
@@ -8353,8 +8356,14 @@ msgstr "Tentar novamente: {stageLabel}"
 msgid "Retry Export"
 msgstr "Tentar exportar novamente"
 
+msgid "Retry only this page with another bounded round of provider calls, skip it with an error, or stop the step."
+msgstr "Tente novamente apenas esta página com outra rodada limitada de chamadas ao provedor, pule-a com um erro ou interrompa a etapa."
+
 msgid "Retry preparation"
 msgstr "Tentar a preparação novamente"
+
+msgid "Retry this page"
+msgstr "Tentar esta página novamente"
 
 msgid "Retrying"
 msgstr "Tentando novamente"

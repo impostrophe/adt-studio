@@ -3003,8 +3003,11 @@ describe("concurrent page decisions", () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "spec0013-paused-group-"))
       const booksDir = path.join(dir, "books")
       const configPath = path.join(dir, "config.yaml")
+      const promptsDir = path.join(dir, "prompts")
+      fs.mkdirSync(promptsDir)
       writeBaseConfig(configPath)
       fs.appendFileSync(configPath, "concurrency: 2\n")
+      for (const name of ["image_captioning", "translation", "core_tts_preparation", "easy_read"]) fs.writeFileSync(path.join(promptsDir, `${name}.liquid`), "Test prompt")
       seedCaptionBook(booksDir, "paused")
       const storage = createBookStorage("paused", booksDir)
       for (let n = 2; n <= 3; n++) {
@@ -3078,7 +3081,7 @@ describe("concurrent page decisions", () => {
           {
             booksDir,
             configPath,
-            promptsDir: dir,
+            promptsDir,
             fromStage: "captions",
             toStage: "captions",
             credentials: { openai: { apiKey: "test" } },
@@ -3094,7 +3097,7 @@ describe("concurrent page decisions", () => {
           settled = true
         })
       try {
-        await vi.waitFor(() => expect(failures).toHaveLength(2))
+        await vi.waitFor(async () => { if (settled) throw await running; expect(failures).toHaveLength(2) })
         for (const fail of failures) fail()
         await vi.waitFor(() => expect(broker.getPendingDecisions("paused")).toHaveLength(2))
         const first = broker.getPendingDecisions("paused")[0]

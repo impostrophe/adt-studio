@@ -96,7 +96,7 @@ export interface BookRunContextValue {
   pendingDecisions: PendingDecision[]
   refreshDecisions(): Promise<void>
   /** Resolve the head pending decision. */
-  resolveDecision(decisionId: string, action: "skip" | "stop", applyToAll?: boolean): Promise<void>
+  resolveDecision(decisionId: string, action: "retry" | "skip" | "stop", applyToAll?: boolean): Promise<void>
 }
 
 const BookRunContext = createContext<BookRunContextValue | null>(null)
@@ -868,7 +868,7 @@ export function useBookRunStatus(label: string): BookRunContextValue {
   }, [label, queryClient])
 
   const resolveDecision = useCallback(
-    async (decisionId: string, action: "skip" | "stop", applyToAll?: boolean) => {
+    async (decisionId: string, action: "retry" | "skip" | "stop", applyToAll?: boolean) => {
       const decision = pendingDecisions.find((entry) => entry.decisionId === decisionId)
       await api.resolveDecision(label, {
         decisionId,

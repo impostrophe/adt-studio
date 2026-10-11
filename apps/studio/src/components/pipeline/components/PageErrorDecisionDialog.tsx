@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { SkipForward, CircleStop } from "lucide-react"
+import { SkipForward, CircleStop, RotateCcw } from "lucide-react"
 import { Trans } from "@lingui/react/macro"
 import { useLingui } from "@lingui/react"
 import { msg } from "@lingui/core/macro"
@@ -41,13 +41,13 @@ function PendingPageErrorDecision({ current }: { current: PendingDecision }) {
 
   const stepLabel = getStepLabelI18n(current.step)
 
-  const resolve = async (action: "skip" | "stop") => {
+  const resolve = async (action: "retry" | "skip" | "stop") => {
     if (busy.current) return
     busy.current = true
     setSubmitting(true)
     setSubmissionFailed(false)
     try {
-      await resolveDecision(current.decisionId, action, applyToAll)
+      await resolveDecision(current.decisionId, action, action === "retry" ? false : applyToAll)
     } catch {
       setSubmissionFailed(true)
     } finally {
@@ -65,13 +65,13 @@ function PendingPageErrorDecision({ current }: { current: PendingDecision }) {
         if (!open) return
       }}
     >
-      <DialogContent className="gap-5 p-6 sm:max-w-md [&>button]:hidden">
+      <DialogContent className="gap-5 p-6 sm:max-w-md [&>*]:min-w-0 [&>button]:hidden">
         <DialogHeader className="text-left">
           <DialogTitle className="text-[16px] font-semibold leading-tight tracking-tight">
             <Trans>A page failed in {stepLabel}</Trans>
           </DialogTitle>
           <DialogDescription className="text-[13px] leading-snug text-muted-foreground">
-            <Trans>Skip this page and continue the step, or stop the step entirely.</Trans>
+            {current.canRetry ? <Trans>Retry only this page with another bounded round of provider calls, skip it with an error, or stop the step.</Trans> : <Trans>Skip this page and continue the step, or stop the step entirely.</Trans>}
           </DialogDescription>
         </DialogHeader>
 
@@ -118,7 +118,10 @@ function PendingPageErrorDecision({ current }: { current: PendingDecision }) {
           <Trans>Apply to all errors in this run</Trans>
         </label>
 
-        <DialogFooter className="-mt-1 gap-2">
+        <DialogFooter className="-mt-1 flex-col gap-2 sm:flex-col [&>button]:w-full">
+          {current.canRetry && <Button disabled={submitting || applyToAll} variant="outline" onClick={() => resolve("retry")}>
+            <RotateCcw className="mr-2 h-4 w-4" /><Trans>Retry this page</Trans>
+          </Button>}
           <Button
             disabled={submitting}
             variant="ghost"
