@@ -290,12 +290,21 @@ it("keeps protected quiz and option identities, translations and recordings whil
     { ...quiz("Old AI question"), quizId: "qz003", source: "ai" },
   ] })
   db.putNodeData("tts", "en", { entries: [{ textId: "qz001_que", language: "en", fileName: "qz001_que.mp3", provider: "manual", model: "manual", voice: "manual", voiceSlot: "primary", cached: false }] })
+  // The editor is deferred, but stored ordering already has a public schema.
+  // Quiz generation must leave that independent user-owned record untouched.
+  db.putNodeData("reading-order", "book", { schemaVersion: 1, updatedAt: "before", items: [
+    { kind: "section", id: "pg003_sec001" }, { kind: "quiz", id: "qz001" },
+    { kind: "section", id: "pg001_sec001" }, { kind: "quiz", id: "qz002" },
+    { kind: "section", id: "pg002_sec001" },
+  ] })
   fs.mkdirSync(path.join(db.bookDir!, "audio/en"), { recursive: true })
   fs.writeFileSync(path.join(db.bookDir!, "audio/en/qz001_que.mp3"), "UNCHANGED RECORDING")
   reconcileTextCatalog(db)
   db.close()
   const prior = (await json("quizzes")).quizzes.quizzes
+  const priorOrder = read("reading-order")
   expect((await run("quizzes")).status).toBe("completed")
+  expect(read("reading-order")).toEqual(priorOrder)
   const current = (await json("quizzes")).quizzes.quizzes
   expect(current.find((q: { quizId: string }) => q.quizId === "qz001")).toEqual(prior[0])
   expect(current.find((q: { quizId: string }) => q.quizId === "qz002")).toMatchObject({ question: "Legacy question" })
@@ -307,6 +316,7 @@ it("keeps protected quiz and option identities, translations and recordings whil
   expect((await run("quizzes")).status).toBe("completed")
   expect(generateAllQuizzes).not.toHaveBeenCalled()
   expect((await json("quizzes")).quizzes.quizzes.map((q: { quizId: string }) => q.quizId)).toEqual(["qz001", "qz002"])
+  expect(read("reading-order")).toEqual(priorOrder)
 })
 
 it("requires named quiz replacement, keeps protected work on failure/cancellation and publishes a fresh AI identity only on success", async () => {
