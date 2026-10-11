@@ -1,4 +1,4 @@
-import { withBookWriter } from "@adt/storage"
+import { withBookWriter, resolveBookPaths } from "@adt/storage"
 import { createStoryboardPublication, FIXED_LAYOUT_SECTIONING_NODE, SectioningSafetyError } from "@adt/pipeline"
 import crypto from "node:crypto"
 import path from "node:path"
@@ -56,7 +56,7 @@ export async function reRenderPages(options: ReRenderOptions[]): Promise<ReRende
   if (!options.length) return []
   const { label, booksDir, configPath } = options[0]
   if (options.some((item) => item.label !== label || item.booksDir !== booksDir || item.configPath !== configPath)) throw new Error("A rendering batch must belong to one book")
-  return withBookWriter(path.join(path.resolve(booksDir), label), async () => {
+  return withBookWriter(resolveBookPaths(label, booksDir).bookDir, async () => {
     const storage = createBookStorage(label, booksDir)
     try {
       const publication = createStoryboardPublication(storage, label, booksDir, configPath)

@@ -73,6 +73,7 @@ describe("SPEC-0003 configuration publication", () => {
     const tasks = createTaskService(createBookEventBus(), root)
     let finish!: () => void
     tasks.submitTask(label, "re-render", "test writer", () => new Promise<void>((resolve) => { finish = resolve }))
+    await vi.waitFor(() => expect(finish).toBeDefined())
     const before = snapshot()
     try {
       expect(() => updateBookConfig(label, root, config("page"), globalConfig)).toThrow(/active writer/)
@@ -227,7 +228,7 @@ describe("SPEC-0003 configuration publication", () => {
     expect(readSectioningLifecycle(dir)?.mode).toBe("page")
   })
 
-  it.each(["journal", "yaml", "db", "lifecycle", "ack"])("recovers a process crash at the %s boundary", (boundary) => {
+  it.each(["journal", "yaml", "db", "lifecycle", "ack"])("recovers or safely refuses an ambiguous mutex after a process crash at the %s boundary", (boundary) => {
     const before = snapshot()
     const oldRuns = runs()
     const code = `
@@ -253,6 +254,16 @@ describe("SPEC-0003 configuration publication", () => {
     `
     const child = spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8", timeout: 15000 })
     expect(child.status, child.stderr).toBe(71)
+    if (fs.existsSync(path.join(dir, `${label}.db.lock`))) {
+      const evidence = [SECTIONING_JOURNAL, ".book-writer.json", `${label}.db`]
+        .map((file) => fs.readFileSync(path.join(dir, file)))
+      expect(() => recoverSectioningTransition(dir)).toThrow(/database lock/)
+      expect(() => getBookConfig(label, root)).toThrow(/database lock/)
+      expect([SECTIONING_JOURNAL, ".book-writer.json", `${label}.db`]
+        .map((file) => fs.readFileSync(path.join(dir, file)))).toEqual(evidence)
+      expect(fs.existsSync(path.join(dir, `${label}.db.lock`))).toBe(true)
+      return
+    }
     recoverSectioningTransition(dir)
     if (boundary === "journal") {
       expect(getBookConfig(label, root)).toBeNull()
@@ -377,10 +388,10 @@ describe("SPEC-0003 persisted data and publication", () => {
     s.close()
   })
 
-  it("fails closed on unknown provenance and on unsafe Sectioning replacement", () => {
+  it("blocks unknown mode provenance but admits protected Sectioning orchestration without mutating content", () => {
     const before = snapshot()
     expect(() => prepareSectioningRun(label, root, "storyboard", "storyboard", globalConfig)).toThrow(/provenance is unknown/)
-    expect(() => prepareSectioningRun(label, root, "sectioning", "storyboard", globalConfig)).toThrow(/manual or unknown-origin/)
+    expect(() => prepareSectioningRun(label, root, "sectioning", "storyboard", globalConfig)).not.toThrow()
     expect(snapshot()).toEqual(before)
   })
 })

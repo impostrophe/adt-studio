@@ -9492,8 +9492,11 @@ msgstr "Stocké localement sur cet ordinateur"
 msgid "Storyboard"
 msgstr "Scénarimage"
 
-msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Affected pages: {pages}."
-msgstr "Le storyboard ne peut pas être exécuté en mode Par page : {total} pages ne contiennent pas exactement une section valide. Relancez le découpage en sections, puis réessayez. Pages concernées : {pages}."
+#~ msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Affected pages: {pages}."
+#~ msgstr "Le storyboard ne peut pas être exécuté en mode Par page : {total} pages ne contiennent pas exactement une section valide. Relancez le découpage en sections, puis réessayez. Pages concernées : {pages}."
+
+msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Incompatible manual or unknown-origin pages require explicit replacement confirmation. Affected pages: {pages}."
+msgstr "Storyboard ne peut pas être exécuté en mode Par page : {total} pages ne contiennent pas exactement une section valide. Relancez Sectioning, puis réessayez. Les pages incompatibles manuelles ou d’origine inconnue nécessitent une confirmation explicite de remplacement. Pages concernées : {pages}."
 
 msgid "Storyboard has already been run. Changes made here will not take effect until storyboard is re-run."
 msgstr "Le scénarimage a déjà été exécuté. Les modifications effectuées ici ne prendront effet que lorsque le scénarimage sera relancé."

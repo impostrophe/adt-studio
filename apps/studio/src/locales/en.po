@@ -9490,8 +9490,11 @@ msgstr "Stored locally on this computer"
 msgid "Storyboard"
 msgstr "Storyboard"
 
-msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Affected pages: {pages}."
-msgstr "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Affected pages: {pages}."
+#~ msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Affected pages: {pages}."
+#~ msgstr "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Affected pages: {pages}."
+
+msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Incompatible manual or unknown-origin pages require explicit replacement confirmation. Affected pages: {pages}."
+msgstr "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Incompatible manual or unknown-origin pages require explicit replacement confirmation. Affected pages: {pages}."
 
 msgid "Storyboard has already been run. Changes made here will not take effect until storyboard is re-run."
 msgstr "Storyboard has already been run. Changes made here will not take effect until storyboard is re-run."

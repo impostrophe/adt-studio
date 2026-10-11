@@ -9492,8 +9492,11 @@ msgstr "Ruajtur lokalisht në këtë kompjuter"
 msgid "Storyboard"
 msgstr "Storyboard"
 
-msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Affected pages: {pages}."
-msgstr "Storyboard-i nuk mund të ekzekutohet në modalitetin Sipas faqes: {total} faqe nuk përmbajnë saktësisht një seksion të vlefshëm. Ekzekutoni përsëri ndarjen në seksione dhe provoni sërish. Faqet e prekura: {pages}."
+#~ msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Affected pages: {pages}."
+#~ msgstr "Storyboard-i nuk mund të ekzekutohet në modalitetin Sipas faqes: {total} faqe nuk përmbajnë saktësisht një seksion të vlefshëm. Ekzekutoni përsëri ndarjen në seksione dhe provoni sërish. Faqet e prekura: {pages}."
+
+msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Incompatible manual or unknown-origin pages require explicit replacement confirmation. Affected pages: {pages}."
+msgstr "Storyboard nuk mund të ekzekutohet në modalitetin Sipas faqes: {total} faqe nuk përmbajnë saktësisht një seksion të vlefshëm. Ekzekutoni përsëri Sectioning dhe provoni sërish. Faqet e papajtueshme manuale ose me origjinë të panjohur kërkojnë konfirmim të qartë për zëvendësim. Faqet e prekura: {pages}."
 
 msgid "Storyboard has already been run. Changes made here will not take effect until storyboard is re-run."
 msgstr "Storyboard-i është ekzekutuar tashmë. Ndryshimet e bëra këtu nuk do të hyjnë në fuqi derisa storyboard-i të ri-ekzekutohet."

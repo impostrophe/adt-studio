@@ -9490,8 +9490,11 @@ msgstr "Almacenado localmente en este ordenador"
 msgid "Storyboard"
 msgstr "Storyboard"
 
-msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Affected pages: {pages}."
-msgstr "El guion gráfico no puede ejecutarse en modo Por página: {total} páginas no contienen exactamente una sección válida. Vuelve a ejecutar el seccionado e inténtalo de nuevo. Páginas afectadas: {pages}."
+#~ msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Affected pages: {pages}."
+#~ msgstr "El guion gráfico no puede ejecutarse en modo Por página: {total} páginas no contienen exactamente una sección válida. Vuelve a ejecutar el seccionado e inténtalo de nuevo. Páginas afectadas: {pages}."
+
+msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Incompatible manual or unknown-origin pages require explicit replacement confirmation. Affected pages: {pages}."
+msgstr "Storyboard no puede ejecutarse en el modo Por página: {total} páginas no contienen exactamente una sección válida. Vuelva a ejecutar Sectioning e inténtelo de nuevo. Las páginas incompatibles manuales o de origen desconocido requieren una confirmación explícita de reemplazo. Páginas afectadas: {pages}."
 
 msgid "Storyboard has already been run. Changes made here will not take effect until storyboard is re-run."
 msgstr "El storyboard ya se ejecutó. Los cambios realizados aquí no tendrán efecto hasta que se vuelva a ejecutar el storyboard."

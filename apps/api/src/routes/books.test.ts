@@ -767,7 +767,7 @@ describe("POST /books/:label/stages/run", () => {
       expect(verifyStorage.getLatestNodeData("web-rendering", "pg001")).not.toBeNull()
       const runs = new Map(verifyStorage.getStepRuns().map((r) => [r.step, r.status]))
       expect(runs.get("page-sectioning")).toBe("done")
-      expect(runs.get("web-rendering")).toBe("done")
+      expect(runs.get("web-rendering")).toBeUndefined()
     } finally {
       verifyStorage.close()
     }

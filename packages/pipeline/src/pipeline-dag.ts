@@ -3,9 +3,14 @@ import { publishSpeechOutput } from "@adt/storage"
 import { readOutputCatalog } from "./output-catalog.js"
 import { outputEvidence, inputSignature } from "./output-freshness.js"
 import { reconcileTextCatalog, buildImageInventory } from "./catalog-reconciliation.js"
-import { withBookWriter, withNewBookWriter, ownsBookWriter, resolveBookPaths } from "@adt/storage"
+import { withBookWriter, withNewBookWriter, resolveBookPaths, recoverSectioningTransition, ExtractionAdmissionError } from "@adt/storage"
+import { prepareExtractionAdmission, extractionOptionsFromConfig } from "./extraction-admission.js"
+import { assertAuthoredReplacement, replacementConfirmed } from "./authored-output.js"
+import { isProtectedContent } from "./manual-edits.js"
+import { createSectionIdFactory, retireSectionIds } from "./section-ids.js"
+import { preflightSectioning, SectioningPreflightError } from "./sectioning-preflight.js"
 import { reconcileSpeechInputs } from "./speech-inputs.js"
-import { prepareSectioningRun, completeSectioning, createStoryboardPublication } from "./sectioning-lifecycle.js"
+import { prepareSectioningRun, completeSectioning, createStoryboardPublication, activeSectioningPages, sectioningInvalidationSteps, effectiveSectioningMode, SectioningSafetyError } from "./sectioning-lifecycle.js"
 import fs from "node:fs"
 import path from "node:path"
 import { createBookStorage } from "@adt/storage"
@@ -35,7 +40,7 @@ import type {
   VoiceSlot,
   WebRenderingOutput,
 } from "@adt/types"
-import { isTtsExcluded, voiceSlotEntryId } from "@adt/types"
+import { isTtsExcluded, voiceSlotEntryId, PIPELINE, STAGE_ORDER, SectioningResumeStage, AuthoredRunOptions, type AuthoredReplacement } from "@adt/types"
 import { extractPDF, figureExtractionFlags, resolveFigureExtractionMode } from "./pdf-extraction.js"
 import {
   resolveFontsCacheDir,
@@ -136,6 +141,11 @@ function progressOnly(p: Progress): Progress {
 }
 
 export interface FullPipelineOptions {
+  fromStage?: SectioningResumeStage
+  toStage?: SectioningResumeStage
+  replaceManual?: boolean
+  protectedReplacements?: AuthoredReplacement[]
+  signal?: AbortSignal
   label: string
   pdfPath: string
   booksRoot: string
@@ -164,9 +174,28 @@ export interface FullPipelineOptions {
  */
 export async function runFullPipeline(options: FullPipelineOptions, progress: Progress = nullProgress): Promise<PipelineDAGResult> {
   const { bookDir } = resolveBookPaths(options.label, options.booksRoot)
-  fs.mkdirSync(bookDir, { recursive: true })
-  return withBookWriter(bookDir, async () => {
-    prepareSectioningRun(options.label, options.booksRoot, "extract", "package", options.configPath)
+  const admit = fs.existsSync(bookDir) ? withBookWriter : withNewBookWriter
+  return admit(bookDir, async () => {
+    options.signal?.throwIfAborted()
+    recoverSectioningTransition(bookDir)
+    const config = loadBookConfig(options.label, options.booksRoot, options.configPath)
+    const admission = prepareExtractionAdmission(bookDir, {
+      ...extractionOptionsFromConfig(options.pdfPath, config),
+      startPage: options.startPage ?? config.start_page,
+      endPage: options.endPage ?? config.end_page,
+    })
+    const scoped = options.fromStage !== undefined || options.toStage !== undefined
+    if (scoped) {
+      const from = SectioningResumeStage.parse(options.fromStage)
+      const to = SectioningResumeStage.parse(options.toStage)
+      if (STAGE_ORDER.indexOf(from) > STAGE_ORDER.indexOf(to)) throw new Error("Invalid stage range")
+      if (admission.outcome !== "reused") throw new Error("Scoped resume requires completed extraction; run Extract first")
+      AuthoredRunOptions.parse(options)
+      prepareSectioningRun(options.label, options.booksRoot, from, to, options.configPath)
+    } else if (admission.outcome === "reused") {
+      // Other downstream executors still lack a safe resume contract.
+      throw new ExtractionAdmissionError("UNSAFE_RESUME_UNAVAILABLE")
+    }
     return runAdmittedFullPipeline(options, progress)
   })
 }
@@ -175,19 +204,6 @@ async function runAdmittedFullPipeline(
   options: FullPipelineOptions,
   progress: Progress = nullProgress,
 ): Promise<PipelineDAGResult> {
-  const admissionPath = resolveBookPaths(options.label, options.booksRoot).bookDir
-  if (!ownsBookWriter(admissionPath)) {
-    const admit = fs.existsSync(admissionPath) ? withBookWriter : withNewBookWriter
-    return admit(admissionPath, () => runFullPipeline(options, progress))
-  }
-  // The published SPEC-0010 safe-resume implementation refuses a destructive
-  // full rerun until extraction/source reconciliation is available.
-  const existingDb = path.join(admissionPath, `${options.label}.db`)
-  if (fs.existsSync(existingDb)) {
-    const existing = createBookStorage(options.label, options.booksRoot)
-    try { if (existing.getPages().length) throw new Error("UNSAFE_RESUME_UNAVAILABLE: full extraction rerun cannot preserve this existing book") }
-    finally { existing.close() }
-  }
   const {
     label,
     pdfPath,
@@ -206,18 +222,30 @@ async function runAdmittedFullPipeline(
 
   const storage = createBookStorage(label, booksRoot)
 
-  // Copy source PDF into book directory
+  // SPEC-0010 extraction snapshots source bytes only after admission. Scoped
+  // reruns never copy an external PDF over the retained source.
   const bookDir = path.join(booksRoot, label)
-  const destPdf = path.join(bookDir, `${label}.pdf`)
-  const resolvedPdf = path.resolve(pdfPath)
-  if (resolvedPdf !== path.resolve(destPdf)) {
-    fs.copyFileSync(resolvedPdf, destPdf)
-  }
 
   try {
     const config = loadBookConfig(label, booksRoot, configPath)
+    const fromStage = options.fromStage
+    const toStage = options.toStage
+    const selectedStages = fromStage && toStage ? STAGE_ORDER.slice(STAGE_ORDER.indexOf(fromStage), STAGE_ORDER.indexOf(toStage) + 1) : undefined
+    if (fromStage && toStage) {
+      assertAuthoredReplacement(storage, { ...options, fromStage, toStage })
+      if (storage.getStepRuns().some((run) => run.status === "running")) throw new Error("A pipeline step is running; retry after it stops")
+      if (fromStage === "sectioning") {
+        const completed = new Map(storage.getStepRuns().map((run) => [run.step, run.status]))
+        // These are the stored prerequisites used by the same stage in Studio.
+        const extract = PIPELINE.find((stage) => stage.name === "extract")!
+        if (extract.steps.some((step) => !["done", "skipped"].includes(completed.get(step.name) ?? ""))) {
+          throw new Error("Complete Extract prerequisites in Studio before resuming Sectioning")
+        }
+        storage.clearStepRuns(sectioningInvalidationSteps())
+      }
+    }
     const cacheDir = options.cacheDir ?? path.join(path.resolve(booksRoot), label, ".cache")
-    const promptEngine = createPromptEngine(promptsDir, { basePromptModelId: config.base_prompt_model })
+    const promptEngine = createPromptEngine([path.join(bookDir, "prompts"), promptsDir], { basePromptModelId: config.base_prompt_model })
     const templateEngine = createTemplateEngine(templatesDir)
     const rateLimiter = config.rate_limit
       ? createRateLimiter(config.rate_limit.requests_per_minute)
@@ -247,7 +275,7 @@ async function runAdmittedFullPipeline(
     const getModel = (modelId: string): LLMModel => {
       let model = modelCache.get(modelId)
       if (!model) {
-        model = createLLMModel({ modelId, cacheDir, promptEngine, rateLimiter, logLevel, onLog: onLlmLog })
+        model = createLLMModel({ modelId, cacheDir, promptEngine, rateLimiter, logLevel, onLog: onLlmLog, signal: options.signal })
         modelCache.set(modelId, model)
       }
       return model
@@ -283,6 +311,7 @@ async function runAdmittedFullPipeline(
           // only consumer). Must match stage-runner so re-runs are consistent.
           fixedLayout: isFixedLayoutBook(config),
           fontsCacheDir: resolveFontsCacheDir(booksRoot),
+          signal: options.signal,
         },
         storage,
         progressOnly(p),
@@ -562,82 +591,74 @@ async function runAdmittedFullPipeline(
 
     const isFixedLayout = isFixedLayoutBook(config)
 
+    const sectioningDrafts = new Map<string, PageSectioningOutput>()
+    let sectioningPages: PageData[] = []
+    let previousSectioning = new Map<string, ReturnType<Storage["getLatestNodeData"]>>()
     executors.set("page-sectioning", async (p) => {
-      // Semantic LLM sectioning runs for ALL books (including fixed-layout) so
-      // `page-sectioning` always holds the editable semantic tree, the
-      // Sectioning view never empties, and the render strategy can be toggled
-      // without re-sectioning. Fixed-layout's positioned tree + rendering is
-      // produced in the web-rendering step instead (see below).
+      sectioningPages = activeSectioningPages(storage, config, bookDir)
+      previousSectioning = new Map(sectioningPages.map((page) => [page.pageId, storage.getLatestNodeData("page-sectioning", page.pageId)]))
+      const selected = sectioningPages.filter((page) => {
+        const row = previousSectioning.get(page.pageId)
+        return !row || !isProtectedContent(row.data as { source?: "ai" | "manual" }) || replacementConfirmed(options, "page-sectioning", page.pageId, row.version)
+      })
+      const selectedIds = new Set(selected.map((page) => page.pageId))
+      const retained = sectioningPages.filter((page) => !selectedIds.has(page.pageId))
+      const preflight = preflightSectioning(effectiveSectioningMode(config), retained,
+        new Map(retained.map((page) => [page.pageId, previousSectioning.get(page.pageId)?.data])))
+      if (preflight.total) throw new SectioningPreflightError(preflight)
+      if (!selected.length) return
       const model = getModel(pageSectioningConfig.modelId)
-      const pages = storage.getPages()
       const bookOutline = readBookOutline(storage)
-      const totalPages = pages.length
-      await processWithConcurrency(pages, effectiveConcurrency, async (page) => {
-        const imageClassRow = storage.getLatestNodeData("image-filtering", page.pageId)
-        if (!imageClassRow) return
-        const imageClassification = imageClassRow.data as ImageClassificationOutput
-        const unprunedImageIds = imageClassification.images
-          .filter((img) => !img.isPruned)
-          .map((img) => img.imageId)
-        const availableImages = unprunedImageIds.map((imageId) => ({
-          imageId,
-          imageBase64: storage.getImageBase64(imageId),
-        }))
-        const imageBase64 = storage.getPageImageBase64(page.pageId)
-        const result = await sectionPage(
-          {
-            pageId: page.pageId,
-            pageNumber: page.pageNumber,
-            text: page.text,
-            imageBase64,
-            availableImages,
-            outline: outlineContextForPage(bookOutline, page.pageId),
-          },
-          pageSectioningConfig,
-          model,
-        )
-        storage.putNodeData("page-sectioning", page.pageId, { ...result, source: "ai" })
-        p.emit({
-          type: "step-progress",
-          step: "page-sectioning",
-          message: page.pageId,
-          page: pages.indexOf(page) + 1,
-          totalPages,
-        })
+      await processWithConcurrency(selected, effectiveConcurrency, async (page) => {
+        options.signal?.throwIfAborted()
+        const row = storage.getLatestNodeData("image-filtering", page.pageId)
+        const classification = row?.data as ImageClassificationOutput | undefined
+        const imageIds = classification ? classification.images.filter((image) => !image.isPruned).map((image) => image.imageId)
+          : storage.getPageImages(page.pageId).map((image) => image.imageId)
+        const result = await sectionPage({ pageId: page.pageId, pageNumber: page.pageNumber, text: page.text,
+          imageBase64: storage.getPageImageBase64(page.pageId),
+          availableImages: imageIds.map((imageId) => ({ imageId, imageBase64: storage.getImageBase64(imageId) })),
+          outline: outlineContextForPage(bookOutline, page.pageId),
+        }, pageSectioningConfig, model)
+        options.signal?.throwIfAborted()
+        sectioningDrafts.set(page.pageId, result)
+        p.emit({ type: "step-progress", step: "page-sectioning", message: page.pageId,
+          page: sectioningDrafts.size, totalPages: selected.length })
       })
     })
 
     executors.set("translation", async (p) => {
-      const metadataRow = storage.getLatestNodeData("metadata", "book")
-      const metadata = metadataRow?.data as BookMetadata | null
+      const metadata = storage.getLatestNodeData("metadata", "book")?.data as BookMetadata | null
       const translationConfig = buildTranslationConfig(config, metadata?.language_code ?? null)
-      if (!translationConfig) return
-      const model = getModel(translationConfig.modelId)
-      const pages = storage.getPages()
-      const totalPages = pages.length
-      await processWithConcurrency(pages, effectiveConcurrency, async (page) => {
-        const row = storage.getLatestNodeData("page-sectioning", page.pageId)
-        if (!row) return
-        const sectioning = row.data as PageSectioningOutput
-        const translated = await translatePageTree(
-          page.pageId,
-          sectioning,
-          translationConfig,
-          model,
-        )
-        storage.putNodeData("page-sectioning", page.pageId, { ...translated, source: "ai" })
-        p.emit({
-          type: "step-progress",
-          step: "translation",
-          message: page.pageId,
-          page: pages.indexOf(page) + 1,
-          totalPages,
+      // Like Studio, publish a page only after its generation and translation
+      // both succeed. Retained manual/unknown pages never enter translation.
+      await processWithConcurrency([...sectioningDrafts], effectiveConcurrency, async ([pageId, draft]) => {
+        options.signal?.throwIfAborted()
+        const result = translationConfig
+          ? await translatePageTree(pageId, draft, translationConfig, getModel(translationConfig.modelId)) : draft
+        options.signal?.throwIfAborted()
+        storage.transaction(() => {
+          const previous = previousSectioning.get(pageId)
+          if ((storage.getLatestNodeData("page-sectioning", pageId)?.version ?? 0) !== (previous?.version ?? 0)
+            || JSON.stringify(loadBookConfig(label, booksRoot, configPath)) !== JSON.stringify(config)
+            || JSON.stringify(activeSectioningPages(storage, config, bookDir)) !== JSON.stringify(sectioningPages)) {
+            throw new SectioningSafetyError("STORYBOARD_INPUT_CHANGED", "Sectioning inputs changed during generation; previous output is kept.")
+          }
+          const mint = createSectionIdFactory(storage, pageId)
+          const sections = result.sections.map((section) => ({ ...section, sectionId: mint() }))
+          const old = previous?.data as PageSectioningOutput | undefined
+          retireSectionIds(storage, (old?.sections ?? []).flatMap((section) => section.sectionId ? [section.sectionId] : []))
+          storage.putNodeData("page-sectioning", pageId, { ...result, sections, source: "ai" })
+          reconcileTextCatalog(storage)
         })
+        p.emit({ type: "step-progress", step: "translation", message: pageId })
       })
+      options.signal?.throwIfAborted()
+      completeSectioning(label, booksRoot, config, configPath)
     })
 
     executors.set("web-rendering", async (p) => {
-      completeSectioning(label, booksRoot, config, configPath)
+      options.signal?.throwIfAborted()
       const publication = createStoryboardPublication(storage, label, booksRoot, configPath)
       const renderingStorage = publication.storage
       if (isFixedLayout) {
@@ -646,6 +667,7 @@ async function runAdmittedFullPipeline(
         // LLM call. `page-sectioning` (semantic) is left intact.
         const imageUrlPrefix = `/api/books/${label}/images`
         processFixedLayoutPages(renderingStorage, imageUrlPrefix)
+        options.signal?.throwIfAborted()
         publication.publish(renderingStorage.getPages().map((page) => page.pageId))
         p.emit({ type: "step-progress", step: "web-rendering", message: "fixed-layout pages" })
         return
@@ -716,6 +738,7 @@ async function runAdmittedFullPipeline(
           resolveRenderModel,
           templateEngine,
         )
+        options.signal?.throwIfAborted()
         renderingStorage.putNodeData("web-rendering", page.pageId, result)
         p.emit({
           type: "step-progress",
@@ -725,6 +748,7 @@ async function runAdmittedFullPipeline(
           totalPages,
         })
       })
+      options.signal?.throwIfAborted()
       publication.publish(pages.map((page) => page.pageId))
     })
 
@@ -1354,7 +1378,13 @@ async function runAdmittedFullPipeline(
       storage.putNodeData("accessibility-assessment", "book", output)
     })
 
-    return await runPipelineDAG(executors, progress)
+    const persistedProgress: Progress = { emit(event) {
+      if (event.type === "step-start" && event.step !== "extract") storage.markStepStarted(event.step)
+      if (event.type === "step-complete") storage.markStepCompleted(event.step)
+      if (event.type === "step-error") storage.recordStepError(event.step, event.error)
+      progress.emit(event)
+    } }
+    return await runPipelineDAG(executors, persistedProgress, selectedStages)
   } finally {
     storage.close()
   }

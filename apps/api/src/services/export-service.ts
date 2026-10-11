@@ -87,7 +87,7 @@ export async function prepareExport(
   if (format === "project") return { warnings: [] }
   return withBookWriter(bookDir, () => {
     prepareSectioningRun(label, booksDir, "package", "package", configPath)
-    return prepareAdmittedExport(label, format, booksDir, webAssetsDir, configPath, features, defaultSettingsOverride)
+    return prepareAdmittedExport(label, format, booksDir, webAssetsDir, configPath, features, defaultSettingsOverride, promptsDir)
   })
 }
 
@@ -99,6 +99,7 @@ async function prepareAdmittedExport(
   configPath?: string,
   features?: ExportFeatures,
   defaultSettingsOverride?: ExportDefaultSettings,
+  promptsDir = path.resolve("prompts"),
 ): Promise<PrepareExportResult> {
   const safeLabel = parseBookLabel(label)
   const resolvedDir = path.resolve(booksDir)

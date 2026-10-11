@@ -47,8 +47,10 @@ export function readSectioningLifecycle(bookDir: string): SectioningLifecycle | 
   return SectioningLifecycle.parse(JSON.parse(fs.readFileSync(file, "utf8")))
 }
 
-export function writeSectioningLifecycle(bookDir: string, mode: SectioningMode, sectioningReady: boolean): void {
-  atomicBookFile(path.join(bookDir, SECTIONING_LIFECYCLE), JSON.stringify({ version: 1, mode, sectioningReady }))
+export function writeSectioningLifecycle(bookDir: string, mode: SectioningMode, sectioningReady: boolean, storyboardPending?: boolean): void {
+  const previous = readSectioningLifecycle(bookDir)
+  const pending = storyboardPending ?? (!sectioningReady || previous?.storyboardPending === true || previous?.sectioningReady === false)
+  atomicBookFile(path.join(bookDir, SECTIONING_LIFECYCLE), JSON.stringify({ version: 1, mode, sectioningReady, storyboardPending: pending }))
 }
 
 /** Invalidation must revoke readiness before its associated DB mutation. A
