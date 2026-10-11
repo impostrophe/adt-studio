@@ -1,3 +1,6 @@
+import { recoverPackagePublication } from "./packaging/publication.js"
+import { reconcileCurrentGeneration } from "./generation-execution.js"
+import { isGenerationKind, readGenerationCatalog } from "./generation-catalog.js"
 import path from "node:path"
 import { OUTPUT_KIND_STEP, STEP_TO_STAGE, STAGE_ORDER, StageName, OutputRunScope, type PipelineResumeSummary } from "@adt/types"
 import { assertBookWriter, createBookStorage, ExtractionAdmissionError, recoverSectioningTransition, resolveBookPaths } from "@adt/storage"
@@ -37,16 +40,17 @@ export async function runCatalogResume(label: string, options: StageRunOptions, 
   options.signal?.throwIfAborted()
   recoverSectioningTransition(bookDir)
   const config = loadBookConfig(label, options.booksDir, options.configPath)
-  const admission = prepareExtractionAdmission(bookDir, extractionOptionsFromConfig(path.join(bookDir, `${label}.pdf`), config))
+  const admission = prepareExtractionAdmission(bookDir, { ...extractionOptionsFromConfig(path.join(bookDir, `${label}.pdf`), config), startPage: options.startPage ?? config.start_page, endPage: options.endPage ?? config.end_page })
   if (admission.outcome !== "reused") throw new ExtractionAdmissionError("EXTRACTION_INCOMPLETE")
+  recoverPackagePublication(bookDir)
   const stages = catalogResumeStages(options.fromStage, options.toStage)
   OutputRunScope.parse(options.outputScope ?? {})
-  prepareSectioningRun(label, options.booksDir, stages[0], stages[stages.length - 1], options.configPath)
+  if (!stages.includes("sectioning") && stages[0] !== "extract") prepareSectioningRun(label, options.booksDir, stages[0], stages[stages.length - 1], options.configPath)
   const storage = createBookStorage(label, options.booksDir)
   try {
-    assertSectioningCurrent(storage, config, bookDir)
+    if (!stages.includes("sectioning") && stages[0] !== "extract") assertSectioningCurrent(storage, config, bookDir)
     // An empty catalog cannot prove that missing Storyboard work is current.
-    if (storage.getPages().some((page) => !storage.getLatestNodeData("web-rendering", page.pageId))) {
+    if (!stages.includes("storyboard") && stages[0] !== "extract" && storage.getPages().some((page) => !storage.getLatestNodeData("web-rendering", page.pageId))) {
       throw new ExtractionAdmissionError("UNSAFE_RESUME_UNAVAILABLE")
     }
     const read = () => {
@@ -55,8 +59,8 @@ export async function runCatalogResume(label: string, options: StageRunOptions, 
       if (options.fromStage === "easy-read" && options.toStage === "easy-read") {
         currentConfig.easy_read = { ...currentConfig.easy_read, enabled: true }
       }
-      return readOutputCatalog({ storage, bookDir, config: currentConfig, promptsDir: options.promptsDir,
-        configDir: options.configPath ? path.join(path.dirname(options.configPath), "config") : path.resolve("config") })
+      return [...(stages.some((stage) => stage === "extract" || isGenerationKind(stage)) ? readGenerationCatalog({ storage, config: currentConfig, bookDir, promptsDir: options.promptsDir, templatesDir: options.templatesDir, configPath: options.configPath, webAssetsDir: options.webAssetsDir, configDir: options.configDir ?? (options.configPath ? path.join(path.dirname(options.configPath), "config") : path.resolve("config")) }) : []), ...readOutputCatalog({ storage, bookDir, config: currentConfig, promptsDir: options.promptsDir,
+        configDir: options.configDir ?? (options.configPath ? path.join(path.dirname(options.configPath), "config") : path.resolve("config")) })]
         .filter((status) => stages.includes(STEP_TO_STAGE[OUTPUT_KIND_STEP[status.identity.kind]]) && selectedOutput(status, options.outputScope?.selection))
     }
     const before = new Map(read().map((status) => [outputIdentityKey(status.identity), status]))
@@ -80,15 +84,19 @@ export async function runCatalogResume(label: string, options: StageRunOptions, 
           : output.usable && output.warnings.length ? "upstream-warning" : "unresolved"
         return { identity: output.identity, state, reason, usable: output.usable, current: output.current, protected: output.protected }
       })
-      return { kind: "catalog-resume", extraction: "verified-reusable", stages,
+      return { kind: "catalog-resume", extraction: options.extractionCreated ? "created" : "verified-reusable", stages,
         status: status === "complete" && outputs.some((output) => output.state === "blocked" || (output.reason === "user-skipped" && !output.current)) ? "incomplete" : status, outputs }
     }
     try {
       for (const stage of stages) {
         options.signal?.throwIfAborted()
         const outputs = read().filter((output) => STEP_TO_STAGE[OUTPUT_KIND_STEP[output.identity.kind]] === stage)
-        if (outputs.some((output) => selectedForGeneration(output, undefined, options.outputScope))) await execute(stage)
-        else if (outputs.every((output) => output.current || output.excluded)) progress.emit({ type: "stage-complete", stage })
+        if (stage === "package" && read().some((output) => output.identity.kind !== "package" && !output.current && !output.excluded)) continue
+        if (stage === "package" || outputs.some((output) => selectedForGeneration(output, undefined, options.outputScope))) await execute(stage)
+        else if (outputs.every((output) => output.current || output.excluded)) {
+          reconcileCurrentGeneration(label, options, stage)
+          progress.emit({ type: "stage-complete", stage })
+        }
       }
     } catch (error) {
       if (options.signal?.aborted) storage.clearRunningStepRuns()

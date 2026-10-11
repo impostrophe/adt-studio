@@ -230,7 +230,7 @@ export function createStageRoutes(
     // Sectioning and any other requested generative stages still need keys.
     const modelStages = isFixedLayoutBook(config)
       ? requestedStages.filter((stage) => stage !== "storyboard") : requestedStages
-    if (!resume) assertStageRunModelCredentials(config, modelStages, credentials)
+    if (!resume && fromStage !== "extract") assertStageRunModelCredentials(config, modelStages, credentials)
 
     console.log(
       `[stages] ${label}: ${fromStage}→${toStage}${renderOnly ? " (render-only)" : ""} ` +
@@ -240,7 +240,7 @@ export function createStageRoutes(
     const activeRun = stageService.getStatus(label).active
     if (activeRun?.status !== "running" && activeRun?.status !== "cancelling") {
       withBookWriter(path.join(path.resolve(booksDir), parseBookLabel(label)), () => {
-        if (fromStage === "extract") return // Common execution admission owns Extract; never clear imports.
+        if (fromStage === "extract" || resume) return // Shared planner owns admission and publication.
         prepareSectioningRun(label, booksDir, fromStage, toStage, configPath)
         const storage = createBookStorage(label, booksDir)
         try { assertAuthoredReplacement(storage, { fromStage, toStage, replaceManual, protectedReplacements }) }

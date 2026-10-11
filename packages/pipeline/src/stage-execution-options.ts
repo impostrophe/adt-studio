@@ -4,6 +4,18 @@ import type { OutputRunScope, ProgressEvent, PageErrorPolicy, StepName, PageErro
 export interface StageRunOptions {
   /** Verify extraction and plan supported catalog outputs before executing. */
   resume?: boolean
+  /** Internal admitted generation publication; never accepted from HTTP. */
+  extractionCreated?: boolean
+  generationStorage?: import("@adt/storage").Storage
+  generationPageIds?: string[]
+  generationReplaceProtected?: boolean
+  cacheDir?: string
+  logLevel?: import("@adt/llm").LogLevel
+  templatesDir?: string
+  configDir?: string
+  pdfPath?: string
+  startPage?: number
+  endPage?: number
   concurrency?: number
   onResumeSummary?: (summary: import("@adt/types").PipelineResumeSummary) => void
   replaceManual?: boolean

@@ -6,6 +6,8 @@ import { parseBookLabel, PackagingWarning, type PackagingStatus } from "@adt/typ
 import { createBookStorage } from "@adt/storage"
 import {
   packageAdtWeb,
+  packageInventoryValid,
+  writePackageInventory,
   computePackagingInputHash,
   loadBookConfig,
   normalizeLocale,
@@ -83,7 +85,7 @@ function readBuildWarnings(bookDir: string): PackagingWarning[] {
 function isBuildCacheValid(bookDir: string, hash: string): boolean {
   const hashPath = getBuildHashPath(bookDir)
   if (!fs.existsSync(hashPath) || fs.readFileSync(hashPath, "utf-8").trim() !== hash) return false
-  return fs.existsSync(getBuildWarningsPath(bookDir))
+  return fs.existsSync(getBuildWarningsPath(bookDir)) && packageInventoryValid(path.join(bookDir, "adt"))
 }
 
 function readBuildVersion(bookDir: string, fallbackHash: string): string {
@@ -374,6 +376,7 @@ async function runPackaging(
     const postHash = computePackagingInputHash(hashOptions)
     fs.writeFileSync(hashPath, postHash, "utf-8")
     fs.writeFileSync(versionPath, bundleVersion, "utf-8")
+    writePackageInventory(path.join(bookDir, "adt"))
     return { version: bundleVersion, warnings }
   } finally {
     storage.close()

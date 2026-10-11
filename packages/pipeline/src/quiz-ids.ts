@@ -85,6 +85,7 @@ export function saveQuizOutput(
   storage: Storage,
   output: QuizGenerationOutput,
   mode: "edit" | "insert" | "replace",
+  replaceProtected = false,
 ): { output: QuizGenerationOutput; version: number } {
   return storage.transaction(() => {
     const spent = collectSpentQuizIds(storage)
@@ -93,7 +94,7 @@ export function saveQuizOutput(
     const currentData = currentRow?.data as QuizGenerationOutput | undefined
     // Invalid AI identities need not become current again to be regenerated.
     // Protected legacy quizzes resolve their positional IDs before filtering.
-    const protectedQuizzes = mode === "replace" && currentData ? withResolvedQuizIds({ ...currentData, quizzes: currentData.quizzes.flatMap((quiz, index) =>
+    const protectedQuizzes = mode === "replace" && !replaceProtected && currentData ? withResolvedQuizIds({ ...currentData, quizzes: currentData.quizzes.flatMap((quiz, index) =>
       isProtectedContent(quiz) ? [{ ...quiz, quizId: quiz.quizId ?? formatQuizId(index + 1) }] : []
     ) }).quizzes : []
     if (mode === "replace") {

@@ -6,7 +6,6 @@ import { Hono } from "hono"
 import { unzipSync } from "fflate"
 import { createBookStorage, extractionHash, readExtractionManifest, withBookWriter } from "@adt/storage"
 import { extractPDF } from "@adt/pipeline"
-import { ExtractionResumeBlockedSummary } from "@adt/types"
 import { createStageRoutes, makeBeforeRun } from "./stages.js"
 import { createBookEventBus, type BookSSEEvent } from "../services/book-event-bus.js"
 import { createPageErrorDecisions } from "../services/page-error-decisions.js"
@@ -53,23 +52,19 @@ async function extract() {
 }
 const options = () => ({ booksDir: root, configPath: config, credentials: {}, promptsDir: "", fromStage: "extract", toStage: "extract" })
 
-it("HTTP and direct stage execution reject verified reuse before model transport or any content write", async () => {
+it("HTTP and direct stage reuse retain unknown derived output and report unresolved protection without transport", async () => {
   await extract()
-  const db = path.join(book, "book.db")
-  const before = extractionHash(fs.readFileSync(db))
+  const db = createBookStorage("book", root)
+  db.putNodeData("metadata", "book", { title: "Manual title", source: "manual" })
+  const before = db.getNodeVersionFingerprint()
   const transport = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("no provider work"))
   const s = setup()
-  const response = await s.request()
-  expect(response.status).toBe(409)
-  const body = await response.json()
-  expect(body).toMatchObject({ code: "UNSAFE_RESUME_UNAVAILABLE" })
-  expect(ExtractionResumeBlockedSummary.parse(body.summary)).toEqual({
-    kind: "admission-only", extraction: "verified-reusable", downstream: "blocked",
-    scopeAssessment: "unavailable", generated: false, contentChanged: false,
-  })
-  await expect(createStageRunner().run("book", options(), { emit() {} })).rejects.toMatchObject({ code: "UNSAFE_RESUME_UNAVAILABLE" })
+  expect((await s.request()).status).toBe(200)
+  await vi.waitFor(() => expect(s.service.getStatus("book").active?.error).toContain("RESUME_INCOMPLETE"))
+  await expect(createStageRunner().run("book", { ...options(), promptsDir: path.join(project, "prompts") }, { emit() {} })).rejects.toMatchObject({ code: "RESUME_INCOMPLETE" })
   expect(transport).not.toHaveBeenCalled()
-  expect(extractionHash(fs.readFileSync(db))).toBe(before)
+  expect(db.getNodeVersionFingerprint()).toEqual(before)
+  db.close()
 })
 
 it("does not claim verified reuse when source validation fails", async () => {
@@ -85,10 +80,11 @@ it("does not claim verified reuse when source validation fails", async () => {
 it("a duplicate queued Extract job rechecks after its predecessor and never runs its clear callback", async () => {
   let finish!: () => void
   let started = false
+  let runs = 0
   const runner: StageRunner = { async run() {
     await extract()
     started = true
-    await new Promise<void>((resolve) => { finish = resolve })
+    if (++runs === 1) await new Promise<void>((resolve) => { finish = resolve })
   } }
   const { service } = setup(runner)
   service.startStageRun("book", options())
@@ -97,7 +93,7 @@ it("a duplicate queued Extract job rechecks after its predecessor and never runs
   expect(service.startStageRun("book", { ...options(), beforeRun: clear }).status).toBe("queued")
   const before = extractionHash(fs.readFileSync(path.join(book, "book.db")))
   finish()
-  await vi.waitFor(() => expect(service.getStatus("book").active?.error).toContain("UNSAFE_RESUME_UNAVAILABLE"))
+  await vi.waitFor(() => expect(runs).toBe(2))
   expect(clear).not.toHaveBeenCalled()
   expect(extractionHash(fs.readFileSync(path.join(book, "book.db")))).toBe(before)
 })

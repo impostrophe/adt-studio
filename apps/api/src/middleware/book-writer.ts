@@ -1,3 +1,4 @@
+import { assertPackageReadable, recoverPackagePublication } from "@adt/pipeline"
 import type { MiddlewareHandler } from "hono"
 import fs from "node:fs"
 import { HTTPException } from "hono/http-exception"
@@ -23,11 +24,13 @@ export function bookWriterMiddleware(booksDir: string): MiddlewareHandler {
     if ((c.req.method === "GET" || c.req.method === "HEAD") && !archiveRead) {
       // Keep diagnostics and source/config inspection available on failed imports.
       if (suffix && !/^\/(debug|step-status|config|source-pdf)(\/|$)/.test(suffix)) assertExtractionReadable(bookDir)
+      if (/^\/(adt|preview|package)(\/|$)/.test(suffix)) assertPackageReadable(bookDir)
       return next()
     }
     if (c.req.method === "OPTIONS") return next()
     return withBookWriter(bookDir, async () => {
       recoverSectioningTransition(bookDir)
+      recoverPackagePublication(bookDir)
       // Explicit whole-book deletion is still allowed for a failed import.
       if (!(suffix === "" && c.req.method === "DELETE")) assertExtractionReadable(bookDir)
       await next()

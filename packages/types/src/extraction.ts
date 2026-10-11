@@ -66,7 +66,7 @@ export type ExtractionManifest = z.infer<typeof ExtractionManifest>
 /** Observed persisted outputs, never a claim that unassessed stages are current. */
 export const PipelineResumeSummary = z.object({
   kind: z.literal("catalog-resume"),
-  extraction: z.literal("verified-reusable"),
+  extraction: z.enum(["created", "verified-reusable"]),
   status: z.enum(["complete", "incomplete", "failed", "cancelled"]),
   stages: z.array(StageName),
   outputs: z.array(z.object({
@@ -79,3 +79,6 @@ export const PipelineResumeSummary = z.object({
   }).strict()),
 }).strict()
 export type PipelineResumeSummary = z.infer<typeof PipelineResumeSummary>
+
+export const PackagePublication = z.object({ version: z.literal(1), attemptId: z.string().uuid() }).strict()
+export type PackagePublication = z.infer<typeof PackagePublication>

@@ -114,8 +114,8 @@ export function createStageService(
         job.controller.signal.throwIfAborted()
         if (options.fromStage === "extract") assertSafeExtractionRun(label, options.booksDir, options.configPath)
         else assertExtractionReadable(resolveBookPaths(label, options.booksDir).bookDir)
-        prepareSectioningRun(label, options.booksDir, options.fromStage as StageName, options.toStage as StageName, options.configPath)
-        if (!options.resume) options.beforeRun?.()
+        if (!options.resume && options.fromStage !== "extract") prepareSectioningRun(label, options.booksDir, options.fromStage as StageName, options.toStage as StageName, options.configPath)
+        if (!options.resume && options.fromStage !== "extract") options.beforeRun?.()
         await runner.run(label, effectiveOptions, progress)
       })
       // Resolved: either a real completion, or a cancel that landed after the
@@ -130,12 +130,10 @@ export function createStageService(
         // runner is no longer touching step_runs. Return in-flight steps to idle
         // (deliberate action, not a failure) and announce completion of the cancel.
         try {
-          const storage = createBookStorage(label, options.booksDir)
-          try {
-            storage.clearRunningStepRuns()
-          } finally {
-            storage.close()
-          }
+          withBookWriter(resolveBookPaths(label, options.booksDir).bookDir, () => {
+            const storage = createBookStorage(label, options.booksDir)
+            try { storage.clearRunningStepRuns() } finally { storage.close() }
+          })
         } catch (cleanupErr) {
           console.error(`[stage-run] ${label} cancel cleanup failed:`, cleanupErr)
         }

@@ -350,15 +350,15 @@ export async function generateGlossary(
  * Relies on the prior glossary node surviving any pre-run clear (see
  * getStageRerunClearNodes). */
 export async function regenerateGlossaryPreservingEdits(
-  options: Omit<GenerateGlossaryOptions, "excludedWords">
+  options: Omit<GenerateGlossaryOptions, "excludedWords"> & { replaceProtected?: boolean }
 ): Promise<GlossaryOutput> {
   const existingRow = options.storage.getLatestNodeData("glossary", "book")
   const existingItems = (existingRow?.data as GlossaryOutput | undefined)?.items ?? []
   const generated = await generateGlossary({
     ...options,
-    excludedWords: getPrunedGlossaryWords(existingItems),
+    excludedWords: options.replaceProtected ? [] : getPrunedGlossaryWords(existingItems),
   })
-  const regenerated = mergeGeneratedGlossaryWithManualItems(generated, existingItems)
+  const regenerated = options.replaceProtected ? generated : mergeGeneratedGlossaryWithManualItems(generated, existingItems)
 
   return preserveGlossaryMedia(regenerated, existingItems, options.storage)
 }

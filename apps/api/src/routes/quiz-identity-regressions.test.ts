@@ -423,6 +423,14 @@ describe("full-stage quiz regeneration", () => {
     expect(history()).toHaveLength(3)
   })
 
+  it("explicit protected generation replacement preserves history and never reuses retired quiz IDs", () => {
+    seed([{ ...quiz("Human question", "qz001"), source: "manual" }])
+    useStorage((s) => saveQuizOutput(s, output([quiz("Generated replacement")]), "replace", true))
+    expect(stored().quizzes).toEqual([expect.objectContaining({ question: "Generated replacement", quizId: "qz002", source: "ai" })])
+    expect(history()).toHaveLength(2)
+    expect(history()[0].data.quizzes[0]).toMatchObject({ question: "Human question", quizId: "qz001", source: "manual" })
+  })
+
   it("cannot reuse or overwrite old manual audio when the full run preserves the speech manifest", async () => {
     seed([quiz("Original question", "qz001")])
     const audioDir = path.join(root, label, "audio/en")

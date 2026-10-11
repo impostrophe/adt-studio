@@ -179,7 +179,7 @@ main().catch((err) => {
   if (err instanceof ExtractionAdmissionError || err instanceof BookBusyError) {
     process.stderr.write(`\nFailed: ${err.message}\n`)
     if (err instanceof ExtractionAdmissionError && err.summary) {
-      process.stderr.write("Extraction: verified reusable\nDownstream: blocked; no work started\nCurrent/stale/protected scopes: not assessed\nContent changed: no. Generated output: none.\nPipeline incomplete; exiting with status 1.\nUse --from-stage sectioning --to-stage storyboard for the supported B1 range.\n")
+      process.stderr.write("Extraction: verified reusable\nDownstream: blocked; no work started\nCurrent/stale/protected scopes: not assessed\nContent changed: no. Generated output: none.\nPipeline incomplete; exiting with status 1.\nComplete the required upstream stages, then retry the requested range.\n")
     }
     process.exit(1)
   }

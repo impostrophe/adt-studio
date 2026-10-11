@@ -1,3 +1,4 @@
+import { readGenerationCatalog, GENERATION_NODES, isGenerationKind, assertPersistedSectioning, prepareSectioningRun } from "@adt/pipeline"
 import fs from "node:fs"
 import path from "node:path"
 import { Hono } from "hono"
@@ -8,11 +9,11 @@ import { loadBookConfig, readOutputCatalog, outputIdentityKey, summarizeOutputs,
 
 export function createOutputRoutes(booksDir: string, promptsDir: string, configPath?: string): Hono {
   const app = new Hono()
-  const read = (label: string, storage: ReturnType<typeof createBookStorage>) => readOutputCatalog({
+  const read = (label: string, storage: ReturnType<typeof createBookStorage>) => [...readGenerationCatalog({ storage, config: loadBookConfig(label, booksDir, configPath), bookDir: path.join(path.resolve(booksDir), label), promptsDir, configPath }), ...readOutputCatalog({
     storage, config: loadBookConfig(label, booksDir, configPath),
     bookDir: path.join(path.resolve(booksDir), label), promptsDir,
     configDir: configPath ? path.join(path.dirname(configPath), "config") : path.resolve("config"),
-  })
+  })]
   app.get("/books/:label/outputs", (c) => {
     const label = parseBookLabel(c.req.param("label"))
     if (!fs.existsSync(path.join(path.resolve(booksDir), label, `${label}.db`))) throw new HTTPException(404, { message: "Book not found" })
@@ -34,7 +35,7 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
     try {
       const catalog = buildTextCatalogSnapshot(storage, storage.getPages())
       const captionConsumers = new Set(catalog.entries.map((entry) => entry.id))
-      const outputs = read(label, storage).filter((output) => !output.excluded &&
+      const outputs = read(label, storage).filter((output) => !isGenerationKind(output.identity.kind) && !output.excluded &&
         (!features.languages || !output.identity.language || features.languages.includes(output.identity.language)) &&
         (output.group !== "glossary" || output.sectionIds.length > 0 || features.glossary !== false) &&
         (output.group !== "quizzes" || features.quizzes !== false) &&
@@ -52,12 +53,15 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
     if (!fs.existsSync(path.join(path.resolve(booksDir), label, `${label}.db`))) throw new HTTPException(404, { message: "Book not found" })
     const storage = createBookStorage(label, booksDir)
     try {
+      // This preflight opens storage, so perform it under writer admission but
+      // before the review transaction to avoid a second SQLite connection lock.
+      if (review.identity.kind === "storyboard") prepareSectioningRun(label, booksDir, "package", "package", configPath)
       return storage.transaction(() => {
         const output = read(label, storage).find((item) => outputIdentityKey(item.identity) === outputIdentityKey(review.identity))
         if (!output || output.signature !== review.signature || output.contentHash !== review.contentHash) {
           throw new HTTPException(409, { message: "Output or its inputs changed. Refresh before reviewing." })
         }
-        if (!output.usable || output.excluded) throw new HTTPException(409, { message: "Only included, usable content can be reviewed." })
+        if (!output.usable || output.excluded || output.blocked) throw new HTTPException(409, { message: "Only included, usable content can be reviewed." })
         if (review.action === "keep" && !output.protected) throw new HTTPException(400, { message: "Keep is for protected or legacy content." })
         if (review.action === "checked" && !(output.identity.kind === "preparation" && output.warnings.some((warning) => warning.reason.startsWith("preparation-")))) {
           throw new HTTPException(400, { message: "Mark checked resolves only a preparation fallback warning." })
@@ -68,6 +72,15 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
           reconcileSpeechInputs({ storage, config, sourceLanguage, languages: [output.identity.language!],
             profiles: loadCoreTtsProfiles(configPath ? path.join(path.dirname(configPath), "config") : path.resolve("config")),
             promptsDir, bookDir: path.join(path.resolve(booksDir), label) })
+        }
+        if (isGenerationKind(output.identity.kind)) {
+          if (output.identity.kind === "sectioning") assertPersistedSectioning(storage, loadBookConfig(label, booksDir, configPath), path.join(path.resolve(booksDir), label))
+          const node = GENERATION_NODES[output.identity.kind], itemId = output.identity.id
+          const data = storage.getLatestNodeData(node, itemId)?.data as { generationEvidence?: object } | undefined
+          if (!data) throw new HTTPException(409, { message: "Output is no longer available." })
+          const version = storage.putNodeData(node, itemId, { ...data, generationEvidence: { ...data.generationEvidence,
+            review: { signature: review.signature, contentHash: review.contentHash, action: review.action } } })
+          return c.json({ version })
         }
         const { node, itemId, field, idField } = outputLocation(output, storage)
         const current = storage.getLatestNodeData(node, itemId)

@@ -1,3 +1,5 @@
+import { GENERATION_OUTPUT_KINDS } from "@adt/types"
+import { getStageLabelI18n } from "../pipeline-i18n"
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useLingui } from "@lingui/react/macro"
@@ -16,10 +18,10 @@ export function BulkOutputReview({ bookLabel, outputs }: { bookLabel: string; ou
   const [scope, setScope] = useState("")
   const [selected, setSelected] = useState<string[]>([])
   const [replace, setReplace] = useState(false)
-  const kindLabel = (output: OutputStatus) => output.identity.kind === "translation" ? t`Translation` : output.identity.kind === "preparation" ? t`Speech text` : output.identity.kind === "audio" ? t`Audio` : output.identity.kind === "caption" ? t`Caption` : output.identity.kind === "easy-read" ? t`Easy Read` : output.identity.kind === "timestamps" ? t`Timestamps` : t`Image translation`
+  const kindLabel = (output: OutputStatus) => GENERATION_OUTPUT_KINDS.some((kind) => kind === output.identity.kind) ? getStageLabelI18n(OUTPUT_KIND_TO_STAGE[output.identity.kind]) : output.identity.kind === "translation" ? t`Translation` : output.identity.kind === "preparation" ? t`Speech text` : output.identity.kind === "audio" ? t`Audio` : output.identity.kind === "caption" ? t`Caption` : output.identity.kind === "easy-read" ? t`Easy Read` : output.identity.kind === "timestamps" ? t`Timestamps` : t`Image translation`
   const key = (output: OutputStatus) => JSON.stringify(output.identity)
   const candidates = outputs.filter((output) => !scope || [...output.pageIds, ...output.sectionIds, output.group].includes(scope))
-  const chosen = candidates.filter((output) => selected.includes(key(output)))
+  const chosen = candidates.filter((output) => !output.blocked && selected.includes(key(output)))
   const protectedCount = chosen.filter((output) => output.protected).length
   const scopes = [...new Set(outputs.flatMap((output) => [...output.pageIds, ...output.sectionIds, ...(output.group ? [output.group] : [])]))]
   const mutation = useMutation({ mutationFn: async (action: "keep" | "checked" | "generate") => {
@@ -31,9 +33,9 @@ export function BulkOutputReview({ bookLabel, outputs }: { bookLabel: string; ou
     } else {
       const stages = STAGE_ORDER.filter((stage) => chosen.some((output) => OUTPUT_KIND_TO_STAGE[output.identity.kind] === stage))
       if (!stages.length) return
-      for (const stage of stages) await api.runStages(bookLabel, apiKey, { fromStage: stage, toStage: stage, outputScope: {
-        selection: { identities: chosen.map((output) => output.identity) },
-        ...(replace ? { replace: chosen.filter((output) => output.protected).map((output) => ({ identity: output.identity, signature: output.signature, contentHash: output.contentHash })) } : {}),
+      for (const stage of stages) await api.runStages(bookLabel, apiKey, { fromStage: stage, toStage: stage, resume: chosen.some((output) => OUTPUT_KIND_TO_STAGE[output.identity.kind] === stage && GENERATION_OUTPUT_KINDS.some((kind) => kind === output.identity.kind)), outputScope: {
+        selection: { identities: chosen.filter((output) => OUTPUT_KIND_TO_STAGE[output.identity.kind] === stage).map((output) => output.identity) },
+        ...(replace ? { replace: chosen.filter((output) => output.protected && OUTPUT_KIND_TO_STAGE[output.identity.kind] === stage).map((output) => ({ identity: output.identity, signature: output.signature, contentHash: output.contentHash })) } : {}),
       } })
     }
   }, onSettled: () => client.invalidateQueries({ queryKey: ["books", bookLabel] }) })

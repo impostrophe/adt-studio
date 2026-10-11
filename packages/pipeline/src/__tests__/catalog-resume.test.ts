@@ -101,10 +101,9 @@ it("regenerates a changed consumer while preserving a manual neighbor and report
   expect(histories()).toEqual(before)
 })
 
-it("rejects unsupported ranges and mismatched extraction before content or transport", async () => {
+it("rejects invalid ranges and mismatched extraction before content or transport", async () => {
   const before = histories()
-  await expect(runFullPipeline({ ...options(), fromStage: "captions", toStage: "translate" })).rejects.toMatchObject({ code: "UNSAFE_RESUME_UNAVAILABLE" })
-  await expect(runFullPipeline({ ...options(), fromStage: "sectioning", toStage: "speech" })).rejects.toMatchObject({ code: "UNSAFE_RESUME_UNAVAILABLE" })
+  await expect(runFullPipeline({ ...options(), fromStage: "speech", toStage: "sectioning" })).rejects.toThrow("Invalid stage range")
   fs.appendFileSync(path.join(bookDir(), "config.yaml"), "spread_mode: true\n")
   await expect(createStageRunner().run(label, stageOptions(), { emit() {} })).rejects.toMatchObject({ code: "EXTRACTION_INPUTS_CHANGED" })
   await expect(runFullPipeline({ ...options(), fromStage: "sectioning", toStage: "speech" })).rejects.toMatchObject({ code: "EXTRACTION_INPUTS_CHANGED" })

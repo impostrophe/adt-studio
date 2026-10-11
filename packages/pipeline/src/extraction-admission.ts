@@ -71,6 +71,7 @@ export function assertSafeExtractionRun(label: string, booksRoot: string, config
   withBookWriter(bookDir, () => {
     const config = loadBookConfig(label, booksRoot, configPath)
     const admission = prepareExtractionAdmission(bookDir, extractionOptionsFromConfig(path.join(bookDir, `${label}.pdf`), config))
-    if (admission.outcome === "reused") throw new ExtractionAdmissionError("UNSAFE_RESUME_UNAVAILABLE")
+    // Reuse enters the shared generation planner; never the legacy full-run body.
+    void admission
   })
 }

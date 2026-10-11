@@ -1,3 +1,7 @@
+import { isGenerationKind } from "./generation-catalog.js"
+import { runPackageResume } from "./package-resume.js"
+import { extractionOptionsFromConfig, prepareExtractionAdmission } from "./extraction-admission.js"
+import { runGenerationStage } from "./generation-execution.js"
 import { runCatalogResume } from "./catalog-resume.js"
 import { assertSafeExtractionRun } from "@adt/pipeline"
 import { retainedTranslation, isProtectedContent, createSectionIdFactory, retireSectionIds } from "@adt/pipeline"
@@ -911,7 +915,7 @@ const STAGE_RUNNERS: Record<StageName, RunFn> = {
   "easy-read": runEasyReadStep,
   "translate": runTranslateStep,
   "speech": runSpeechStep,
-  "package": async () => { /* packaging handled separately */ },
+  "package": runPackageResume,
 }
 
 /**
@@ -925,8 +929,34 @@ export function createStageRunner(): StageRunner {
     run(label, options, progress) {
       const { bookDir } = resolveBookPaths(label, options.booksDir)
       return withBookWriter(bookDir, async () => {
-        if (options.resume) return runCatalogResume(label, options, progress, (stage) =>
-          runner.run(label, { ...options, resume: false, fromStage: stage, toStage: stage, beforeRun: undefined }, progress))
+        if (!STAGE_ORDER.includes(options.fromStage as StageName) || !STAGE_ORDER.includes(options.toStage as StageName) || STAGE_ORDER.indexOf(options.fromStage as StageName) > STAGE_ORDER.indexOf(options.toStage as StageName)) throw new Error("Invalid stage range")
+        const requested = STAGE_ORDER.slice(STAGE_ORDER.indexOf(options.fromStage as StageName), STAGE_ORDER.indexOf(options.toStage as StageName) + 1)
+        if (requested.includes("package") && (!options.webAssetsDir || !fs.existsSync(options.webAssetsDir))) throw new Error("Web runtime assets are required before starting this stage range")
+        let extractionCreated = false
+        if (options.fromStage === "extract") {
+          const config = loadBookConfig(label, options.booksDir, options.configPath)
+          const extractionOptions = {
+            ...extractionOptionsFromConfig(options.pdfPath ?? path.join(bookDir, `${label}.pdf`), config),
+            startPage: options.startPage ?? config.start_page,
+            endPage: options.endPage ?? config.end_page,
+            fontsCacheDir: resolveFontsCacheDir(options.booksDir),
+            signal: options.signal,
+          }
+          options.signal?.throwIfAborted()
+          // Opening writable storage creates schema/directories. Reject unsafe
+          // destinations before that side effect, including direct stage calls.
+          prepareExtractionAdmission(bookDir, extractionOptions)
+          const storage = createBookStorage(label, options.booksDir)
+          try {
+            const extractionOutcome = await extractPDF(extractionOptions, storage, progress)
+            extractionCreated = extractionOutcome === "extracted"
+            if (!storage.getStepRuns().some((step) => step.step === "extract" && step.status === "done")) storage.markStepCompleted("extract")
+          } finally { storage.close() }
+        }
+        if (options.resume || options.fromStage === "extract") return runCatalogResume(label, { ...options, extractionCreated }, progress, (stage) =>
+          (stage === "extract" || stage !== "package" && isGenerationKind(stage))
+            ? runGenerationStage(label, options, stage, progress, (admitted, publicationProgress) => runner.run(label, { ...admitted, resume: false, fromStage: stage, toStage: stage, beforeRun: undefined }, publicationProgress))
+            : runner.run(label, { ...options, resume: false, fromStage: stage, toStage: stage, beforeRun: undefined }, progress))
         if (options.fromStage === "extract") assertSafeExtractionRun(label, options.booksDir, options.configPath)
         else assertExtractionReadable(resolveBookPaths(label, options.booksDir).bookDir)
         prepareSectioningRun(label, options.booksDir, options.fromStage as StageName, options.toStage as StageName, options.configPath)
@@ -960,7 +990,7 @@ function createAdmittedStageRunner(): StageRunner {
       // Wrap progress to persist step lifecycle to the DB.
       // This is the single place where step state transitions are recorded,
       // so the step-status endpoint can read from step_runs.
-      const completionStorage = createBookStorage(label, booksDir)
+      const completionStorage = options.generationStorage ?? createBookStorage(label, booksDir)
       const runningSteps = new Set<StepName>()
       try {
         const trackingProgress: StageRunProgress = {
@@ -1116,15 +1146,15 @@ async function runExtractStep(
 ): Promise<void> {
   const { booksDir, promptsDir, configPath } = options
 
-  const storage = createBookStorage(label, booksDir)
+  const storage = options.generationStorage ?? createBookStorage(label, booksDir)
 
   try {
-    const pdfPath = path.join(path.resolve(booksDir), label, `${label}.pdf`)
+    const pdfPath = options.pdfPath ?? path.join(path.resolve(booksDir), label, `${label}.pdf`)
     const config = loadBookConfig(label, booksDir, configPath)
 
     // Step 1: Extract PDF
     console.log(`[stage-run] ${label}: extracting PDF from ${pdfPath}`)
-    await extractPDF(
+    if (!options.generationStorage) await extractPDF(
       {
         pdfPath,
         startPage: config.start_page,
@@ -1143,7 +1173,7 @@ async function runExtractStep(
 
     // Step 2: Extract Metadata
     const metadataConfig = buildMetadataConfig(config)
-    const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
+    const cacheDir = options.cacheDir ?? path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
     const promptEngine = createPromptEngine([bookPromptsDir, promptsDir], { basePromptModelId: config.base_prompt_model })
     const rateLimiter = config.rate_limit
@@ -1169,6 +1199,7 @@ async function runExtractStep(
     }
 
     const metadataModel = createLLMModel({
+        logLevel: options.logLevel,
       modelId: metadataConfig.modelId,
       cacheDir,
       promptEngine,
@@ -1206,6 +1237,7 @@ async function runExtractStep(
       )
       const bookSummaryConfig = buildBookSummaryConfig(config, summaryLanguage)
       const summaryModel = createLLMModel({
+        logLevel: options.logLevel,
         modelId: bookSummaryConfig.modelId,
         cacheDir,
         promptEngine,
@@ -1236,6 +1268,7 @@ async function runExtractStep(
     // The configured default is OpenAI; no provider-specific PDF API is used.
     const outlineConfig = buildBookOutlineConfig(config)
     const outlineModel = createLLMModel({
+        logLevel: options.logLevel,
       modelId: outlineConfig.modelId,
       cacheDir,
       promptEngine,
@@ -1263,6 +1296,7 @@ async function runExtractStep(
 
     const meaningfulnessModel = meaningfulnessConfig
       ? createLLMModel({
+        logLevel: options.logLevel,
           modelId: meaningfulnessConfig.modelId,
           cacheDir,
           promptEngine,
@@ -1275,6 +1309,7 @@ async function runExtractStep(
 
     const segmentationModel = segmentationConfig
       ? createLLMModel({
+        logLevel: options.logLevel,
           modelId: segmentationConfig.modelId,
           cacheDir,
           promptEngine,
@@ -1287,6 +1322,7 @@ async function runExtractStep(
 
     const croppingModel = croppingConfig
       ? createLLMModel({
+        logLevel: options.logLevel,
           modelId: croppingConfig.modelId,
           cacheDir,
           promptEngine,
@@ -1374,13 +1410,14 @@ async function runSectioningStep(
 ): Promise<void> {
   const { booksDir, promptsDir, configPath } = options
 
-  const storage = createBookStorage(label, booksDir)
+  const storage = options.generationStorage ?? createBookStorage(label, booksDir)
 
   try {
     const config = loadBookConfig(label, booksDir, configPath)
     const allPages = activeSectioningPages(storage, config, path.join(path.resolve(booksDir), label))
     const previous = new Map(allPages.map((page) => [page.pageId, storage.getLatestNodeData("page-sectioning", page.pageId)]))
     const pages = allPages.filter((page) => {
+      if (options.generationPageIds && !options.generationPageIds.includes(page.pageId)) return false
       const row = previous.get(page.pageId)
       return !row || !isProtectedContent(row.data as { source?: "ai" | "manual" }) || replacementConfirmed(options, "page-sectioning", page.pageId, row.version)
     })
@@ -1391,12 +1428,12 @@ async function runSectioningStep(
     if (protectedPreflight.total) throw new SectioningPreflightError(protectedPreflight)
     if (!pages.length) {
       options.signal?.throwIfAborted()
-      completeSectioning(label, booksDir, config, configPath)
+      !options.generationStorage && completeSectioning(label, booksDir, config, configPath)
       progress.emit({ type: "step-skip", step: "page-sectioning" })
       progress.emit({ type: "step-skip", step: "translation" })
       return
     }
-    const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
+    const cacheDir = options.cacheDir ?? path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
     const promptEngine = createPromptEngine([bookPromptsDir, promptsDir], { basePromptModelId: config.base_prompt_model })
     const rateLimiter = config.rate_limit
@@ -1429,6 +1466,7 @@ async function runSectioningStep(
     const translationConfig = buildTranslationConfig(config, sourceLanguage)
 
     const structuringModel = createLLMModel({
+        logLevel: options.logLevel,
       modelId: pageSectioningConfig.modelId,
       cacheDir,
       promptEngine,
@@ -1440,6 +1478,7 @@ async function runSectioningStep(
 
     const translationModel = translationConfig
       ? createLLMModel({
+        logLevel: options.logLevel,
           modelId: translationConfig.modelId,
           cacheDir,
           promptEngine,
@@ -1474,6 +1513,7 @@ async function runSectioningStep(
       }
       const outlineConfig = buildBookOutlineConfig(config)
       const outlineModel = createLLMModel({
+        logLevel: options.logLevel,
         modelId: outlineConfig.modelId,
         cacheDir,
         promptEngine,
@@ -1600,7 +1640,7 @@ async function runSectioningStep(
       progress.emit({ type: "step-skip", step: "translation" })
     }
     options.signal?.throwIfAborted()
-    if (failedPages.length === 0 && skippedByStep.size === 0) completeSectioning(label, booksDir, config, configPath)
+    if (failedPages.length === 0 && skippedByStep.size === 0) !options.generationStorage && completeSectioning(label, booksDir, config, configPath)
   } finally {
     storage.close()
   }
@@ -1613,9 +1653,9 @@ async function runStoryboardStep(
 ): Promise<void> {
   const { booksDir, promptsDir, webAssetsDir, configPath } = options
 
-  const baseStorage = createBookStorage(label, booksDir)
+  const baseStorage = options.generationStorage ?? createBookStorage(label, booksDir)
   let publication: ReturnType<typeof createStoryboardPublication>
-  try { publication = createStoryboardPublication(baseStorage, label, booksDir, configPath) } catch (err) { baseStorage.close(); throw err }
+  try { publication = createStoryboardPublication(baseStorage, label, booksDir, configPath, options.generationPageIds) } catch (err) { baseStorage.close(); throw err }
   const storage = publication.storage
   let visualRefinement: VisualRefinementDeps | undefined
 
@@ -1636,7 +1676,7 @@ async function runStoryboardStep(
       const { processFixedLayoutPages } = await import("@adt/pipeline")
       if (options.signal?.aborted) throw new RunCancelledError()
       const imageUrlPrefix = `/api/books/${label}/images`
-      processFixedLayoutPages(storage, imageUrlPrefix)
+      processFixedLayoutPages({ ...storage, getPages: () => activeSectioningPages(baseStorage, config, path.join(path.resolve(booksDir), label)) }, imageUrlPrefix, pages.map((page) => page.pageId))
       if (options.signal?.aborted) throw new RunCancelledError()
       publication.publish(pages.map((page) => page.pageId))
       progress.emit({ type: "step-complete", step: "web-rendering" })
@@ -1655,7 +1695,7 @@ async function runStoryboardStep(
     const resolveRenderConfig = buildRenderStrategyResolver(config)
 
     // Shared infrastructure for LLM calls
-    const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
+    const cacheDir = options.cacheDir ?? path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
     const promptEngine = createPromptEngine([bookPromptsDir, promptsDir], { basePromptModelId: config.base_prompt_model })
     const rateLimiter = config.rate_limit
@@ -1681,7 +1721,7 @@ async function runStoryboardStep(
     }
 
     // Create template engine
-    const templatesDir = path.join(path.dirname(promptsDir), "templates")
+    const templatesDir = options.templatesDir ?? path.join(path.dirname(promptsDir), "templates")
     const templateEngine = createTemplateEngine(templatesDir)
 
     // Create render model resolver (cached factory)
@@ -1690,6 +1730,7 @@ async function runStoryboardStep(
       const existing = renderModels.get(modelId)
       if (existing) return existing
       const model = createLLMModel({
+        logLevel: options.logLevel,
         modelId,
         cacheDir,
         promptEngine,
@@ -1892,17 +1933,17 @@ async function runQuizzesStep(
 ): Promise<void> {
   const { booksDir, promptsDir, configPath } = options
 
-  const storage = createBookStorage(label, booksDir)
+  const storage = options.generationStorage ?? createBookStorage(label, booksDir)
 
   try {
     const previousVersion = storage.getLatestNodeData("quiz-generation", "book")?.version ?? 0
     const publish = (output: Parameters<typeof saveQuizOutput>[1]) => storage.transaction(() => {
       options.signal?.throwIfAborted()
       assertEditVersion(storage.getLatestNodeData("quiz-generation", "book")?.version, previousVersion)
-      return saveQuizOutput(storage, output, "replace")
+      return saveQuizOutput(storage, output, "replace", options.generationReplaceProtected === true)
     })
     const config = loadBookConfig(label, booksDir, configPath)
-    const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
+    const cacheDir = options.cacheDir ?? path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
     const promptEngine = createPromptEngine([bookPromptsDir, promptsDir], { basePromptModelId: config.base_prompt_model })
     const rateLimiter = config.rate_limit
@@ -1940,6 +1981,7 @@ async function runQuizzesStep(
     }
 
     const quizModel = createLLMModel({
+        logLevel: options.logLevel,
       modelId: quizConfig.modelId,
       cacheDir,
       promptEngine,
@@ -2051,11 +2093,11 @@ async function runCaptionsStep(
 ): Promise<void> {
   const { booksDir, promptsDir, configPath } = options
 
-  const storage = createBookStorage(label, booksDir)
+  const storage = options.generationStorage ?? createBookStorage(label, booksDir)
 
   try {
     const config = loadBookConfig(label, booksDir, configPath)
-    const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
+    const cacheDir = options.cacheDir ?? path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
     const promptEngine = createPromptEngine([bookPromptsDir, promptsDir], { basePromptModelId: config.base_prompt_model })
     const rateLimiter = config.rate_limit
@@ -2098,6 +2140,7 @@ async function runCaptionsStep(
 
     const captionConfig = buildCaptionConfig(config)
     const captionModel = createLLMModel({
+        logLevel: options.logLevel,
       modelId: captionConfig.modelId,
       cacheDir,
       promptEngine,
@@ -2225,11 +2268,11 @@ async function runGlossaryStep(
 ): Promise<void> {
   const { booksDir, promptsDir, configPath } = options
 
-  const storage = createBookStorage(label, booksDir)
+  const storage = options.generationStorage ?? createBookStorage(label, booksDir)
 
   try {
     const config = loadBookConfig(label, booksDir, configPath)
-    const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
+    const cacheDir = options.cacheDir ?? path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
     const promptEngine = createPromptEngine([bookPromptsDir, promptsDir], { basePromptModelId: config.base_prompt_model })
     const rateLimiter = config.rate_limit
@@ -2261,6 +2304,7 @@ async function runGlossaryStep(
 
     const glossaryConfig = buildGlossaryConfig(config, language)
     const glossaryModel = createLLMModel({
+        logLevel: options.logLevel,
       modelId: glossaryConfig.modelId,
       cacheDir,
       promptEngine,
@@ -2279,6 +2323,7 @@ async function runGlossaryStep(
 
     const glossary = await regenerateGlossaryPreservingEdits({
       storage,
+      replaceProtected: options.generationReplaceProtected,
       pages,
       config: glossaryConfig,
       llmModel: glossaryModel,
@@ -2318,7 +2363,7 @@ async function runTocStep(
 ): Promise<void> {
   const { booksDir, promptsDir, configPath } = options
 
-  const storage = createBookStorage(label, booksDir)
+  const storage = options.generationStorage ?? createBookStorage(label, booksDir)
 
   try {
     const previous = storage.getLatestNodeData("toc-generation", "book")
@@ -2327,7 +2372,7 @@ async function runTocStep(
       return
     }
     const config = loadBookConfig(label, booksDir, configPath)
-    const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
+    const cacheDir = options.cacheDir ?? path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
     const promptEngine = createPromptEngine([bookPromptsDir, promptsDir], { basePromptModelId: config.base_prompt_model })
     const rateLimiter = config.rate_limit
@@ -2358,6 +2403,7 @@ async function runTocStep(
 
     const tocConfig = buildTocGenerationConfig(config, language)
     const tocModel = createLLMModel({
+        logLevel: options.logLevel,
       modelId: tocConfig.modelId,
       cacheDir,
       promptEngine,
@@ -2416,11 +2462,11 @@ async function runEasyReadStep(
 ): Promise<void> {
   const { booksDir, promptsDir, configPath } = options
 
-  const storage = createBookStorage(label, booksDir)
+  const storage = options.generationStorage ?? createBookStorage(label, booksDir)
 
   try {
     const config = loadBookConfig(label, booksDir, configPath)
-    const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
+    const cacheDir = options.cacheDir ?? path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
     const promptEngine = createPromptEngine([bookPromptsDir, promptsDir], { basePromptModelId: config.base_prompt_model })
     const rateLimiter = config.rate_limit
@@ -2499,6 +2545,7 @@ async function runEasyReadStep(
         console.log(`[stage-run] ${label}: easy read skipped (no eligible text)`)
       } else {
         const easyReadModel = createLLMModel({
+        logLevel: options.logLevel,
           modelId: easyReadConfig.modelId,
           cacheDir,
           promptEngine,
@@ -2567,11 +2614,11 @@ async function runTranslateStep(
 ): Promise<void> {
   const { booksDir, promptsDir, configPath } = options
 
-  const storage = createBookStorage(label, booksDir)
+  const storage = options.generationStorage ?? createBookStorage(label, booksDir)
 
   try {
     const config = loadBookConfig(label, booksDir, configPath)
-    const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
+    const cacheDir = options.cacheDir ?? path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
     const promptEngine = createPromptEngine([bookPromptsDir, promptsDir], { basePromptModelId: config.base_prompt_model })
     const rateLimiter = config.rate_limit
@@ -2658,6 +2705,7 @@ async function runTranslateStep(
 
       const translationConfig = buildCatalogTranslationConfig(config, language)
       const translationModel = createLLMModel({
+        logLevel: options.logLevel,
         modelId: translationConfig.modelId,
         cacheDir,
         promptEngine,
@@ -2695,6 +2743,7 @@ async function runTranslateStep(
     const coreTtsConfig = buildCoreTtsPreparationConfig(config)
     coreTtsConfig.promptSignature = promptEngine.fingerprint(coreTtsConfig.promptName, { modelId: coreTtsConfig.modelId })
     const coreTtsModel = createLLMModel({
+        logLevel: options.logLevel,
       modelId: coreTtsConfig.modelId,
       cacheDir,
       promptEngine,
@@ -2936,11 +2985,11 @@ async function runSpeechStep(
 ): Promise<void> {
   const { booksDir, configPath } = options
 
-  const storage = createBookStorage(label, booksDir)
+  const storage = options.generationStorage ?? createBookStorage(label, booksDir)
 
   try {
     const config = loadBookConfig(label, booksDir, configPath)
-    const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
+    const cacheDir = options.cacheDir ?? path.join(path.resolve(booksDir), label, ".cache")
     const bookDir = path.join(path.resolve(booksDir), label)
     const configDir = configPath
       ? path.join(path.dirname(configPath), "config")
@@ -4089,6 +4138,7 @@ async function runSegmentationPass(
     } catch (err) {
       if (isCancellation(err, [runSignal])) throw err
       console.error(`[stage-run] ${label}: image segmentation failed for ${page.pageId}: ${toErrorMessage(err)}`)
+      throw err
     } finally {
       completed++
       progress.emit({
@@ -4191,6 +4241,7 @@ async function runCroppingPass(
     } catch (err) {
       if (isCancellation(err, [runSignal])) throw err
       console.error(`[stage-run] ${label}: image cropping failed for ${page.pageId}: ${toErrorMessage(err)}`)
+      throw err
     } finally {
       completed++
       progress.emit({

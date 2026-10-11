@@ -1,3 +1,4 @@
+import { GENERATION_OUTPUT_KINDS } from "@adt/types"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -159,7 +160,9 @@ describe("catalog freshness through real API/storage boundaries", () => {
     const db = storage(); const translation = db.getLatestNodeData("text-catalog-translation", "fr"); const caption = db.getLatestNodeData("image-captioning", "pg001"); const catalog = db.getLatestNodeData("text-catalog", "book"); db.close()
     expect((await send("pages/pg001/rendering", rendering("Hello", "bg-red-500 p-4"))).status).toBe(200)
     const after = await outputs()
-    expect(after).toEqual(before)
+    // Cosmetic HTML edits protect the authored rendering itself; V1 catalog consumers are unaffected.
+    const catalogOnly = (items: typeof after) => items.filter((item) => !GENERATION_OUTPUT_KINDS.some((kind) => kind === item.identity.kind))
+    expect(catalogOnly(after)).toEqual(catalogOnly(before))
     await app.request(`/books/${label}/text-catalog`)
     const verify = storage()
     expect(verify.getLatestNodeData("text-catalog-translation", "fr")).toEqual(translation)

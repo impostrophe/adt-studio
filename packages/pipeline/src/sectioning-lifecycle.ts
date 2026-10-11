@@ -59,8 +59,8 @@ export function assertSectioningCurrent(storage: Storage, config: AppConfig, boo
   }
 }
 
-/** Full extraction still lacks safe downstream resume (SPEC-0010). Sectioning
- * reruns instead use SPEC-0002's version-bound protected replacement path. */
+/** Legacy callers cannot acquire destructive full-run admission. SPEC-0010
+ * prepares each resumed stage through the shared preservation-aware planner. */
 export function assertSectioningReplacementSafe(storage: Storage): void {
   if (storage.getNodeItemIds("page-sectioning").length > 0) {
     throw new SectioningSafetyError("SECTIONING_REGENERATION_BLOCKED", "Full extraction reruns cannot safely reconcile existing Sectioning. Saved manual or unknown-origin pages are kept. Run Sectioning directly, or use the verified CLI Sectioning–Storyboard range with explicit replacement confirmation.")
@@ -110,13 +110,14 @@ export function completeSectioning(label: string, booksRoot: string, config: App
 /** Stage rendering versions in memory, then publish together in the existing
  * SQLite transaction. Provider failures/cancellation/conflicts keep the prior
  * active versions. Debug logs/screenshots are attempt evidence, not output. */
-export function createStoryboardPublication(storage: Storage, label: string, booksRoot: string, configPath?: string) {
+export function createStoryboardPublication(storage: Storage, label: string, booksRoot: string, configPath?: string, selectedPageIds?: string[]) {
   const { bookDir } = resolveBookPaths(label, booksRoot)
   recoverSectioningTransition(bookDir)
   assertExtractionReadable(bookDir)
   const config = loadBookConfig(label, booksRoot, configPath)
   assertSectioningCurrent(storage, config, bookDir)
-  const pages = activeSectioningPages(storage, config, bookDir)
+  const allPages = activeSectioningPages(storage, config, bookDir)
+  const pages = selectedPageIds ? allPages.filter((page) => selectedPageIds.includes(page.pageId)) : allPages
   const fingerprint = () => configHash(JSON.stringify({
     config: loadBookConfig(label, booksRoot, configPath),
     lifecycle: readSectioningLifecycle(bookDir),
@@ -168,7 +169,7 @@ export function createStoryboardPublication(storage: Storage, label: string, boo
       // rendering set commits. A crash or metadata-write failure leaves it
       // blocked, never marks an incomplete/rolled-back layout as usable.
       const rendered = new Set(pending.filter((row) => row.node === "web-rendering" && row.data != null).map((row) => row.itemId))
-      if (pages.every((page) => rendered.has(page.pageId))) {
+      if (!selectedPageIds && pages.every((page) => rendered.has(page.pageId))) {
         writeSectioningLifecycle(bookDir, effectiveSectioningMode(config), true, false)
       }
     },

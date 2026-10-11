@@ -566,3 +566,6 @@ export * from "./extraction.js"
 
 export { PipelineResumeSummary } from "./extraction.js"
 export { OUTPUT_KIND_STEP } from "./pipeline.js"
+export { GENERATION_OUTPUT_KINDS } from "./output-freshness.js"
+
+export { PackagePublication } from "./extraction.js"
