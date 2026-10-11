@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { isTranslationEvaluationEnabled, resolveTranslationLanguageState } from "./lib/translations-view-state"
+import { shouldShowMissingSpeech } from "./lib/speech-review-state"
 import {
   type CatalogCategory,
   getEntryCategory,
@@ -337,12 +338,12 @@ export function LanguageView({
 
   const handleDeleteTTS = useCallback(async () => {
     await api.deleteTTS(bookLabel);
-    await queryClient.invalidateQueries({
-      queryKey: ["books", bookLabel, "tts"],
-    });
-    await queryClient.invalidateQueries({
-      queryKey: ["books", bookLabel, "step-status"],
-    });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["books", bookLabel, "tts"] }),
+      queryClient.invalidateQueries({ queryKey: ["books", bookLabel, "tts-timestamps"] }),
+      queryClient.invalidateQueries({ queryKey: ["books", bookLabel, "step-status"] }),
+      queryClient.invalidateQueries({ queryKey: ["books", bookLabel, "outputs"] }),
+    ]);
   }, [bookLabel, queryClient]);
 
   const { data: catalog, isLoading } = useQuery({
@@ -367,6 +368,7 @@ export function LanguageView({
     queryFn: () => api.getTTS(bookLabel),
     enabled: !!bookLabel,
   });
+  const showMissingSpeech = shouldShowMissingSpeech(speechState, ttsData);
   const { data: voiceMappings } = useQuery({
     queryKey: ["voice-mappings"],
     queryFn: () => api.getVoiceMappings(),
@@ -707,6 +709,22 @@ export function LanguageView({
     () => new Map(effectiveEntries.map((entry) => [entry.id, entry.text])),
     [effectiveEntries],
   );
+  const savedTranslatedMap = useMemo(
+    () => new Map(translatedEntries.map((entry) => [entry.id, entry.text])),
+    [translatedEntries],
+  );
+  const [speechDrafts, setSpeechDrafts] = useState<Set<string>>(() => new Set());
+  const onSpeechEditingChange = useCallback((id: string, language: string, editing: boolean) => {
+    const key = JSON.stringify([id, language]);
+    setSpeechDrafts((previous) => {
+      if (previous.has(key) === editing) return previous;
+      const next = new Set(previous);
+      if (editing) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
+  const hasOutputDraft = !!pendingEntries || speechDrafts.size > 0;
 
   const speechCatalogFor = useCallback(
     (language: string | null | undefined) => {
@@ -2362,6 +2380,9 @@ export function LanguageView({
                     onToggle={() => toggleEntryMuted(entry.id)}
                   />
                 );
+                const audioReview = (language: string | null) => !isSpeechStage && language && !exclusion.excluded ? (
+                  <OutputReview bookLabel={bookLabel} id={entry.id} kinds={["audio"]} language={language} voiceSlot={selectedVoiceSlot} dirty={hasOutputDraft} showMissing={showMissingSpeech} compact />
+                ) : null;
                 // Audio status for the selected language: a recorded failure shows
                 // immediately (even mid-run); plain "no audio" only after a run has
                 // finished. Muting an entry clears both — it no longer needs audio.
@@ -2375,8 +2396,7 @@ export function LanguageView({
                   !exclusion.excluded &&
                   !audio &&
                   !audioFailure &&
-                  !isRunning &&
-                  (stageDone || hasStageError);
+                  showMissingSpeech;
                 // Word-highlighting failed but the audio itself is fine — the
                 // clip plays, it just has no per-word timings. Only shown when
                 // there's no more fundamental audio problem to report.
@@ -2428,7 +2448,7 @@ export function LanguageView({
                     }}
                   >
                     <div className="pb-1">
-                      {isSpeechStage && <OutputReview bookLabel={bookLabel} id={entry.id} kinds={["audio", "timestamps"]} language={audioLang ?? undefined} voiceSlot={selectedVoiceSlot} dirty={!!pendingEntries} />}
+                      {isSpeechStage && <OutputReview bookLabel={bookLabel} id={entry.id} kinds={["audio", "timestamps"]} language={audioLang ?? undefined} voiceSlot={selectedVoiceSlot} dirty={hasOutputDraft} showMissing={showMissingSpeech} compact />}
                       {isSourceLang ? (
                         <div
                           className={cn(
@@ -2451,25 +2471,28 @@ export function LanguageView({
                               />
                             )}
                             <div className="flex-1 min-w-0">
-                              <span className="text-[10px] text-muted-foreground">
-                                {entry.id}
-                                {isAnswer && (
-                                  <span className="ml-1.5 text-[9px] font-medium text-amber-700 bg-amber-100 rounded px-1 py-0.5">{t`Answer`}</span>
-                                )}
-                                {exclusion.excluded && (
-                                  <span className="ml-1.5 text-[9px] font-medium text-rose-700 bg-rose-100 rounded px-1 py-0.5">{t`Muted`}</span>
-                                )}
-                                {audioStatusBadges}
-                                <CoreTtsBadges entry={speechEntry} />
-                                {isSpeechStage &&
-                                  audio &&
-                                  !exclusion.excluded && (
-                                    <span className="ml-1.5 text-[9px] text-muted-foreground/60">
-                                      {audio.fileName}
-                                    </span>
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="text-[10px] text-muted-foreground">
+                                  {entry.id}
+                                  {isAnswer && (
+                                    <span className="ml-1.5 text-[9px] font-medium text-amber-700 bg-amber-100 rounded px-1 py-0.5">{t`Answer`}</span>
                                   )}
-                                {muteToggle}
-                              </span>
+                                  {exclusion.excluded && (
+                                    <span className="ml-1.5 text-[9px] font-medium text-rose-700 bg-rose-100 rounded px-1 py-0.5">{t`Muted`}</span>
+                                  )}
+                                  {audioStatusBadges}
+                                  <CoreTtsBadges entry={speechEntry} />
+                                  {isSpeechStage &&
+                                    audio &&
+                                    !exclusion.excluded && (
+                                      <span className="ml-1.5 text-[9px] text-muted-foreground/60">
+                                        {audio.fileName}
+                                      </span>
+                                    )}
+                                  {muteToggle}
+                                </span>
+                                {audioReview(audioLang)}
+                              </div>
                               <SpeechHighlightedText
                                 text={entry.text}
                                 timestamps={
@@ -2482,6 +2505,9 @@ export function LanguageView({
                               />
                               {audioLang ? (
                                 <CoreTtsSpeechEditor
+                                  showSpeechStatus={isSpeechStage}
+                                  dirty={hasOutputDraft}
+                                  onEditingChange={onSpeechEditingChange}
                                   bookLabel={bookLabel}
                                   language={audioLang}
                                   version={speechCatalogFor(audioLang)?.version ?? 0}
@@ -2574,34 +2600,40 @@ export function LanguageView({
                                     }
                                   />
                                 )}
-                                <div className="min-w-0">
-                                  <span className="text-[10px] text-muted-foreground">
-                                    {entry.id}
-                                    {isAnswer && (
-                                      <span className="ml-1.5 text-[9px] font-medium text-amber-700 bg-amber-100 rounded px-1 py-0.5">{t`Answer`}</span>
-                                    )}
-                                    {exclusion.excluded && (
-                                      <span className="ml-1.5 text-[9px] font-medium text-rose-700 bg-rose-100 rounded px-1 py-0.5">{t`Muted`}</span>
-                                    )}
-                                    <CoreTtsBadges entry={sourceSpeechEntry} />
-                                    {isSpeechStage &&
-                                      baseAudio &&
-                                      !exclusion.excluded && (
-                                        <span className="ml-1.5 text-[9px] text-muted-foreground/60">
-                                          {baseAudio.fileName}
-                                        </span>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {entry.id}
+                                      {isAnswer && (
+                                        <span className="ml-1.5 text-[9px] font-medium text-amber-700 bg-amber-100 rounded px-1 py-0.5">{t`Answer`}</span>
                                       )}
-                                    {muteToggle}
-                                  </span>
+                                      {exclusion.excluded && (
+                                        <span className="ml-1.5 text-[9px] font-medium text-rose-700 bg-rose-100 rounded px-1 py-0.5">{t`Muted`}</span>
+                                      )}
+                                      <CoreTtsBadges entry={sourceSpeechEntry} />
+                                      {isSpeechStage &&
+                                        baseAudio &&
+                                        !exclusion.excluded && (
+                                          <span className="ml-1.5 text-[9px] text-muted-foreground/60">
+                                            {baseAudio.fileName}
+                                          </span>
+                                        )}
+                                      {muteToggle}
+                                    </span>
+                                    {audioReview(editingLanguage)}
+                                  </div>
                                   <p className="text-sm leading-relaxed mt-0.5">
                                     {entry.text}
                                   </p>
                                   {editingLanguage ? (
                                     <CoreTtsSpeechEditor
+                                      showSpeechStatus={isSpeechStage}
+                                      dirty={hasOutputDraft}
+                                      onEditingChange={onSpeechEditingChange}
                                       bookLabel={bookLabel}
                                       language={editingLanguage}
-                                  version={speechCatalogFor(editingLanguage)?.version ?? 0}
-                                  sourceSignature={speechCatalogFor(editingLanguage)?.sourceSignature ?? ""}
+                                      version={speechCatalogFor(editingLanguage)?.version ?? 0}
+                                      sourceSignature={speechCatalogFor(editingLanguage)?.sourceSignature ?? ""}
                                       displayText={entry.text}
                                       entry={sourceSpeechEntry}
                                     />
@@ -2659,18 +2691,25 @@ export function LanguageView({
                                     );
                                   })()}
                                 <div className="min-w-0 flex-1">
-                                  <span className="text-[10px] text-muted-foreground">
-                                    &nbsp;
-                                    {audioStatusBadges}
-                                    <CoreTtsBadges entry={speechEntry} />
-                                    {isSpeechStage &&
-                                      audio &&
-                                      !exclusion.excluded && (
-                                        <span className="text-[9px] text-muted-foreground/60">
-                                          {audio.fileName}
-                                        </span>
-                                      )}
-                                  </span>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <span className="text-[10px] text-muted-foreground">
+                                      &nbsp;
+                                      {audioStatusBadges}
+                                      <CoreTtsBadges entry={speechEntry} />
+                                      {isSpeechStage &&
+                                        audio &&
+                                        !exclusion.excluded && (
+                                          <span className="text-[9px] text-muted-foreground/60">
+                                            {audio.fileName}
+                                          </span>
+                                        )}
+                                    </span>
+                                    {!isSpeechStage && <div className="flex items-center gap-1">
+                                      <OutputReview bookLabel={bookLabel} id={entry.id} kinds={["translation"]} language={selectedLang ?? undefined} dirty={hasOutputDraft}
+                                        edited={!!pendingEntries && (translated ?? "") !== (savedTranslatedMap.get(entry.id) ?? "")} compact />
+                                      {audioReview(audioLang)}
+                                    </div>}
+                                  </div>
                                   {isSpeechStage ? (
                                     <>
                                       <SpeechHighlightedText
@@ -2685,10 +2724,13 @@ export function LanguageView({
                                       />
                                       {audioLang ? (
                                         <CoreTtsSpeechEditor
+                                          showSpeechStatus={isSpeechStage}
+                                          dirty={hasOutputDraft}
+                                          onEditingChange={onSpeechEditingChange}
                                           bookLabel={bookLabel}
                                           language={audioLang}
-                                  version={speechCatalogFor(audioLang)?.version ?? 0}
-                                  sourceSignature={speechCatalogFor(audioLang)?.sourceSignature ?? ""}
+                                          version={speechCatalogFor(audioLang)?.version ?? 0}
+                                          sourceSignature={speechCatalogFor(audioLang)?.sourceSignature ?? ""}
                                           displayText={translated || ""}
                                           entry={speechEntry}
                                         />
@@ -2696,27 +2738,29 @@ export function LanguageView({
                                     </>
                                   ) : (
                                     <>
-                                  <OutputReview bookLabel={bookLabel} id={entry.id} kinds={["translation"]} language={selectedLang ?? undefined} dirty={!!pendingEntries} />
-                                    <textarea
-                                      value={translated ?? ""}
-                                      onChange={(e) =>
-                                        updateEntry(entry.id, e.target.value)
-                                      }
-                                      placeholder={t`Pending...`}
-                                      className="w-full text-sm leading-relaxed mt-0.5 resize-none rounded border border-transparent bg-transparent p-1.5 -ml-1.5 hover:border-border hover:bg-muted/30 focus:border-ring focus:bg-white focus:outline-none focus:ring-1 focus:ring-ring transition-colors placeholder:text-muted-foreground placeholder:italic"
-                                      style={
-                                        {
-                                          fieldSizing: "content",
-                                        } as React.CSSProperties
-                                      }
-                                      rows={1}
-                                    />
+                                      <textarea
+                                        value={translated ?? ""}
+                                        onChange={(e) =>
+                                          updateEntry(entry.id, e.target.value)
+                                        }
+                                        placeholder={t`Pending...`}
+                                        className="w-full text-sm leading-relaxed mt-0.5 resize-none rounded border border-transparent bg-transparent p-1.5 -ml-1.5 hover:border-border hover:bg-muted/30 focus:border-ring focus:bg-white focus:outline-none focus:ring-1 focus:ring-ring transition-colors placeholder:text-muted-foreground placeholder:italic"
+                                        style={
+                                          {
+                                            fieldSizing: "content",
+                                          } as React.CSSProperties
+                                        }
+                                        rows={1}
+                                      />
                                       {audioLang ? (
                                         <CoreTtsSpeechEditor
+                                          showSpeechStatus={isSpeechStage}
+                                          dirty={hasOutputDraft}
+                                          onEditingChange={onSpeechEditingChange}
                                           bookLabel={bookLabel}
                                           language={audioLang}
-                                  version={speechCatalogFor(audioLang)?.version ?? 0}
-                                  sourceSignature={speechCatalogFor(audioLang)?.sourceSignature ?? ""}
+                                          version={speechCatalogFor(audioLang)?.version ?? 0}
+                                          sourceSignature={speechCatalogFor(audioLang)?.sourceSignature ?? ""}
                                           displayText={translated || ""}
                                           entry={speechEntry}
                                         />
