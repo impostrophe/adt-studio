@@ -3521,8 +3521,6 @@ async function runSpeechStep(
                 failedByLang.get(group.language)?.push({
                   textId: e.id,
                   error: msg,
-        errorClass: classifyLLMError(ctx.err).errorClass,
-        attemptCount: ctx.err instanceof LLMCallError ? ctx.err.attempts : undefined,
                   voiceSlot: group.voiceSlot,
                 })
                 geminiFailedItems.push(`${e.id}: ${msg}`)
@@ -3759,8 +3757,6 @@ async function runSpeechStep(
           cached: false,
           attempt: attemptCount,
           error: msg,
-        errorClass: classifyLLMError(ctx.err).errorClass,
-        attemptCount: ctx.err instanceof LLMCallError ? ctx.err.attempts : undefined,
           params: logParams,
         })
         storage.appendLlmLog(logEntry)
