@@ -10,6 +10,7 @@ import { AuthoredRunOptions, OutputSkipRequest, OutputRunScope, StageName, STAGE
 import { assertStageRunModelCredentials } from "@adt/llm"
 import {
   loadBookConfig,
+  isFixedLayoutBook,
   prepareSectioningRun,
   sectioningInvalidationSteps,
   collectSpentSectionIds,
@@ -224,18 +225,21 @@ export function createStageRoutes(
     // Keyless providers pass through.
     const fromIndex = STAGE_ORDER.indexOf(fromStage)
     const toIndex = STAGE_ORDER.indexOf(toStage)
-    assertStageRunModelCredentials(
-      loadBookConfig(label, booksDir, configPath),
-      fromIndex <= toIndex ? STAGE_ORDER.slice(fromIndex, toIndex + 1) : STAGE_ORDER,
-      credentials,
-    )
+    const config = loadBookConfig(label, booksDir, configPath)
+    const requestedStages = fromIndex <= toIndex ? STAGE_ORDER.slice(fromIndex, toIndex + 1) : STAGE_ORDER
+    // Fixed Storyboard uses extracted positioned content, with no model call.
+    // Sectioning and any other requested generative stages still need keys.
+    const modelStages = isFixedLayoutBook(config)
+      ? requestedStages.filter((stage) => stage !== "storyboard") : requestedStages
+    assertStageRunModelCredentials(config, modelStages, credentials)
 
     console.log(
       `[stages] ${label}: ${fromStage}→${toStage}${renderOnly ? " (render-only)" : ""} ` +
       `credentialProviders=${Object.keys(credentials).join(",") || "(none)"}`,
     )
 
-    if (!stageService.getStatus(label).active) {
+    const activeRun = stageService.getStatus(label).active
+    if (activeRun?.status !== "running" && activeRun?.status !== "cancelling") {
       withBookWriter(path.join(path.resolve(booksDir), parseBookLabel(label)), () => {
         prepareSectioningRun(label, booksDir, fromStage, toStage, configPath)
         const storage = createBookStorage(label, booksDir)

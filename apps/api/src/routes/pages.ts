@@ -1798,12 +1798,10 @@ export function createPageRoutes(
     const credentials = readProviderCredentials(c)
     // Fail before the batch starts: a partially re-rendered book is worse than
     // a rejected request, and the model decides which credential is required.
-    assertModelCredentials(
-      "structured-text",
-      loadBookConfig(safeLabel, booksDir, configPath).default_model
-        ?? DEFAULT_LLM_MODEL_ID,
-      credentials,
-    )
+    const config = loadBookConfig(safeLabel, booksDir, configPath)
+    if (!isFixedLayoutBook(config)) {
+      assertModelCredentials("structured-text", config.default_model ?? DEFAULT_LLM_MODEL_ID, credentials)
+    }
 
     const parsed = z
       .object({ pageIds: z.array(z.string().min(1)).min(1).max(100) })

@@ -1,5 +1,8 @@
 import { withBookWriter, resolveBookPaths } from "@adt/storage"
-import { createStoryboardPublication, FIXED_LAYOUT_SECTIONING_NODE, SectioningSafetyError } from "@adt/pipeline"
+import {
+  createStoryboardPublication, FIXED_LAYOUT_SECTIONING_NODE, SectioningSafetyError,
+  isFixedLayoutBook, processFixedLayoutPages,
+} from "@adt/pipeline"
 import crypto from "node:crypto"
 import path from "node:path"
 import { createBookStorage } from "@adt/storage"
@@ -62,6 +65,21 @@ export async function reRenderPages(options: ReRenderOptions[]): Promise<ReRende
       const publication = createStoryboardPublication(storage, label, booksDir, configPath)
       const pages = new Set(publication.storage.getPages().map((page) => page.pageId))
       if (options.some((item) => !pages.has(item.pageId))) throw new Error("Requested page is outside the active source-page window")
+      if (isFixedLayoutBook(loadBookConfig(label, booksDir, configPath))) {
+        if (options.some((item) => item.sectionIndex !== undefined)) {
+          throw new SectioningSafetyError("STORYBOARD_INPUT_CHANGED", "A fixed-layout page must be re-rendered as a whole. Existing output is kept.")
+        }
+        if (options.some((item) => item.prompt?.trim())) {
+          throw new SectioningSafetyError("STORYBOARD_INPUT_CHANGED", "Fixed-layout rendering uses extracted positioned content and cannot apply an LLM prompt. Existing output is kept.")
+        }
+        const pageIds = options.map((item) => item.pageId)
+        processFixedLayoutPages(publication.storage, `/api/books/${label}/images`, pageIds)
+        publication.publish(pageIds)
+        return pageIds.map((pageId) => {
+          const row = storage.getLatestNodeData("web-rendering", pageId)!
+          return { version: row.version, rendering: row.data }
+        })
+      }
       const results: ReRenderResult[] = []
       for (const item of options) results.push(await reRenderAdmittedPage(item, publication))
       publication.publish(options.map((item) => item.pageId))

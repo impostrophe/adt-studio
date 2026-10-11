@@ -483,8 +483,10 @@ ${elements.join("\n")}${fitScript}
 export function processFixedLayoutPages(
   storage: Storage,
   imageUrlPrefix: string,
+  targetPageIds?: readonly string[],
 ): void {
   const pages = storage.getPages()
+  const targets = targetPageIds ? new Set(targetPageIds) : undefined
   let totalDrawItems = 0
 
   // Pass 1: resolve each page's viewport + inputs. We collect these up front
@@ -540,6 +542,9 @@ export function processFixedLayoutPages(
 
   // Pass 2: section + render each page with the shared reference width.
   for (const { page, viewport, drawItems, availableImageIds } of prepared) {
+    // Targeted rerenders still measure the complete active window above, so a
+    // single page keeps the same spread scale as its untouched neighbours.
+    if (targets && !targets.has(page.pageId)) continue
     const sectioning = sectionFixedLayoutPage({
       pageId: page.pageId,
       pageNumber: page.pageNumber,
