@@ -1,6 +1,6 @@
 import path from "node:path"
 import { z } from "zod"
-import { BookLabel, SectioningResumeStage, STAGE_ORDER } from "@adt/types"
+import { BookLabel, StageName, STAGE_ORDER } from "@adt/types"
 
 export const USAGE = `Usage: pnpm pipeline <label> <pdf-file> [options]
 
@@ -13,8 +13,9 @@ Options:
   --end-page <n>      End at page N (inclusive)
   --books-dir <dir>   Books root directory (default: books)
   --concurrency <n>   Max parallel LLM calls (default: from config or 5)
-  --from-stage <s>    Resume Sectioning or Storyboard from verified extraction
-  --to-stage <s>      Last resumed stage: sectioning or storyboard (both required)
+  --from-stage <s>    Resume a supported stage from verified extraction
+  --to-stage <s>      Last resumed stage (both range flags required)
+  --output-scope <file>  Catalog selection/replacement decisions as OutputRunScope JSON
   --protected-replacements <file>  Confirm exact protected records from a JSON array
   -h, --help          Show this help`
 
@@ -26,9 +27,10 @@ const ParsedCliArgsSchema = z
     endPage: z.coerce.number().int().positive().optional(),
     booksDir: z.string().min(1).optional(),
     concurrency: z.coerce.number().int().positive().optional(),
-    fromStage: SectioningResumeStage.optional(),
-    toStage: SectioningResumeStage.optional(),
+    fromStage: StageName.optional(),
+    toStage: StageName.optional(),
     protectedReplacementsFile: z.string().min(1).optional(),
+    outputScopeFile: z.string().min(1).optional(),
   })
   .refine(
     (value) =>
@@ -42,9 +44,10 @@ const ParsedCliArgsSchema = z
   )
 
 export interface ParsedCliArgs {
-  fromStage?: SectioningResumeStage
-  toStage?: SectioningResumeStage
+  fromStage?: StageName
+  toStage?: StageName
   protectedReplacementsFile?: string
+  outputScopeFile?: string
   label: string
   pdfPath: string
   startPage?: number
@@ -63,7 +66,7 @@ export function parseCliArgs(args: string[]): ParsedCliArgs {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
-    const resumeKeys: Record<string, string> = { "--from-stage": "fromStage", "--to-stage": "toStage", "--protected-replacements": "protectedReplacementsFile" }
+    const resumeKeys: Record<string, string> = { "--from-stage": "fromStage", "--to-stage": "toStage", "--protected-replacements": "protectedReplacementsFile", "--output-scope": "outputScopeFile" }
     if (resumeKeys[arg]) {
       if (!args[i + 1] || args[i + 1].startsWith("--")) throw new Error(`Missing value for ${arg}`)
       resume[resumeKeys[arg]] = args[++i]
@@ -121,15 +124,17 @@ export function parseCliArgs(args: string[]): ParsedCliArgs {
     const message = parsed.error.issues.map((issue) => issue.message).join("; ")
     throw new Error(message)
   }
-  const { fromStage, toStage, protectedReplacementsFile } = parsed.data
+  const { fromStage, toStage, protectedReplacementsFile, outputScopeFile } = parsed.data
   if ((fromStage === undefined) !== (toStage === undefined)
     || (fromStage && toStage && STAGE_ORDER.indexOf(fromStage) > STAGE_ORDER.indexOf(toStage))
-    || (protectedReplacementsFile && fromStage !== "sectioning")) {
+    || (protectedReplacementsFile && fromStage !== "sectioning")
+    || (outputScopeFile && (!fromStage || fromStage === "sectioning" || fromStage === "storyboard"))) {
     throw new Error("Specify an ordered --from-stage and --to-stage range; protected replacements require Sectioning")
   }
 
   return {
     fromStage, toStage,
+    outputScopeFile: outputScopeFile ? path.resolve(outputScopeFile) : undefined,
     protectedReplacementsFile: protectedReplacementsFile ? path.resolve(protectedReplacementsFile) : undefined,
     label: parsed.data.label,
     pdfPath: path.resolve(parsed.data.pdfFile),

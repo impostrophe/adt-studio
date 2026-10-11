@@ -5,6 +5,7 @@ import { msg } from "@lingui/core/macro"
 export function localizeExtractionError(message: string): string {
   const code = message.split(":", 1)[0]
   switch (code) {
+    case "RESUME_INCOMPLETE": return i18n._(msg`Some requested outputs remain unresolved. Protected content has been kept. Review the output warnings before retrying.`)
     case "BOOK_BUSY": return i18n._(msg`This book has an active writer or pending recovery. Wait for it to finish and try again.`)
     case "EXTRACTION_LEGACY": return i18n._(msg`This book has no verified extraction record. Keep editing it, or import the PDF as a new book to extract again.`)
     case "EXTRACTION_INCOMPLETE": return i18n._(msg`Extraction did not complete. Partial data has been kept. Import the PDF as a new book to try again.`)

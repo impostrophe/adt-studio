@@ -253,3 +253,9 @@ export const OUTPUT_KIND_TO_STEP = {
   preparation: "core-tts-catalog", audio: "tts", timestamps: "word-timestamps", "image-translation": "image-translation",
 } as const satisfies Record<import("./output-freshness.js").OutputKind, StepName>
 export const OUTPUT_KIND_TO_STAGE = Object.fromEntries(Object.entries(OUTPUT_KIND_TO_STEP).map(([kind, step]) => [kind, STEP_TO_STAGE[step]])) as Record<import("./output-freshness.js").OutputKind, StageName>
+
+/** Catalog output ownership is derived through steps, never a second stage order. */
+export const OUTPUT_KIND_STEP = {
+  caption: "image-captioning", translation: "catalog-translation", "easy-read": "easy-read",
+  preparation: "core-tts-catalog", audio: "tts", timestamps: "word-timestamps", "image-translation": "image-translation",
+} as const satisfies Record<import("./output-freshness.js").OutputKind, StepName>

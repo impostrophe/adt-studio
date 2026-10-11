@@ -260,6 +260,7 @@ export interface StageRunProviderCredentials {
 }
 
 export interface RunStagesOptions {
+  resume?: boolean
   replaceManual?: boolean
   protectedReplacements?: import("@adt/types").AuthoredReplacement[]
   outputScope?: OutputRunScope
@@ -410,6 +411,7 @@ export interface PendingDecision {
 }
 
 export interface StageRunStatus {
+  summary?: import("@adt/types").PipelineResumeSummary
   label: string
   status: "idle" | "running" | "cancelling" | "cancelled" | "completed" | "failed"
   fromStage?: string
@@ -1960,6 +1962,7 @@ export const api = {
       error: string | null
       stepErrors: Record<string, string> | null
       stepMessages: Record<string, string> | null
+      resumeSummary?: import("@adt/types").PipelineResumeSummary
       runStatus: "idle" | "running" | "cancelling" | "cancelled" | "completed" | "failed"
       pendingDecisions: PendingDecision[]
       protectedWork?: Array<import("@adt/types").AuthoredReplacement & { pageNumber?: number }>

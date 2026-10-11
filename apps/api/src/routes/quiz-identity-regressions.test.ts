@@ -409,14 +409,14 @@ describe("full-stage quiz regeneration", () => {
     expect(useStorage((s) => s.getStepRuns()).find((s) => s.step === "quiz-generation")?.status).toBe("error")
   })
 
-  it("reserves IDs while upstream invalidation retains output and unsafe extraction is blocked", async () => {
+  it("reserves IDs while upstream invalidation and extraction preparation retain output", async () => {
     seed([quiz("One"), quiz("Two")])
     writeSectioningLifecycle(path.join(root, label), "dynamic", true)
     makeBeforeRun(label, "storyboard", "storyboard", root, configPath)()
     expect(stored().quizzes).toHaveLength(2)
     useStorage((s) => saveQuizOutput(s, output([quiz("Three")]), "replace"))
     expect(stored().quizzes[0].quizId).toBe("qz003")
-    expect(makeBeforeRun(label, "extract", "quizzes", root, configPath)).toThrow(/preservation-safe|unknown-origin/)
+    expect(makeBeforeRun(label, "extract", "quizzes", root, configPath)).not.toThrow()
     expect(stored().quizzes[0].quizId).toBe("qz003")
     useStorage((s) => saveQuizOutput(s, output([quiz("Four")]), "replace"))
     expect(stored().quizzes[0].quizId).toBe("qz004")

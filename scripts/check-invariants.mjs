@@ -7,6 +7,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const entryPoints = [
   "packages/pipeline/src/pdf-extraction.ts",
   "packages/pipeline/src/pipeline-dag.ts",
+  "packages/pipeline/src/stage-execution.ts",
+  "packages/pipeline/src/catalog-resume.ts",
   "apps/api/src/routes/stages.ts",
   "apps/api/src/services/stage-runner.ts",
 ]

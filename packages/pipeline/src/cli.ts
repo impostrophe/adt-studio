@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { OutputRunScope } from "@adt/types"
 
 import path from "node:path"
 import fs from "node:fs"
@@ -119,10 +120,11 @@ async function main(): Promise<void> {
     process.exit(args.length === 0 ? 1 : 0)
   }
 
-  const { label, pdfPath, startPage, endPage, booksRoot, concurrency, fromStage, toStage, protectedReplacementsFile } =
+  const { label, pdfPath, startPage, endPage, booksRoot, concurrency, fromStage, toStage, protectedReplacementsFile, outputScopeFile } =
     parseCliArgs(args)
   const protectedReplacements = protectedReplacementsFile
     ? AuthoredReplacement.array().parse(JSON.parse(fs.readFileSync(protectedReplacementsFile, "utf8"))) : undefined
+  const outputScope = outputScopeFile ? OutputRunScope.parse(JSON.parse(fs.readFileSync(outputScopeFile, "utf8"))) : undefined
   const controller = new AbortController()
   const cancel = () => controller.abort()
   process.on("SIGINT", cancel)
@@ -142,7 +144,7 @@ async function main(): Promise<void> {
         startPage,
         endPage,
         concurrency,
-        fromStage, toStage, protectedReplacements,
+        fromStage, toStage, protectedReplacements, outputScope,
         replaceManual: protectedReplacementsFile !== undefined,
         signal: controller.signal,
         promptsDir,
@@ -153,6 +155,8 @@ async function main(): Promise<void> {
       progress,
     )
     progress.stop()
+
+    if (result.resume) log(`\nResume: ${JSON.stringify(result.resume)}\n`)
 
     if (result.stages.errors.size > 0) {
       const failed = [...result.stages.errors.entries()]

@@ -9238,6 +9238,9 @@ msgstr "Parte do conteúdo ficou fora do pacote: {0} seção(ões) renderizada(s
 msgid "Some pages have no embedded text layer — text was recovered from the page image. Prefer a text-based PDF."
 msgstr "Algumas páginas não têm camada de texto incorporada — o texto foi recuperado a partir da imagem da página. Prefira um PDF baseado em texto."
 
+msgid "Some requested outputs remain unresolved. Protected content has been kept. Review the output warnings before retrying."
+msgstr "Alguns resultados solicitados continuam sem resolução. O conteúdo protegido foi mantido. Revise os avisos dos resultados antes de tentar novamente."
+
 msgid "Something went wrong"
 msgstr "Algo deu errado"
 

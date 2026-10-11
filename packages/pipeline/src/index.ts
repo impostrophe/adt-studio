@@ -499,3 +499,11 @@ export { SectioningSafetyError, effectiveSectioningMode, sectioningInvalidationS
 export { extractionOptionsFromConfig, prepareExtractionAdmission, assertSafeExtractionRun } from "./extraction-admission.js"
 
 export { protectedAuthoredRecords, assertAuthoredReplacement, replacementConfirmed, AuthoredReplacementError } from "./authored-output.js"
+
+export { getBundledStyleguidesDir, getWritableStyleguidesDir, getBookStyleguidesDir, getGeneratedStyleguideName, getStyleguideSearchDirs, resolveStyleguideSource, loadStyleguideContent, StyleguideWriteError, writeStyleguideFiles, type StyleguideSourceKind, type ResolvedStyleguideSource } from "./styleguide.js"
+
+export { beginSpeechRun, endSpeechRun, getLiveSpeechRun, type LiveSpeechSnapshot } from "./speech-progress.js"
+
+export type { StageRunner, StageRunOptions, StageRunProgress } from "./stage-execution-options.js"
+
+export { ResumeIncompleteError, catalogResumeStages } from "./catalog-resume.js"

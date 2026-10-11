@@ -9240,6 +9240,9 @@ msgstr "Një pjesë e përmbajtjes u lë jashtë paketës: {0} seksion(e) të vi
 msgid "Some pages have no embedded text layer — text was recovered from the page image. Prefer a text-based PDF."
 msgstr "Disa faqe nuk kanë shtresë teksti të integruar — teksti u rikuperua nga imazhi i faqes. Preferoni një PDF të bazuar në tekst."
 
+msgid "Some requested outputs remain unresolved. Protected content has been kept. Review the output warnings before retrying."
+msgstr "Disa rezultate të kërkuara mbeten të pazgjidhura. Përmbajtja e mbrojtur është ruajtur. Shqyrtoni paralajmërimet e rezultateve para se të provoni përsëri."
+
 msgid "Something went wrong"
 msgstr "Diçka shkoi keq"
 

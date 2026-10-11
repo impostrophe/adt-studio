@@ -9238,6 +9238,9 @@ msgstr "Some content was left out of the bundle: {0} rendered section(s) on {pag
 msgid "Some pages have no embedded text layer — text was recovered from the page image. Prefer a text-based PDF."
 msgstr "Some pages have no embedded text layer — text was recovered from the page image. Prefer a text-based PDF."
 
+msgid "Some requested outputs remain unresolved. Protected content has been kept. Review the output warnings before retrying."
+msgstr "Some requested outputs remain unresolved. Protected content has been kept. Review the output warnings before retrying."
+
 msgid "Something went wrong"
 msgstr "Something went wrong"
 

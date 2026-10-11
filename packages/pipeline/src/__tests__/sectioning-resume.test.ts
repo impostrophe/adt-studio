@@ -116,7 +116,7 @@ it("the actual CLI publishes a confirmed replacement and fixed Storyboard with o
 
 it("validates bounded CLI ranges and requires named replacement input", () => {
   expect(parseCliArgs(["book", "source.pdf", "--from-stage", "sectioning", "--to-stage", "storyboard", "--protected-replacements", "replace.json"]).fromStage).toBe("sectioning")
-  for (const flags of [["--from-stage", "sectioning"], ["--from-stage", "storyboard", "--to-stage", "sectioning"], ["--from-stage", "captions", "--to-stage", "captions"], ["--protected-replacements", "replace.json"]]) {
+  for (const flags of [["--from-stage", "sectioning"], ["--from-stage", "storyboard", "--to-stage", "sectioning"], ["--protected-replacements", "replace.json"]]) {
     expect(() => parseCliArgs(["book", "source.pdf", ...flags])).toThrow()
   }
 })

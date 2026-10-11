@@ -40,7 +40,7 @@ import type {
   VoiceSlot,
   WebRenderingOutput,
 } from "@adt/types"
-import { isTtsExcluded, voiceSlotEntryId, PIPELINE, STAGE_ORDER, SectioningResumeStage, AuthoredRunOptions, type AuthoredReplacement } from "@adt/types"
+import { isTtsExcluded, voiceSlotEntryId, PIPELINE, STAGE_ORDER, StageName, SectioningResumeStage, AuthoredRunOptions, type AuthoredReplacement } from "@adt/types"
 import { extractPDF, figureExtractionFlags, resolveFigureExtractionMode } from "./pdf-extraction.js"
 import {
   resolveFontsCacheDir,
@@ -141,8 +141,9 @@ function progressOnly(p: Progress): Progress {
 }
 
 export interface FullPipelineOptions {
-  fromStage?: SectioningResumeStage
-  toStage?: SectioningResumeStage
+  fromStage?: import("@adt/types").StageName
+  toStage?: import("@adt/types").StageName
+  outputScope?: import("@adt/types").OutputRunScope
   replaceManual?: boolean
   protectedReplacements?: AuthoredReplacement[]
   signal?: AbortSignal
@@ -186,9 +187,38 @@ export async function runFullPipeline(options: FullPipelineOptions, progress: Pr
     })
     const scoped = options.fromStage !== undefined || options.toStage !== undefined
     if (scoped) {
-      const from = SectioningResumeStage.parse(options.fromStage)
-      const to = SectioningResumeStage.parse(options.toStage)
+      const from = StageName.parse(options.fromStage)
+      const to = StageName.parse(options.toStage)
       if (STAGE_ORDER.indexOf(from) > STAGE_ORDER.indexOf(to)) throw new Error("Invalid stage range")
+      const boundedSectioning = SectioningResumeStage.safeParse(from).success && SectioningResumeStage.safeParse(to).success
+      if (!boundedSectioning) {
+        if (admission.outcome !== "reused") throw new ExtractionAdmissionError("EXTRACTION_INCOMPLETE")
+        // The existing API executors, not the unconditional initial-run DAG.
+        const { createStageRunner } = await import("./stage-execution.js")
+        const { catalogResumeStages } = await import("./catalog-resume.js")
+        const stages = catalogResumeStages(from, to)
+        const result: PipelineDAGResult = { stages: { statuses: new Map(), errors: new Map() }, steps: { statuses: new Map(), errors: new Map() } }
+        try {
+          await createStageRunner().run(options.label, {
+            resume: true, concurrency: options.concurrency, booksDir: options.booksRoot, promptsDir: options.promptsDir,
+            webAssetsDir: options.webAssetsDir, configPath: options.configPath,
+            fromStage: from, toStage: to, outputScope: options.outputScope, signal: options.signal,
+            credentials: { azure: { ...(options.azureSpeechKey ? { apiKey: options.azureSpeechKey } : {}), ...(options.azureSpeechRegion ? { region: options.azureSpeechRegion } : {}) },
+              gemini: options.geminiApiKey ? { apiKey: options.geminiApiKey } : {}, elevenlabs: options.elevenLabsApiKey ? { apiKey: options.elevenLabsApiKey } : {} },
+            onResumeSummary: (summary) => { result.resume = summary },
+          }, { emit(event) {
+            if (event.type === "stage-complete") result.stages.statuses.set(event.stage, "complete")
+            if (event.type === "step-complete") result.steps.statuses.set(event.step, "complete")
+            progress.emit(event)
+          } })
+        } catch (error) {
+          const failed = stages.find((stage) => !result.stages.statuses.has(stage)) ?? stages[stages.length - 1]
+          result.stages.errors.set(failed, error instanceof Error ? error : new Error(String(error)))
+          result.stages.statuses.set(failed, "failed")
+        }
+        for (const stage of stages) if (!result.stages.statuses.has(stage)) result.stages.statuses.set(stage, "skipped")
+        return result
+      }
       if (admission.outcome !== "reused") throw new Error("Scoped resume requires completed extraction; run Extract first")
       AuthoredRunOptions.parse(options)
       prepareSectioningRun(options.label, options.booksRoot, from, to, options.configPath)

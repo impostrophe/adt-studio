@@ -6,6 +6,7 @@ const { localizeExtractionError } = await import("./extraction-errors")
 
 describe("extraction conflict guidance", () => {
   it.each([
+    ["RESUME_INCOMPLETE", "Protected content has been kept"],
     ["BOOK_BUSY", "active writer"],
     ["EXTRACTION_LEGACY", "no verified extraction"],
     ["EXTRACTION_INCOMPLETE", "Partial data has been kept"],

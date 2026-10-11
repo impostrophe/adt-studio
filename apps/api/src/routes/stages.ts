@@ -35,6 +35,7 @@ const StageRunBody = z
     renderOnly: z.boolean().optional(),
     pageErrorPolicy: PageErrorPolicy.optional(),
     outputScope: OutputRunScope.optional(),
+    resume: z.boolean().optional(),
   })
   .strict()
 
@@ -211,7 +212,7 @@ export function createStageRoutes(
       })
     }
 
-    const { fromStage, toStage, renderOnly, pageErrorPolicy, outputScope, replaceManual, protectedReplacements } = parsed.data
+    const { fromStage, toStage, renderOnly, pageErrorPolicy, outputScope, replaceManual, protectedReplacements, resume } = parsed.data
     const active = stageService.getStatus(label).active
     if (fromStage === "extract" && active?.status !== "running" && active?.status !== "cancelling") assertSafeExtractionRun(label, booksDir, configPath)
     const credentials = readProviderCredentials(c)
@@ -229,7 +230,7 @@ export function createStageRoutes(
     // Sectioning and any other requested generative stages still need keys.
     const modelStages = isFixedLayoutBook(config)
       ? requestedStages.filter((stage) => stage !== "storyboard") : requestedStages
-    assertStageRunModelCredentials(config, modelStages, credentials)
+    if (!resume) assertStageRunModelCredentials(config, modelStages, credentials)
 
     console.log(
       `[stages] ${label}: ${fromStage}→${toStage}${renderOnly ? " (render-only)" : ""} ` +
@@ -240,7 +241,7 @@ export function createStageRoutes(
     if (activeRun?.status !== "running" && activeRun?.status !== "cancelling") {
       withBookWriter(path.join(path.resolve(booksDir), parseBookLabel(label)), () => {
         if (fromStage === "extract") return // Common execution admission owns Extract; never clear imports.
-    prepareSectioningRun(label, booksDir, fromStage, toStage, configPath)
+        prepareSectioningRun(label, booksDir, fromStage, toStage, configPath)
         const storage = createBookStorage(label, booksDir)
         try { assertAuthoredReplacement(storage, { fromStage, toStage, replaceManual, protectedReplacements }) }
         finally { storage.close() }
@@ -262,13 +263,13 @@ export function createStageRoutes(
       configPath,
       fromStage,
       toStage,
-      outputScope,
+      outputScope, resume,
       replaceManual,
       protectedReplacements,
       renderOnly,
       pageErrorPolicy,
       // Queued jobs clear data when they start executing
-      beforeRun: clearData,
+      beforeRun: resume ? undefined : clearData,
     })
 
     return c.json({ status: result.status, label, fromStage, toStage })
@@ -464,6 +465,7 @@ export function createStageRoutes(
       stepErrors: hasStepErrors ? stepErrors : null,
       stepMessages: hasStepMessages ? stepMessages : null,
       runStatus,
+      resumeSummary: stageService.getStatus(label).summary,
       pendingDecisions,
     })
   })
@@ -511,7 +513,7 @@ export function createStageRoutes(
               } else if (event.type === "stage-run-complete") {
                 await stream.writeSSE({
                   event: "complete",
-                  data: JSON.stringify({ label: event.label }),
+                  data: JSON.stringify({ label: event.label, ...(event.summary ? { summary: event.summary } : {}) }),
                 })
               } else if (event.type === "stage-run-error") {
                 await stream.writeSSE({
@@ -519,13 +521,14 @@ export function createStageRoutes(
                   data: JSON.stringify({
                     label: event.label,
                     error: event.error,
+                    ...(event.summary ? { summary: event.summary } : {}),
                     sectioningPreflight: event.sectioningPreflight,
                   }),
                 })
               } else if (event.type === "stage-run-cancelled") {
                 await stream.writeSSE({
                   event: "cancelled",
-                  data: JSON.stringify({ label: event.label }),
+                  data: JSON.stringify({ label: event.label, ...(event.summary ? { summary: event.summary } : {}) }),
                 })
               } else if (event.type === "decision-required") {
                 await stream.writeSSE({
@@ -558,9 +561,9 @@ export function createStageRoutes(
     }
 
     // JSON fallback for non-SSE requests
-    const { active, queue } = stageService.getStatus(label)
+    const { active, queue, summary } = stageService.getStatus(label)
     if (!active) {
-      return c.json({ status: "idle", label, queue: [] })
+      return c.json({ status: "idle", label, queue: [], ...(summary ? { summary } : {}) })
     }
     // Omit the internal AbortController from the serialized payload.
     const { controller: _controller, ...activepublic } = active
