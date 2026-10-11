@@ -8,7 +8,7 @@ issues: ["#708"]
 prs: ["#884"]
 adr: "docs/DECISIONS.md#025-sectioning-mode-changes-preserve-content-and-gate-rendering"
 created: 2026-09-22
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 ## Decision under review
@@ -19,9 +19,9 @@ The roadmap and the [scaffolding index](https://github.com/unicef/adt-studio/blo
 
 ### Coordination with existing specs
 
-[PR #879 / SPEC-0001](https://github.com/unicef/adt-studio/pull/879) and [PR #880 / SPEC-0002](https://github.com/unicef/adt-studio/pull/880) are still proposals. References below describe required interfaces and safety properties, not approval or implementation of those PRs. This spec does not publish or depend on unpublished local revisions of them.
+[PR #879 / SPEC-0001](https://github.com/unicef/adt-studio/pull/879) and [PR #880 / SPEC-0002](https://github.com/unicef/adt-studio/pull/880) now have published implementations awaiting review. The local continuation is stacked on SPEC-0002 `373619dd`, including SPEC-0001 `a10d3fa0`; publication and approval remain distinct. See the [integrated evidence and dependency attribution](../verification/spec-0003-stack-implementation.md).
 
-This spec requires non-destructive admission and protection for manual or unknown-origin Sectioning output. The refreshed preservation proposal protects unknown provenance, but its shared production preservation and explicit replacement paths are not published implementations. Mode invalidation does not silently grant replacement permission.
+This spec requires non-destructive admission and protection for manual or unknown-origin Sectioning output. The continuation reuses the published shared preservation and exact-version explicit replacement paths. Mode invalidation does not silently grant replacement permission. Published SPEC-0010 `876cc2ae` supplies verified extraction admission for bounded Sectioning/Storyboard CLI resume; unsafe full resume remains rejected.
 
 ## Problem (with evidence)
 
@@ -121,7 +121,7 @@ Opening a historical book does not silently migrate its trees. The preflight pro
 | SPEC-0012 | Text synchronization cannot declare an incompatible By Page tree current. |
 | B2 SPEC-0003 expansion | Decide new modes/merge policy later; preserve this B1 lifecycle boundary. |
 
-The proposed decision is recorded in [ADR 025](../DECISIONS.md#025-sectioning-mode-changes-preserve-content-and-gate-rendering). It remains proposed until this spec's blocking review questions are resolved. The same PR carries a B1 safe slice under explicit task authorization; the October 10 continuation is committed locally without pushing, and approval remains pending. See the [implementation evidence](../verification/spec-0003-b1.md) and [refreshed 26-row audit and limitations](../verification/spec-0003-b1-continuation.md). The September 30 review proposes material contract changes; this continuation does not silently adopt them or alter the acceptance criteria.
+The proposed decision is recorded in [ADR 025](../DECISIONS.md#025-sectioning-mode-changes-preserve-content-and-gate-rendering). It remains proposed until this spec's blocking review questions are resolved. The same PR carries the authorized B1 implementation. The October 11 local stack adds positive protected existing-book regeneration and bounded CLI/DAG resume; no push or human approval is implied. See the [current 26-row evidence matrix and remaining boundaries](../verification/spec-0003-stack-implementation.md). The September 30 review proposes material contract changes; this continuation does not silently adopt them or alter the acceptance criteria.
 
 ## Acceptance criteria
 
@@ -165,7 +165,7 @@ The first 21 criteria preserve the subjects and order of #708's checklist.
 | Existing validator/cache regressions | AC-26 | Invalid cached output eviction and valid response reuse through production callers. |
 | Dependency/diff review | AC-21 | No package/lockfile additions. |
 
-Run focused Vitest suites, typecheck, relevant lint/i18n checks and an acceptance book through API and CLI on the integrated implementation head. Recorded implementation results and remaining verification gaps are in the [B1 evidence report](../verification/spec-0003-b1.md).
+Run focused Vitest suites, typecheck, relevant lint/i18n checks and an acceptance book through API and CLI on the integrated implementation head. Current implementation results and remaining verification gaps are in the [stacked B1 evidence report](../verification/spec-0003-stack-implementation.md).
 
 ## Rollout
 
