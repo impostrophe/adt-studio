@@ -1,6 +1,14 @@
 # SPEC-0010 downstream integration requirements
 
 Status: proposed coordination requirements; human review remains pending.
+
+2026-10-11 implementation update: [published-stack continuation evidence](../verification/spec-0010-stack.md)
+and [operator guidance](../SAFE_EXTRACTION.md) supersede the historical delivery
+assessment below. Catalog-scoped API/CLI resume now shares execution and result
+reporting, in addition to SPEC-0003's bounded Sectioning–Storyboard path. R1–R10
+are no longer uniformly blocked; full-book coverage remains unavailable for the
+output families excluded from the published shared policies. This update does
+not approve the spec or broaden another spec's scope.
 This document clarifies the handoff required by SPEC-0010, not an implemented
 planner API or an approval/amendment of SPEC-0001/0002/0003. It does not change
 their acceptance criteria. The dependency assessment is based on the heads

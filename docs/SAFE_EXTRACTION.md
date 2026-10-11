@@ -6,14 +6,47 @@ effective extraction settings, contract version, original page records, metadata
 versions and asset hashes. It does not overwrite the source, clear history,
 retire IDs, detach media or discard LLM caches.
 
-This implementation is a **partial delivery of SPEC-0010**. Direct `extractPDF`
-can return `reused`. Full CLI runs and API Extract stage runs then return
-`UNSAFE_RESUME_UNAVAILABLE` because the shared downstream freshness/preservation
-planner and rendering preflight are not available. Extract includes generated
-metadata and other steps, so even an Extract-only stage request is a downstream
-resume. No reused book enters the legacy full-run body. CLI exits nonzero; API
-conflicts use HTTP 409 and a stable `code`. Queued failures use the same code in
-their job error. Studio translates the guidance and retains visible content.
+This implementation is a **partial delivery of SPEC-0010**, stacked on published
+SPEC-0003 (`a5670d46`, including SPEC-0002 and SPEC-0001). Direct `extractPDF`
+returns `reused` after verification. Supported CLI ranges now include the existing
+Sectioning–Storyboard replacement path and catalog stages: `captions` alone,
+`easy-read`, `translate`, `speech`, and contiguous ranges within the latter three.
+Catalog resume calls the **same stage executors as the API** and uses SPEC-0001's
+output signatures and SPEC-0002's protected-output decisions. It holds the writer
+from extraction verification through publication, checks persisted Sectioning
+mode/readiness, and never invokes a destructive pre-run callback.
+
+```sh
+pnpm pipeline my-book /path/to/unchanged.pdf --books-dir /path/to/books \
+  --from-stage translate --to-stage speech
+```
+
+Use `--output-scope /path/to/decisions.json` for the shared `OutputRunScope` JSON
+(selection, skip, retry, and signature/content-bound replacement decisions).
+Protected/unknown content is retained by default. A stale replacement decision
+fails before generation. Current output causes no provider call or new content
+version. The CLI prints a `catalog-resume` summary with completed, reused, skipped
+and blocked identities; required unresolved output exits 1. A usable upstream
+freshness warning does not prohibit generation or export, but remains visible in
+the result. Mode-incompatible output is a separate blocking preflight.
+
+The HTTP stage endpoint accepts `resume: true` for these catalog ranges. Queued
+requests revalidate extraction and replan when they execute. SSE completion,
+error and cancellation events carry the available summary; JSON stage/step status
+also exposes the last result in this server session. That report is not a new
+provenance store: after restart the shared catalog reassesses persisted outputs.
+No new Studio resume button is introduced; existing output controls and translated
+errors remain available.
+
+**Full CLI runs and API Extract stage reruns still refuse** with
+`UNSAFE_RESUME_UNAVAILABLE`. Generated Extract steps, general Storyboard freshness,
+quiz/glossary/TOC generation and full packaging orchestration have no common
+resume coverage in the published dependencies. SPEC-0001 explicitly excludes
+those freshness families; SPEC-0003 supplies bounded structural publication,
+not full-book freshness. An Extract-only stage request includes generated steps.
+Uncovered ranges stop before content writes/provider calls. No preserved book
+enters the legacy full-run body. Review or merge of the existing stack alone
+will not supply these missing capabilities.
 
 Verified reuse refusal includes an admission-only summary. The CLI reports that
 extraction is verified reusable, downstream execution is blocked, no content was

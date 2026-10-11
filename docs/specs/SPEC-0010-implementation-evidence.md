@@ -1,5 +1,7 @@
 # SPEC-0010 implementation plan and evidence
 
+Current continuation: see [the 2026-10-11 stack evidence](../verification/spec-0010-stack.md). The results below are the earlier admission-only delivery, not the current scoped-resume coverage.
+
 Publication authorized on 2026-09-26. The local branch is renamed to
 `spec/spec-0010-safe-cli-reruns`; the remote remains
 `spec/810-safe-cli-reruns` to preserve PR #886 (GitHub closes a PR when its head
