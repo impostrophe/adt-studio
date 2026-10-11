@@ -23,7 +23,7 @@ let config: string
 const appFor = (root: string) => {
   const app = new Hono()
   app.onError(errorHandler)
-  app.route("/api", createPageRoutes(root, root, root, config))
+  app.route("/api", createPageRoutes(root, path.resolve("prompts"), path.resolve("assets"), config))
   return app
 }
 async function get(root = dir) {
