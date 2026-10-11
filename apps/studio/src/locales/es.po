@@ -2578,6 +2578,9 @@ msgstr "confianza"
 msgid "Config"
 msgstr "Configuración"
 
+msgid "Configure a generation provider before repairing these sections."
+msgstr "Configura un proveedor de generación antes de reparar estas secciones."
+
 msgid "Configure activity detection and image processing options for extracted content. Hover any setting to see how it affects the preview."
 msgstr "Configura las opciones de detección de actividad y procesamiento de imágenes para el contenido extraído. Pasa el cursor sobre cualquier configuración para ver cómo afecta la vista previa."
 
@@ -6110,6 +6113,9 @@ msgstr "Nueva sesión"
 msgid "new_type_key"
 msgstr "nuevo_tipo"
 
+msgid "Newer edits are still unsaved. Save them before leaving."
+msgstr "Los cambios más recientes aún no se han guardado. Guárdalos antes de salir."
+
 msgid "Newest"
 msgstr "Más recientes"
 
@@ -8137,6 +8143,21 @@ msgstr "Renderiza actividades desde una plantilla fija para un estilo consistent
 msgid "Renders each page into the storyboard layout used by the web reader."
 msgstr "Renderiza cada página en el diseño de guion gráfico utilizado por el lector web."
 
+msgid "Repair failed. The previous rendering is retained."
+msgstr "La reparación falló. Se conserva la representación anterior."
+
+msgid "Repair is queued or running. The saved preview remains unchanged until verified output is committed."
+msgstr "La reparación está en cola o en curso. La vista previa guardada no cambia hasta que se guarde un resultado verificado."
+
+msgid "Repair listed sections"
+msgstr "Reparar las secciones indicadas"
+
+msgid "Repair regenerates only these sections and may use paid generation:"
+msgstr "La reparación regenera solo estas secciones y puede utilizar generación de pago:"
+
+msgid "Repair status is unavailable. The saved rendering and drift are retained. Refresh or retry the repair."
+msgstr "El estado de la reparación no está disponible. Se conservan la representación guardada y la discrepancia. Actualiza o vuelve a intentar la reparación."
+
 msgid "Replace"
 msgstr "Reemplazar"
 
@@ -8363,8 +8384,8 @@ msgstr "Estilo de revisión"
 msgid "Review the project details below and confirm the import."
 msgstr "Revisa los detalles del proyecto a continuación y confirma la importación."
 
-msgid "Review the saved source and preview before making further changes. Automatic synchronization and targeted repair are not available for these sections."
-msgstr "Revisa la fuente guardada y la vista previa antes de hacer más cambios. La sincronización automática y la reparación específica no están disponibles para estas secciones."
+#~ msgid "Review the saved source and preview before making further changes. Automatic synchronization and targeted repair are not available for these sections."
+#~ msgstr "Revisa la fuente guardada y la vista previa antes de hacer más cambios. La sincronización automática y la reparación específica no están disponibles para estas secciones."
 
 msgid "Review the source PDF details below and continue to configure how your book will be converted into an Accessible Digital Textbook."
 msgstr "Revisa los detalles del PDF fuente a continuación y continúa configurando cómo se convertirá tu libro en un Libro de Texto Digital Accesible."
@@ -8607,14 +8628,17 @@ msgstr "Error al guardar"
 msgid "Save or cancel your draft before reviewing outputs."
 msgstr "Guarda o cancela tu borrador antes de revisar los resultados."
 
+msgid "Save or discard your draft before repairing these sections."
+msgstr "Guarda o descarta tu borrador antes de reparar estas secciones."
+
 msgid "Save or discard your edits first"
 msgstr "Primero guarda o descarta tus cambios"
 
 msgid "Save page review"
 msgstr "Guardar revisión de la página"
 
-msgid "Save section changes?"
-msgstr "¿Guardar los cambios de las secciones?"
+#~ msgid "Save section changes?"
+#~ msgstr "¿Guardar los cambios de las secciones?"
 
 msgid "Save selection"
 msgstr "Guardar selección"
@@ -8639,6 +8663,9 @@ msgstr "El contenido guardado no está disponible; tu borrador se conserva"
 
 msgid "Saved output is retained, but Sectioning and later stages are not current."
 msgstr "Se conservan los resultados guardados, pero el seccionado y las etapas posteriores están desactualizados."
+
+msgid "Saved source text differs from the preview."
+msgstr "El texto fuente guardado difiere de la vista previa."
 
 msgid "Saved. Re-package Preview to apply."
 msgstr "Guardado. Vuelva a empaquetar la Vista previa para aplicar."
@@ -11442,6 +11469,9 @@ msgstr "Tus fuentes"
 
 msgid "Your pages {displayStart}–{displayEnd}"
 msgstr "Tus páginas {displayStart}–{displayEnd}"
+
+msgid "Your saved source is retained. Review the affected sections below; repair is available only where their identity and generated origin are verified."
+msgstr "Se conserva el contenido fuente guardado. Revisa las secciones afectadas a continuación; la reparación solo está disponible cuando se han verificado su identidad y su origen generado."
 
 msgid "Z → A"
 msgstr "Z → A"

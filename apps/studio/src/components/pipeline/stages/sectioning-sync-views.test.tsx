@@ -15,6 +15,7 @@ vi.mock("@/hooks/use-pages", () => ({
   usePage: () => ({ data: state.page, isLoading: false }),
   usePages: () => ({ data: [{ pageId: "pg001", pageNumber: 1, hasRendering: true, sectionCount: state.page?.sectioningTree?.sections.length ?? 0 }], isLoading: false }),
 }))
+vi.mock("../components/OutputReview", () => ({ OutputReview: () => null }))
 vi.mock("../components/StepViewRouter", () => ({ useStepHeader: () => state }))
 vi.mock("@/hooks/use-book-run", () => ({ useBookRun: () => ({ stageState: (stage: string) => stage === "sectioning" ? state.sectioningStage ?? state.stage : state.stage, queueRun: state.queueRun }) }))
 vi.mock("@/hooks/use-api-key", () => ({ useApiKey: () => ({ apiKey: "test" }), useBookStructuredTextAvailability: () => true }))

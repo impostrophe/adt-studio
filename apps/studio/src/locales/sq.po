@@ -2580,6 +2580,9 @@ msgstr "besueshmëri"
 msgid "Config"
 msgstr "Konfigurim"
 
+msgid "Configure a generation provider before repairing these sections."
+msgstr "Konfiguroni një ofrues gjenerimi përpara se të riparoni këto seksione."
+
 msgid "Configure activity detection and image processing options for extracted content. Hover any setting to see how it affects the preview."
 msgstr "Konfiguroni zbulimin e aktivitetit dhe opsionet e përpunimit të imazheve për përmbajtjen e ekstraktuar. Kaloni kursorin mbi çdo cilësim për të parë si ndikon në pamjen paraprake."
 
@@ -6112,6 +6115,9 @@ msgstr "Sesion i ri"
 msgid "new_type_key"
 msgstr "new_type_key"
 
+msgid "Newer edits are still unsaved. Save them before leaving."
+msgstr "Ndryshimet më të fundit ende nuk janë ruajtur. Ruajini përpara se të largoheni."
+
 msgid "Newest"
 msgstr "Më të rejat"
 
@@ -8139,6 +8145,21 @@ msgstr "Renderimi i aktiviteteve nga një shabllon i fiksuar për stil të qënd
 msgid "Renders each page into the storyboard layout used by the web reader."
 msgstr "Renderimi i çdo faqeje në paraqitjen e storyboard-it të përdorur nga lexuesi web."
 
+msgid "Repair failed. The previous rendering is retained."
+msgstr "Riparimi dështoi. Paraqitja e mëparshme është ruajtur."
+
+msgid "Repair is queued or running. The saved preview remains unchanged until verified output is committed."
+msgstr "Riparimi është në pritje ose në proces. Pamja paraprake e ruajtur mbetet e pandryshuar derisa të ruhet rezultati i verifikuar."
+
+msgid "Repair listed sections"
+msgstr "Riparo seksionet e renditura"
+
+msgid "Repair regenerates only these sections and may use paid generation:"
+msgstr "Riparimi rigjeneron vetëm këto seksione dhe mund të përdorë gjenerim me pagesë:"
+
+msgid "Repair status is unavailable. The saved rendering and drift are retained. Refresh or retry the repair."
+msgstr "Statusi i riparimit nuk është i disponueshëm. Paraqitja e ruajtur dhe mospërputhja mbeten të paprekura. Rifreskoni ose provoni përsëri riparimin."
+
 msgid "Replace"
 msgstr "Zëvendëso"
 
@@ -8365,8 +8386,8 @@ msgstr "Stili i rishikimit"
 msgid "Review the project details below and confirm the import."
 msgstr "Rishikoni detajet e projektit më poshtë dhe konfirmoni importimin."
 
-msgid "Review the saved source and preview before making further changes. Automatic synchronization and targeted repair are not available for these sections."
-msgstr "Rishikoni burimin e ruajtur dhe pamjen paraprake para ndryshimeve të tjera. Sinkronizimi automatik dhe riparimi i synuar nuk janë të disponueshëm për këto seksione."
+#~ msgid "Review the saved source and preview before making further changes. Automatic synchronization and targeted repair are not available for these sections."
+#~ msgstr "Rishikoni burimin e ruajtur dhe pamjen paraprake para ndryshimeve të tjera. Sinkronizimi automatik dhe riparimi i synuar nuk janë të disponueshëm për këto seksione."
 
 msgid "Review the source PDF details below and continue to configure how your book will be converted into an Accessible Digital Textbook."
 msgstr "Rishikoni detajet e PDF-it burimor më poshtë dhe vazhdoni të konfiguroni se si libri juaj do të konvertohet në një Tekst Dixhital të Aksesueshëm."
@@ -8609,14 +8630,17 @@ msgstr "Ruajtja dështoi"
 msgid "Save or cancel your draft before reviewing outputs."
 msgstr "Ruani ose anuloni draftin para se të rishikoni rezultatet."
 
+msgid "Save or discard your draft before repairing these sections."
+msgstr "Ruajeni ose hidhni poshtë draftin tuaj përpara se të riparoni këto seksione."
+
 msgid "Save or discard your edits first"
 msgstr "Fillimisht ruani ose hidhni poshtë ndryshimet"
 
 msgid "Save page review"
 msgstr "Ruaj rishikimin e faqes"
 
-msgid "Save section changes?"
-msgstr "Të ruhen ndryshimet e seksioneve?"
+#~ msgid "Save section changes?"
+#~ msgstr "Të ruhen ndryshimet e seksioneve?"
 
 msgid "Save selection"
 msgstr "Ruaj zgjedhjen"
@@ -8641,6 +8665,9 @@ msgstr "Përmbajtja e ruajtur nuk është e disponueshme; drafti yt ruhet"
 
 msgid "Saved output is retained, but Sectioning and later stages are not current."
 msgstr "Rezultatet e ruajtura mbahen, por ndarja në seksione dhe fazat pasuese nuk janë të përditësuara."
+
+msgid "Saved source text differs from the preview."
+msgstr "Teksti burimor i ruajtur ndryshon nga pamja paraprake."
 
 msgid "Saved. Re-package Preview to apply."
 msgstr "U ruajt. Ri-pako Parapamjen për ta aplikuar."
@@ -11444,6 +11471,9 @@ msgstr "Fontet e tua"
 
 msgid "Your pages {displayStart}–{displayEnd}"
 msgstr "Faqet tuaja {displayStart}–{displayEnd}"
+
+msgid "Your saved source is retained. Review the affected sections below; repair is available only where their identity and generated origin are verified."
+msgstr "Burimi juaj i ruajtur mbetet i paprekur. Shqyrtoni seksionet e prekura më poshtë; riparimi është i disponueshëm vetëm kur identiteti dhe origjina e tyre e gjeneruar janë verifikuar."
 
 msgid "Z → A"
 msgstr "Z → A"

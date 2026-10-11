@@ -2580,6 +2580,9 @@ msgstr "confiance"
 msgid "Config"
 msgstr "Config"
 
+msgid "Configure a generation provider before repairing these sections."
+msgstr "Configurez un fournisseur de génération avant de réparer ces sections."
+
 msgid "Configure activity detection and image processing options for extracted content. Hover any setting to see how it affects the preview."
 msgstr "Configurer les options de détection d'activité et de traitement d'image pour le contenu extrait. Survolez un paramètre pour voir comment il affecte l'aperçu."
 
@@ -6112,6 +6115,9 @@ msgstr "Nouvelle session"
 msgid "new_type_key"
 msgstr "new_type_key"
 
+msgid "Newer edits are still unsaved. Save them before leaving."
+msgstr "Les modifications les plus récentes ne sont pas encore enregistrées. Enregistrez-les avant de quitter."
+
 msgid "Newest"
 msgstr "Plus récentes"
 
@@ -8139,6 +8145,21 @@ msgstr "Rend les activités à partir d'un modèle fixe pour un style cohérent.
 msgid "Renders each page into the storyboard layout used by the web reader."
 msgstr "Rend chaque page dans la mise en page du storyboard utilisée par le lecteur web."
 
+msgid "Repair failed. The previous rendering is retained."
+msgstr "La réparation a échoué. Le rendu précédent est conservé."
+
+msgid "Repair is queued or running. The saved preview remains unchanged until verified output is committed."
+msgstr "La réparation est en attente ou en cours. L’aperçu enregistré reste inchangé jusqu’à l’enregistrement d’un résultat vérifié."
+
+msgid "Repair listed sections"
+msgstr "Réparer les sections indiquées"
+
+msgid "Repair regenerates only these sections and may use paid generation:"
+msgstr "La réparation régénère uniquement ces sections et peut utiliser une génération payante :"
+
+msgid "Repair status is unavailable. The saved rendering and drift are retained. Refresh or retry the repair."
+msgstr "L’état de la réparation est indisponible. Le rendu enregistré et l’écart sont conservés. Actualisez ou réessayez la réparation."
+
 msgid "Replace"
 msgstr "Remplacer"
 
@@ -8365,8 +8386,8 @@ msgstr "Style de révision"
 msgid "Review the project details below and confirm the import."
 msgstr "Vérifiez les détails du projet ci-dessous et confirmez l'importation."
 
-msgid "Review the saved source and preview before making further changes. Automatic synchronization and targeted repair are not available for these sections."
-msgstr "Vérifiez la source enregistrée et l’aperçu avant d’effectuer d’autres modifications. La synchronisation automatique et la réparation ciblée ne sont pas disponibles pour ces sections."
+#~ msgid "Review the saved source and preview before making further changes. Automatic synchronization and targeted repair are not available for these sections."
+#~ msgstr "Vérifiez la source enregistrée et l’aperçu avant d’effectuer d’autres modifications. La synchronisation automatique et la réparation ciblée ne sont pas disponibles pour ces sections."
 
 msgid "Review the source PDF details below and continue to configure how your book will be converted into an Accessible Digital Textbook."
 msgstr "Examinez les détails du PDF source ci-dessous et continuez à configurer comment votre livre sera converti en manuel numérique accessible."
@@ -8609,14 +8630,17 @@ msgstr "L'enregistrement a échoué"
 msgid "Save or cancel your draft before reviewing outputs."
 msgstr "Enregistrez ou annulez votre brouillon avant de vérifier les résultats."
 
+msgid "Save or discard your draft before repairing these sections."
+msgstr "Enregistrez ou abandonnez votre brouillon avant de réparer ces sections."
+
 msgid "Save or discard your edits first"
 msgstr "Enregistrez ou abandonnez d'abord vos modifications"
 
 msgid "Save page review"
 msgstr "Enregistrer la révision de la page"
 
-msgid "Save section changes?"
-msgstr "Enregistrer les modifications des sections ?"
+#~ msgid "Save section changes?"
+#~ msgstr "Enregistrer les modifications des sections ?"
 
 msgid "Save selection"
 msgstr "Enregistrer la sélection"
@@ -8641,6 +8665,9 @@ msgstr "Le contenu enregistré est indisponible ; votre brouillon est conservé"
 
 msgid "Saved output is retained, but Sectioning and later stages are not current."
 msgstr "Les résultats enregistrés sont conservés, mais le découpage en sections et les étapes suivantes ne sont plus à jour."
+
+msgid "Saved source text differs from the preview."
+msgstr "Le texte source enregistré diffère de l’aperçu."
 
 msgid "Saved. Re-package Preview to apply."
 msgstr "Enregistré. Ré-empaquetez l'aperçu pour appliquer."
@@ -11444,6 +11471,9 @@ msgstr "Vos polices"
 
 msgid "Your pages {displayStart}–{displayEnd}"
 msgstr "Vos pages {displayStart}–{displayEnd}"
+
+msgid "Your saved source is retained. Review the affected sections below; repair is available only where their identity and generated origin are verified."
+msgstr "Votre source enregistrée est conservée. Examinez les sections concernées ci-dessous ; la réparation est disponible uniquement lorsque leur identité et leur origine générée sont vérifiées."
 
 msgid "Z → A"
 msgstr "Z → A"

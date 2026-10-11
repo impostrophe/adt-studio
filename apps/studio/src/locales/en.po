@@ -2578,6 +2578,9 @@ msgstr "confidence"
 msgid "Config"
 msgstr "Config"
 
+msgid "Configure a generation provider before repairing these sections."
+msgstr "Configure a generation provider before repairing these sections."
+
 msgid "Configure activity detection and image processing options for extracted content. Hover any setting to see how it affects the preview."
 msgstr "Configure activity detection and image processing options for extracted content. Hover any setting to see how it affects the preview."
 
@@ -6110,6 +6113,9 @@ msgstr "New session"
 msgid "new_type_key"
 msgstr "new_type_key"
 
+msgid "Newer edits are still unsaved. Save them before leaving."
+msgstr "Newer edits are still unsaved. Save them before leaving."
+
 msgid "Newest"
 msgstr "Newest"
 
@@ -8137,6 +8143,21 @@ msgstr "Renders activities from a fixed template for consistent styling."
 msgid "Renders each page into the storyboard layout used by the web reader."
 msgstr "Renders each page into the storyboard layout used by the web reader."
 
+msgid "Repair failed. The previous rendering is retained."
+msgstr "Repair failed. The previous rendering is retained."
+
+msgid "Repair is queued or running. The saved preview remains unchanged until verified output is committed."
+msgstr "Repair is queued or running. The saved preview remains unchanged until verified output is committed."
+
+msgid "Repair listed sections"
+msgstr "Repair listed sections"
+
+msgid "Repair regenerates only these sections and may use paid generation:"
+msgstr "Repair regenerates only these sections and may use paid generation:"
+
+msgid "Repair status is unavailable. The saved rendering and drift are retained. Refresh or retry the repair."
+msgstr "Repair status is unavailable. The saved rendering and drift are retained. Refresh or retry the repair."
+
 msgid "Replace"
 msgstr "Replace"
 
@@ -8363,8 +8384,8 @@ msgstr "Review style"
 msgid "Review the project details below and confirm the import."
 msgstr "Review the project details below and confirm the import."
 
-msgid "Review the saved source and preview before making further changes. Automatic synchronization and targeted repair are not available for these sections."
-msgstr "Review the saved source and preview before making further changes. Automatic synchronization and targeted repair are not available for these sections."
+#~ msgid "Review the saved source and preview before making further changes. Automatic synchronization and targeted repair are not available for these sections."
+#~ msgstr "Review the saved source and preview before making further changes. Automatic synchronization and targeted repair are not available for these sections."
 
 msgid "Review the source PDF details below and continue to configure how your book will be converted into an Accessible Digital Textbook."
 msgstr "Review the source PDF details below and continue to configure how your book will be converted into an Accessible Digital Textbook."
@@ -8607,14 +8628,17 @@ msgstr "Save failed"
 msgid "Save or cancel your draft before reviewing outputs."
 msgstr "Save or cancel your draft before reviewing outputs."
 
+msgid "Save or discard your draft before repairing these sections."
+msgstr "Save or discard your draft before repairing these sections."
+
 msgid "Save or discard your edits first"
 msgstr "Save or discard your edits first"
 
 msgid "Save page review"
 msgstr "Save page review"
 
-msgid "Save section changes?"
-msgstr "Save section changes?"
+#~ msgid "Save section changes?"
+#~ msgstr "Save section changes?"
 
 msgid "Save selection"
 msgstr "Save selection"
@@ -8639,6 +8663,9 @@ msgstr "Saved content is unavailable; your draft is retained"
 
 msgid "Saved output is retained, but Sectioning and later stages are not current."
 msgstr "Saved output is retained, but Sectioning and later stages are not current."
+
+msgid "Saved source text differs from the preview."
+msgstr "Saved source text differs from the preview."
 
 msgid "Saved. Re-package Preview to apply."
 msgstr "Saved. Re-package Preview to apply."
@@ -11442,6 +11469,9 @@ msgstr "Your fonts"
 
 msgid "Your pages {displayStart}–{displayEnd}"
 msgstr "Your pages {displayStart}–{displayEnd}"
+
+msgid "Your saved source is retained. Review the affected sections below; repair is available only where their identity and generated origin are verified."
+msgstr "Your saved source is retained. Review the affected sections below; repair is available only where their identity and generated origin are verified."
 
 msgid "Z → A"
 msgstr "Z → A"
