@@ -1,5 +1,9 @@
 # SPEC-0011 implementation evidence
 
+> Historical report: its coverage percentages, dependency gaps and environment limits
+> describe the earlier standalone implementation. The [full continuation report](../verification/spec-0011-full-continuation.md)
+> records the current implementation stacked on SPEC-0010.
+
 The persistence, resolution, migration and editor slice is implemented on local
 branch `spec/spec-0011-prompt-persistence` for existing PR #887 (remote source
 `spec/629-prompt-persistence`). **The full integrated spec is

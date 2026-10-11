@@ -43,8 +43,8 @@ export function readOutputCatalog(options: {
   const dependencies = new Map<string, string[]>()
   const statuses: OutputStatus[] = []
   const byKey = new Map<string, OutputStatus>()
-  const add = (status: OutputStatus) => {
-    if (!status.excluded && blockedPromptKinds.has(status.identity.kind)) {
+  const add = (status: OutputStatus, consumesPrompt = true) => {
+    if (consumesPrompt && !status.excluded && blockedPromptKinds.has(status.identity.kind)) {
       status.blocked = true
       status.current = false
       status.warnings.push({ reason: "source-changed" })
@@ -144,7 +144,7 @@ export function readOutputCatalog(options: {
       const speechExcluded = isTtsExcluded(source.id, config.speech) || (source.id.endsWith("_easy_read") && !easyConfig.tts) || (!!source.text.trim() && !isSpeakableText(stripEmojis(source.text).trim()))
       const prepStatus = add(withOutputLocations(deriveOutputStatus({ identity: { kind: "preparation", id: source.id, language }, signature,
         content: previous?.speechText, metadata, excluded: speechExcluded, usable: !!previous?.speechText?.trim(), fallback: previous?.fallbackReason, upstream: upstream ? [upstream] : [],
-      }), source))
+      }), source), input.enabled_transformations.length > 0)
       const contextWarnings = (input.enabled_transformations.length ? entries.slice(Math.max(0, index - 1), index + 2) : [source]).flatMap((entry) => {
         const status = getBaseLanguage(language) === getBaseLanguage(sourceLanguage) ? sourceStatus(entry) : find("translation", entry.id, language)
         return status ? [outputIdentityKey(status.identity)] : []

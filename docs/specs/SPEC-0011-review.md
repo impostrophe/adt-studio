@@ -1,5 +1,9 @@
 # SPEC-0011 implementation review
 
+> Historical report: its coverage percentages, dependency gaps and environment limits
+> describe the earlier standalone implementation. The [full continuation report](../verification/spec-0011-full-continuation.md)
+> records the current implementation stacked on SPEC-0010.
+
 ## Scope and method
 
 Reviewed the local implementation starting at `4484d267`; fixes are committed in

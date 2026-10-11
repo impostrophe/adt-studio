@@ -154,3 +154,69 @@ it("unresolved dynamic includes block only their consumers and never publish a f
     expect(statuses.filter((o) => o.identity.kind === "easy-read").every((o) => o.blocked && !o.current)).toBe(true)
   } finally { storage.close() }
 })
+
+it("packaging compares consumed effective prompts rather than unrelated files or selection history", { timeout: 120000 }, async () => {
+  const { computePackagingInputHash, loadBookConfig } = await import("@adt/pipeline")
+  expect(fixture.errors(await run())).toEqual([])
+  fs.writeFileSync(path.join(fixture.options().promptsDir, "easy_read.liquid"), "original")
+  const saved = await save("easy_read", "original")
+  const storage = fixture.storage()
+  try {
+    const config = loadBookConfig("book", fixture.options().booksRoot, fixture.options().configPath)
+    config.easy_read = { ...config.easy_read, enabled: true }
+    const packaging = { storage, config, bookDir: path.join(fixture.options().booksRoot, "book"), label: "book", title: "Fixture", language: "en", outputLanguages: ["en"], webAssetsDir: path.join(fixture.root, "assets"), promptsDir: fixture.options().promptsDir, promptOverridesDir: overrides, configDir: fixture.options().configDir }
+    const original = computePackagingInputHash(packaging)
+    await save("unused", "unconsumed")
+    expect(computePackagingInputHash(packaging)).toBe(original)
+    const changed = await save("easy_read", "changed")
+    expect(computePackagingInputHash(packaging)).not.toBe(original)
+    const restored = await save("easy_read", "original")
+    expect(restored.revision).not.toBe(changed.revision)
+    expect(restored.revision).not.toBe(saved.revision)
+    expect(computePackagingInputHash(packaging)).toBe(original)
+  } finally { storage.close() }
+})
+
+it.each([false, true])("an unconsumed dynamic core-TTS prompt preserves plain-text preparation and speech (flags=%s)", { timeout: 120000 }, async (enabled) => {
+  const { readOutputCatalog, loadBookConfig, reconcileSpeechInputs, loadCoreTtsProfiles } = await import("@adt/pipeline")
+  expect(fixture.errors(await run())).toEqual([])
+  const storage = fixture.storage()
+  try {
+    const config = loadBookConfig("book", fixture.options().booksRoot, fixture.options().configPath)
+    config.core_tts = { ...config.core_tts, latex_to_speech: enabled, language_normalization: enabled }
+    const common = { storage, config, bookDir: path.join(fixture.options().booksRoot, "book"), promptsDir: fixture.options().promptsDir, promptOverridesDir: overrides, configDir: fixture.options().configDir }
+    const speech = { ...common, sourceLanguage: "en", languages: ["en"], profiles: loadCoreTtsProfiles(common.configDir) }
+    reconcileSpeechInputs(speech)
+    const before = readOutputCatalog(common).filter((o) => o.identity.kind === "preparation")
+    expect(before.length).toBeGreaterThan(0)
+    expect(before.every((o) => o.current)).toBe(true)
+    const histories = storage.getNodeVersionFingerprint()
+    fs.writeFileSync(path.join(common.promptsDir, "core_tts_preparation.liquid"), '{% assign part = "_shared" %}{% include part %}')
+    expect(readOutputCatalog(common).filter((o) => o.identity.kind === "preparation")).toEqual(before)
+    expect(() => reconcileSpeechInputs(speech)).not.toThrow()
+    expect(storage.getNodeVersionFingerprint()).toEqual(histories)
+  } finally { storage.close() }
+})
+
+it("an excluded math entry cannot block unrelated speech through its unused dynamic prompt", { timeout: 120000 }, async () => {
+  const { readOutputCatalog, loadBookConfig, reconcileSpeechInputs, loadCoreTtsProfiles } = await import("@adt/pipeline")
+  const { WebRenderingOutput } = await import("@adt/types")
+  expect(fixture.errors(await run())).toEqual([])
+  const storage = fixture.storage()
+  try {
+    const page = storage.getPages()[0].pageId
+    const rendering = WebRenderingOutput.parse(storage.getLatestNodeData("web-rendering", page)!.data)
+    rendering.sections[0].html = '<p data-id="excluded">$x^2$</p><p data-id="plain">Plain text</p>'
+    storage.putNodeData("web-rendering", page, rendering)
+    const config = loadBookConfig("book", fixture.options().booksRoot, fixture.options().configPath)
+    config.core_tts = { ...config.core_tts, latex_to_speech: true, language_normalization: false }
+    config.speech = { ...config.speech, excluded_text_ids: ["excluded"] }
+    const common = { storage, config, bookDir: path.join(fixture.options().booksRoot, "book"), promptsDir: fixture.options().promptsDir, promptOverridesDir: overrides, configDir: fixture.options().configDir }
+    fs.writeFileSync(path.join(common.promptsDir, "core_tts_preparation.liquid"), '{% assign part = "_shared" %}{% include part %}')
+    expect(readOutputCatalog(common).find((o) => o.identity.kind === "preparation" && o.identity.id === "excluded")?.excluded).toBe(true)
+    expect(() => reconcileSpeechInputs({ ...common, sourceLanguage: "en", languages: ["en"], profiles: loadCoreTtsProfiles(common.configDir) })).not.toThrow()
+    expect(readOutputCatalog(common).find((o) => o.identity.kind === "preparation" && o.identity.id === "plain")?.current).toBe(true)
+    config.speech.excluded_text_ids = []
+    expect(() => reconcileSpeechInputs({ ...common, sourceLanguage: "en", languages: ["en"], profiles: loadCoreTtsProfiles(common.configDir) })).toThrow(/UNSAFE_RESUME_UNAVAILABLE/)
+  } finally { storage.close() }
+})

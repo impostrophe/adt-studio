@@ -31,6 +31,7 @@ This document records all significant technology and architecture decisions made
 23. [Visual Refinement + File-Based Debug Screenshots](#023-visual-refinement--file-based-debug-screenshots)
 24. [Catalog-Based Freshness from Saved Input Signatures (proposed)](#adr-024)
 25. [Sectioning mode changes preserve content and gate rendering](#025-sectioning-mode-changes-preserve-content-and-gate-rendering)
+26. [Existing books require verified extraction reuse](#026-existing-books-require-verified-extraction-reuse)
 27. [Prompt overrides use writable roots and versioned selections (proposed)](#027-prompt-overrides-use-writable-roots-and-versioned-selections)
 
 ---

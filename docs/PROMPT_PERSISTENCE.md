@@ -9,6 +9,11 @@ the destination host's effective global inputs, while historical call logs keep
 the actual rendered prompts from their original generation. Studio retains the
 explicit notice that affected outputs need regeneration.
 
+Static Liquid includes and layouts participate in freshness. Dynamic include names
+remain subject to SPEC-0010's explicit safe-resume boundary: consuming outputs are
+blocked because their dependencies cannot be proven. Unused/disabled prompts and
+excluded speech do not block unrelated consumers.
+
 ## Roots and compatibility
 
 - Book overrides stay in `<BOOKS_DIR>/<label>/prompts` and travel in project ZIPs.
