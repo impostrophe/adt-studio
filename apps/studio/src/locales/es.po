@@ -11391,3 +11391,86 @@ msgstr "Acercar"
 
 msgid "Zoom out"
 msgstr "Alejar"
+
+msgid "{missingForCurrentStage} entry/entries are missing audio. Re-run to generate the missing items."
+msgstr "{missingForCurrentStage} entrada(s) sin audio. Vuelve a ejecutar para generar los elementos faltantes."
+
+msgid "{missingForCurrentStage} entry/entries are missing translations. Re-run to fill the missing items."
+msgstr "{missingForCurrentStage} entrada(s) sin traducción. Vuelve a ejecutar para completar los elementos faltantes."
+
+msgid "{updates} updates needed · {warnings} warnings · {missing} missing"
+msgstr "{updates} actualizaciones necesarias · {warnings} advertencias · {missing} faltantes"
+
+msgid "All outputs"
+msgstr "Todos los resultados"
+
+msgid "Conflicting fields:"
+msgstr "Campos en conflicto:"
+
+msgid "Generate selected outputs"
+msgstr "Generar los resultados seleccionados"
+
+msgid "Keep my conflicting edits"
+msgstr "Conservar mis cambios en conflicto"
+
+msgid "Keep selected content"
+msgstr "Conservar el contenido seleccionado"
+
+msgid "Legacy · protected"
+msgstr "Heredado · protegido"
+
+msgid "Manually edited"
+msgstr "Editado manualmente"
+
+msgid "Mark selected fallbacks checked"
+msgstr "Marcar las alternativas seleccionadas como revisadas"
+
+msgid "Protected content"
+msgstr "Contenido protegido"
+
+msgid "Protected pages:"
+msgstr "Páginas protegidas:"
+
+msgid "Protected quizzes to replace:"
+msgstr "Cuestionarios protegidos que se reemplazarán:"
+
+msgid "Regenerate and replace selected edits"
+msgstr "Regenerar y reemplazar las ediciones seleccionadas"
+
+msgid "Replace {protectedCount} selected protected outputs"
+msgstr "Reemplazar {protectedCount} resultados protegidos seleccionados"
+
+msgid "Replace protected quizzes"
+msgstr "Reemplazar cuestionarios protegidos"
+
+msgid "Replace the protected pages listed above"
+msgstr "Reemplazar las páginas protegidas indicadas arriba"
+
+#. placeholder {0}: res.status
+msgid "Request failed: {0}"
+msgstr "La solicitud falló: {0}"
+
+msgid "Resolve conflicting edits before saving"
+msgstr "Resuelve los cambios en conflicto antes de guardar"
+
+msgid "Review scope"
+msgstr "Alcance de la revisión"
+
+msgid "Saved content is unavailable; your draft is retained"
+msgstr "El contenido guardado no está disponible; tu borrador se conserva"
+
+msgid "Select this scope"
+msgstr "Seleccionar este alcance"
+
+#. placeholder {0}: warnings.length
+msgid "Some content was left out of the bundle: {0} rendered section(s) on {pageList} have no sectioning row, so they could not be included. Re-run the storyboard render for those pages, then package again."
+msgstr "Parte del contenido quedó fuera del paquete: {0} sección(es) renderizada(s) en {pageList} no tienen fila de seccionamiento, por lo que no se pudieron incluir. Vuelve a ejecutar la renderización del storyboard para esas páginas y empaqueta de nuevo."
+
+msgid "This replaces the manually edited or legacy table of contents. Its saved version remains in history."
+msgstr "Esto reemplaza el índice editado manualmente o heredado. Su versión guardada permanece en el historial."
+
+msgid "Use latest conflicting values"
+msgstr "Usar los valores más recientes en conflicto"
+
+msgid "Your draft is retained. Review the refreshed content before saving again."
+msgstr "Tu borrador se conserva. Revisa el contenido actualizado antes de volver a guardar."

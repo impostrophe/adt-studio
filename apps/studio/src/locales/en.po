@@ -11391,3 +11391,86 @@ msgstr "Zoom in"
 
 msgid "Zoom out"
 msgstr "Zoom out"
+
+msgid "{missingForCurrentStage} entry/entries are missing audio. Re-run to generate the missing items."
+msgstr "{missingForCurrentStage} entry/entries are missing audio. Re-run to generate the missing items."
+
+msgid "{missingForCurrentStage} entry/entries are missing translations. Re-run to fill the missing items."
+msgstr "{missingForCurrentStage} entry/entries are missing translations. Re-run to fill the missing items."
+
+msgid "{updates} updates needed · {warnings} warnings · {missing} missing"
+msgstr "{updates} updates needed · {warnings} warnings · {missing} missing"
+
+msgid "All outputs"
+msgstr "All outputs"
+
+msgid "Conflicting fields:"
+msgstr "Conflicting fields:"
+
+msgid "Generate selected outputs"
+msgstr "Generate selected outputs"
+
+msgid "Keep my conflicting edits"
+msgstr "Keep my conflicting edits"
+
+msgid "Keep selected content"
+msgstr "Keep selected content"
+
+msgid "Legacy · protected"
+msgstr "Legacy · protected"
+
+msgid "Manually edited"
+msgstr "Manually edited"
+
+msgid "Mark selected fallbacks checked"
+msgstr "Mark selected fallbacks checked"
+
+msgid "Protected content"
+msgstr "Protected content"
+
+msgid "Protected pages:"
+msgstr "Protected pages:"
+
+msgid "Protected quizzes to replace:"
+msgstr "Protected quizzes to replace:"
+
+msgid "Regenerate and replace selected edits"
+msgstr "Regenerate and replace selected edits"
+
+msgid "Replace {protectedCount} selected protected outputs"
+msgstr "Replace {protectedCount} selected protected outputs"
+
+msgid "Replace protected quizzes"
+msgstr "Replace protected quizzes"
+
+msgid "Replace the protected pages listed above"
+msgstr "Replace the protected pages listed above"
+
+#. placeholder {0}: res.status
+msgid "Request failed: {0}"
+msgstr "Request failed: {0}"
+
+msgid "Resolve conflicting edits before saving"
+msgstr "Resolve conflicting edits before saving"
+
+msgid "Review scope"
+msgstr "Review scope"
+
+msgid "Saved content is unavailable; your draft is retained"
+msgstr "Saved content is unavailable; your draft is retained"
+
+msgid "Select this scope"
+msgstr "Select this scope"
+
+#. placeholder {0}: warnings.length
+msgid "Some content was left out of the bundle: {0} rendered section(s) on {pageList} have no sectioning row, so they could not be included. Re-run the storyboard render for those pages, then package again."
+msgstr "Some content was left out of the bundle: {0} rendered section(s) on {pageList} have no sectioning row, so they could not be included. Re-run the storyboard render for those pages, then package again."
+
+msgid "This replaces the manually edited or legacy table of contents. Its saved version remains in history."
+msgstr "This replaces the manually edited or legacy table of contents. Its saved version remains in history."
+
+msgid "Use latest conflicting values"
+msgstr "Use latest conflicting values"
+
+msgid "Your draft is retained. Review the refreshed content before saving again."
+msgstr "Your draft is retained. Review the refreshed content before saving again."
