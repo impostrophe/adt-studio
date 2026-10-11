@@ -300,9 +300,10 @@ export function createLLMModel(options: CreateLLMModelOptions): LLMModel {
           if (!cacheHit) {
             await rateLimiter?.acquire(externalSignal)
             externalSignal?.throwIfAborted()
-            providerCall = true
-            providerCalls++
+            providerCall = !resolved.backend.reportsProviderRequests
+            if (providerCall) providerCalls++
             const generated = await resolved.backend.generateStructured<T>({
+              onProviderRequest: () => { providerCall = true; providerCalls++ },
               system,
               messages: currentMessages,
               schema: opts.schema,

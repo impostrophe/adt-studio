@@ -64,6 +64,7 @@ export function createClaudeAgentStructuredTextBackend(
   const cwd = options.scratchDir ?? tmpdir()
 
   return {
+    reportsProviderRequests: true,
     async generateStructured<T>(request: StructuredTextRequest): Promise<StructuredTextResult<T>> {
       const executable = resolveExecutable()
       if (!executable) {
@@ -75,6 +76,7 @@ export function createClaudeAgentStructuredTextBackend(
       const systemPrompt = buildSystemPrompt(request.system, native ? undefined : schema)
 
       const turn = await runCli({
+        onProviderRequest: request.onProviderRequest,
         executable,
         model: context.modelId,
         userMessage: {

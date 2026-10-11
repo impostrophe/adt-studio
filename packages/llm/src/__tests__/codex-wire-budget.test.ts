@@ -1,7 +1,7 @@
-// Opt-in acceptance using the installed executable and synthetic loopback traffic.
-// ADT_CODEX_BUDGET_EXECUTABLE=/absolute/path/to/codex pnpm exec vitest run ...
-// AC-5 is still open: an unexpected tool call triggers two actual requests
-// with maxRetries=0 on 0.155.0-alpha.9.2. Keep that assertion failing until fixed.
+// Opt-in real executable acceptance. All credentials and responses are synthetic.
+// ADT_CODEX_BUDGET_EXECUTABLE=/absolute/path/to/codex
+// These original assertions exposed internal continuations; the forwarding gate
+// must satisfy them without hiding or relabeling any upstream request.
 import http from "node:http"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -22,7 +22,7 @@ describe.skipIf(!executable)("real Codex CLI automatic budget", () => {
   let dir: string
   let server: http.Server
   let origin: string
-  let mode: number | "valid" | "invalid" | "closed" | "reset" | "truncated" | "hold" | "tool"
+  let mode: number | "quota" | "valid" | "invalid" | "closed" | "reset" | "truncated" | "hold" | "tool"
   let calls: Array<{
     authorization?: string
     account?: string
@@ -86,12 +86,12 @@ describe.skipIf(!executable)("real Codex CLI automatic budget", () => {
         req.socket.destroy()
         return
       }
-      if (typeof mode === "number") {
-        res.writeHead(mode, { "content-type": "application/json" })
+      if (typeof mode === "number" || mode === "quota") {
+        res.writeHead(mode === "quota" ? 429 : mode, { "content-type": "application/json" })
         res.end(
           JSON.stringify({
             error: {
-              type: mode === 429 ? "rate_limit_error" : "server_error",
+              type: mode === "quota" ? "insufficient_quota" : mode === 429 ? "rate_limit_error" : "server_error",
               message: "Synthetic local failure",
             },
           }),
@@ -225,14 +225,14 @@ describe.skipIf(!executable)("real Codex CLI automatic budget", () => {
     timeoutMs: 15000,
   }
 
-  it.each([503, 429, 403, "invalid", "closed", "reset", "truncated"] as const)(
+  it.each(["quota", 503, 429, 403, "invalid", "closed", "reset", "truncated"] as const)(
     "counts actual requests for %s",
     async (failure) => {
       mode = failure
       const error = await model()
         .generateObject(request)
         .catch((error: unknown) => error)
-      const expected = failure === 403 ? 1 : 3
+      const expected = failure === "quota" || failure === 403 ? 1 : 3
       expect(calls).toHaveLength(expected)
       expect(error).toMatchObject({ providerCalls: expected })
       expect(calls.every((call) => call.authorization === `Bearer ${apiKey}`)).toBe(true)

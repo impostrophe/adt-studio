@@ -1,8 +1,7 @@
-// Opt-in executable acceptance: ADT_CLAUDE_BUDGET_EXECUTABLE=/absolute/path/to/claude.
-// Real CLI, production facade/adapter/runner, synthetic loopback responses only.
-// AC-5 remains OPEN: the truncation case currently fails on Claude 2.1.260
-// (12 requests for a budget of 3). Keep its original assertion; do not weaken
-// the contract or count this opt-in acceptance check as passing.
+// Opt-in real executable acceptance. All credentials and responses are synthetic.
+// ADT_CLAUDE_BUDGET_EXECUTABLE=/absolute/path/to/claude
+// These original assertions exposed internal continuations; the forwarding gate
+// must satisfy them without hiding or relabeling any upstream request.
 import http from "node:http"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -21,7 +20,7 @@ describe.skipIf(!executable)("real Claude CLI automatic budget", () => {
   let dir: string
   let server: http.Server
   let origin: string
-  let mode: number | "valid" | "invalid" | "closed" | "hold" | "truncated"
+  let mode: number | "quota" | "valid" | "invalid" | "closed" | "hold" | "truncated"
   let calls: string[]
   beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "adt-claude-budget-"))
@@ -31,14 +30,14 @@ describe.skipIf(!executable)("real Claude CLI automatic budget", () => {
       let body = ""
       for await (const chunk of req) body += chunk
       if (mode === "hold") return
-      if (typeof mode === "number") {
-        res.writeHead(mode, { "content-type": "application/json" })
+      if (typeof mode === "number" || mode === "quota") {
+        res.writeHead(mode === "quota" ? 429 : mode, { "content-type": "application/json" })
         res.end(
           JSON.stringify({
             type: "error",
             error: {
               type:
-                mode === 403
+                mode === "quota" ? "insufficient_quota" : mode === 403
                   ? "permission_error"
                   : mode === 429
                     ? "rate_limit_error"
@@ -154,14 +153,14 @@ describe.skipIf(!executable)("real Claude CLI automatic budget", () => {
     messages: [{ role: "user" as const, content: "Return structured output" }],
     maxRetries: 2,
   }
-  it.each([503, 429, 403, "invalid", "closed", "truncated"] as const)(
+  it.each(["quota", 503, 429, 403, "invalid", "closed", "truncated"] as const)(
     "counts actual requests for %s",
     async (failure) => {
       mode = failure
       const error = await model()
         .generateObject(request)
         .catch((error: unknown) => error)
-      const expected = failure === 403 ? 1 : 3
+      const expected = failure === "quota" || failure === 403 ? 1 : 3
       expect(error).toMatchObject({ providerCalls: expected })
       expect(calls).toHaveLength(expected)
       expect(calls.every((call) => call === "POST /v1/messages?beta=true")).toBe(true)

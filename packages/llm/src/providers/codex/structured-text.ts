@@ -34,6 +34,7 @@ export function createCodexStructuredTextBackend(
   const runTurn = options.runTurn ?? runCodexCli
 
   return {
+    reportsProviderRequests: true,
     async generateStructured<T>(request: StructuredTextRequest): Promise<StructuredTextResult<T>> {
       const apiKey = context.credentials.apiKey
       const schema = toJsonSchema(request.schema)
@@ -47,6 +48,7 @@ export function createCodexStructuredTextBackend(
       let turn: CodexCliTurn
       try {
         turn = await runTurn({
+        onProviderRequest: request.onProviderRequest,
           model: context.modelId,
           prompt,
           ...(images.length ? { images } : {}),
@@ -57,6 +59,7 @@ export function createCodexStructuredTextBackend(
           ...(options.scratchDir ? { scratchDir: options.scratchDir } : {}),
         })
       } catch (cause) {
+        if (cause instanceof LLMValidationError) throw cause
         const message = cause instanceof Error ? cause.message : String(cause)
         throw new Error(
           `Codex turn failed: ${redactSecret(message, apiKey)}${authFailureHint(apiKey, message)}`,

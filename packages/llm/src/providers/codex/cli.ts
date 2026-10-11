@@ -1,3 +1,4 @@
+import { createCliRequestBudget } from "../shared/cli-request-budget.js"
 import { spawn } from "node:child_process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -31,6 +32,7 @@ export interface CodexCliImage {
 }
 
 export interface CodexCliRequest {
+  onProviderRequest?: () => void
   model: string
   prompt: string
   schema?: Record<string, unknown>
@@ -112,7 +114,7 @@ export function buildCodexArgs(options: CodexArgsOptions): string[] {
   // definition retains OpenAI auth (resolved CODEX_API_KEY or the CLI login),
   // auth-dependent default endpoint and organization/project headers. Use SSE
   // so WebSocket fallback cannot add an extra request outside the facade.
-  // This does not cap agent tool continuations (see opt-in wire acceptance).
+  // The per-turn forwarding gate also caps agent/tool continuations.
   // Only an explicit runner override changes that endpoint. Do not adopt an
   // ambient OPENAI_BASE_URL belonging to a different provider.
   if (options.apiBaseUrl?.trim()) {
@@ -131,21 +133,30 @@ export const runCodexCli: CodexCliRunner = async (request) => {
   const executable = request.executable ?? locateCodexExecutable(request.env)
   const workDir = await mkdtemp(join(request.scratchDir ?? tmpdir(), "adt-codex-"))
 
+  let budget: Awaited<ReturnType<typeof createCliRequestBudget>> | undefined
   try {
+    budget = await createCliRequestBudget({
+      signal: request.signal,
+      env: request.env,
+      onProviderRequest: request.onProviderRequest,
+      upstream: (headers) =>
+        request.apiBaseUrl ??
+        (headers["chatgpt-account-id"]
+          ? "https://chatgpt.com/backend-api/codex"
+          : "https://api.openai.com/v1"),
+    })
     let schemaPath: string | undefined
     if (request.schema) {
       schemaPath = join(workDir, "output-schema.json")
       await writeFile(schemaPath, JSON.stringify(request.schema), "utf-8")
     }
 
-    const imagePaths = request.images?.length
-      ? await writeCodexImages(workDir, request.images)
-      : []
+    const imagePaths = request.images?.length ? await writeCodexImages(workDir, request.images) : []
 
     const args = buildCodexArgs({
       model: request.model,
       workDir,
-      apiBaseUrl: request.apiBaseUrl,
+      apiBaseUrl: budget.url,
       ...(schemaPath ? { schemaPath } : {}),
       ...(imagePaths.length ? { imagePaths } : {}),
     })
@@ -153,12 +164,17 @@ export const runCodexCli: CodexCliRunner = async (request) => {
     const outcome = await spawnCodexCommand(
       executable,
       args,
-      request.env,
-      request.signal,
+      budget.env as Record<string, string>,
+      budget.signal,
       request.prompt,
     )
+    budget.check()
     return readCodexTurn(outcome)
+  } catch (error) {
+    budget?.check()
+    throw error
   } finally {
+    await budget?.close()
     await rm(workDir, { recursive: true, force: true })
   }
 }
@@ -274,9 +290,7 @@ export function readCodexTurn(result: CodexProcessResult): CodexCliTurn {
 
   if (failure || result.exitCode !== 0) {
     const detail = failure ?? lastTransportError ?? result.stderr.trim().slice(-400)
-    throw new Error(
-      `Codex CLI exited with code ${result.exitCode}${detail ? `: ${detail}` : ""}`,
-    )
+    throw new Error(`Codex CLI exited with code ${result.exitCode}${detail ? `: ${detail}` : ""}`)
   }
 
   return { finalMessage, ...(usage ? { usage } : {}), advisoryErrors }
