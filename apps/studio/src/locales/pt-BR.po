@@ -10035,6 +10035,9 @@ msgstr "Os dados enviados no corpo de uma mensagem de requisição ou resposta."
 msgid "The default TTS instruction applied to every language unless overridden below. OpenAI uses it as a voice instruction and Gemini as in-prompt accent steering; Azure and ElevenLabs ignore it."
 msgstr "A instrução de TTS padrão aplicada a todos os idiomas, a menos que seja substituída abaixo. A OpenAI a usa como instrução de voz e o Gemini como direcionamento de sotaque no prompt; Azure e ElevenLabs a ignoram."
 
+msgid "The edited rendering can no longer be matched safely. Your draft is retained; reload and review this page."
+msgstr "Não é mais possível associar com segurança a renderização editada. Seu rascunho é preservado; recarregue e revise esta página."
+
 msgid "The entire page is treated as a single section - all text and images stay together as one unit. Best for storybooks, reference books, and any content where each page is self-contained."
 msgstr "A página inteira é tratada como uma única seção - todo o texto e as imagens permanecem juntos como uma unidade. Ideal para livros ilustrados, livros de referência e qualquer conteúdo em que cada página é autossuficiente."
 

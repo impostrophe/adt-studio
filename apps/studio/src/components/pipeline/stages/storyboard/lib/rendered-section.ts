@@ -25,3 +25,17 @@ export function findRenderedSection(
   const matches = rendering?.sections.filter((section) => renderedSectionId(section) === sectionId) ?? []
   return matches.length === 1 ? matches[0] : undefined
 }
+
+/** Merge a queued inspector edit into exactly one stable rendering. A queued
+ * source position is deliberately not accepted: stored indexes can be stale. */
+export function mergeQueuedRenderingEdit(
+  rendering: NonNullable<PageDetail["rendering"]>,
+  edit: { sectionId?: string; fixedLayout: boolean; html: string },
+): NonNullable<PageDetail["rendering"]> | null {
+  const target = findRenderedSection(rendering, edit.sectionId, edit.fixedLayout)
+  if (!target) return null
+  // Inspector edits do not authorize a change of identity in their HTML.
+  if (renderedSectionId({ ...target, html: edit.html }) !== renderedSectionId(target)) return null
+  if (target.html === edit.html) return rendering
+  return { ...rendering, sections: rendering.sections.map((section) => section === target ? { ...section, html: edit.html } : section) }
+}

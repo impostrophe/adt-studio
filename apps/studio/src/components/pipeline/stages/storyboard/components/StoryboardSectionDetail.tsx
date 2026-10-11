@@ -50,7 +50,7 @@ import {
   useBookStructuredTextAvailability,
 } from "@/hooks/use-api-key"
 import { useActiveConfig } from "@/hooks/use-debug"
-import { findRenderedSection, renderedSectionId } from "../lib/rendered-section"
+import { findRenderedSection, renderedSectionId, mergeQueuedRenderingEdit } from "../lib/rendered-section"
 import { useStoryboardDraft } from "@/hooks/use-storyboard-draft"
 import { DraftConflict } from "../../../components/DraftConflict"
 import { usePage } from "@/hooks/use-pages"
@@ -467,7 +467,7 @@ export function StoryboardSectionDetail({
   // resulting HTML and is committed to React state only at boundaries
   // (selection change, save, unmount) so per-keystroke changes don't
   // re-render BookPreviewFrame and rebuild its body.
-  const pendingHtmlRef = useRef<{ html: string; sectionIndex: number } | null>(null)
+  const pendingHtmlRef = useRef<{ html: string; sectionId?: string; fixedLayout: boolean; scope: string } | null>(null)
   // Stamped by `discardAll` so late debounced commits get dropped.
   const lastDiscardAtRef = useRef(0)
   // Tracks whether iframe-DOM edits exist that haven't been flushed into
@@ -862,9 +862,10 @@ export function StoryboardSectionDetail({
   const saveSectioning = () => runSave(async () => {
     if (!pendingSectioning || storyboardRunning) return
     if (editorDraft.conflict) throw new Error(t`Resolve conflicting edits before saving`)
-    setSaving(true)
     const sourceToSave = pendingSectioning
     const renderingToSave = flushPendingHtml() ?? pendingRendering
+    if (pendingHtmlRef.current) throw new Error(t`The edited rendering can no longer be matched safely. Your draft is retained; reload and review this page.`)
+    setSaving(true)
     const ticket = editorDraft.captureSave({
       sectioning: sourceToSave,
       rendering: renderingToSave ?? page.rendering,
@@ -909,6 +910,7 @@ export function StoryboardSectionDetail({
   // and matching text are not trusted evidence of generated origin.
   const saveRendering = () => runSave(async () => {
     const renderingToSave = flushPendingHtml() ?? pendingRendering
+    if (pendingHtmlRef.current) throw new Error(t`The edited rendering can no longer be matched safely. Your draft is retained; reload and review this page.`)
     if (!renderingToSave || storyboardRunning) return
     if (editorDraft.conflict) throw new Error(t`Resolve conflicting edits before saving`)
     setSaving(true)
@@ -1392,7 +1394,7 @@ export function StoryboardSectionDetail({
         // the text catalog and TTS.
         const removed = previewFrameRef.current?.removeElement(dataId)
         if (removed) {
-          pendingHtmlRef.current = { html: removed.html, sectionIndex }
+          pendingHtmlRef.current = { html: removed.html, sectionId: section?.sectionId, fixedLayout: isFixedLayout, scope: editorScope }
           setHasUnflushedEdits(true)
           markPending("elements")
           for (const id of removed.removedDataIds) treeIds.add(id)
@@ -1568,11 +1570,11 @@ export function StoryboardSectionDetail({
       if (!fullHtml) return
       setSelectedElementClasses(classes)
       previewFrameRef.current?.refreshCss(fullHtml)
-      pendingHtmlRef.current = { html: fullHtml, sectionIndex }
+      pendingHtmlRef.current = { html: fullHtml, sectionId: section?.sectionId, fixedLayout: isFixedLayout, scope: editorScope }
       setHasUnflushedEdits(true)
       markPending("style")
     },
-    [page.rendering, sectionIndex, markPending]
+    [page.rendering, sectionIndex, section?.sectionId, isFixedLayout, editorScope, markPending]
   )
 
   // Inline-style edits (e.g. per-element font-family). Unlike class edits these
@@ -1587,29 +1589,29 @@ export function StoryboardSectionDetail({
       setSelectedComputedTypography(
         previewFrameRef.current?.getComputedTypographyStyles(dataId) ?? null
       )
-      pendingHtmlRef.current = { html: fullHtml, sectionIndex }
+      pendingHtmlRef.current = { html: fullHtml, sectionId: section?.sectionId, fixedLayout: isFixedLayout, scope: editorScope }
       setHasUnflushedEdits(true)
       markPending("style")
     },
-    [page.rendering, sectionIndex, markPending]
+    [page.rendering, sectionIndex, section?.sectionId, isFixedLayout, editorScope, markPending]
   )
 
   const flushPendingHtml = useCallback((): RenderingData | null => {
     const queued = pendingHtmlRef.current
     if (!queued) return pendingRendering
     if (!page.rendering) return pendingRendering
+    if (queued.scope !== editorScope || currentEditorScope.current !== editorScope) return pendingRendering
+    const base = pendingRendering ?? page.rendering
+    const merged = mergeQueuedRenderingEdit(base, queued)
+    if (!merged) {
+      setAiError(t`The edited rendering can no longer be matched safely. Your draft is retained; reload and review this page.`)
+      return pendingRendering
+    }
     pendingHtmlRef.current = null
     setHasUnflushedEdits(false)
-    const base = pendingRendering ?? page.rendering
-    const merged: RenderingData = {
-      ...base,
-      sections: base.sections.map((s) =>
-        s.sectionIndex !== queued.sectionIndex ? s : { ...s, html: queued.html }
-      ),
-    }
     setPendingRendering(merged)
     return merged
-  }, [page.rendering, pendingRendering])
+  }, [page.rendering, pendingRendering, editorScope, t])
 
   useEffect(() => {
     return () => {
