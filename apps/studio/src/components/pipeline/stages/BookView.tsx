@@ -69,11 +69,12 @@ export function BookView({ bookLabel }: ViewProps) {
   const { data: signLanguageData } = useSignLanguageVideos(bookLabel)
   const { data: packageStatus } = usePackageAdtStatus(bookLabel)
   const { tasks } = useBookTasks(bookLabel)
-  const validationCompleted = Boolean(accessibilityAssessment?.assessment)
+  const modeCompatible = packageStatus?.modeCompatible !== false
+  const validationCompleted = modeCompatible && Boolean(accessibilityAssessment?.assessment)
   const signLanguageCompleted =
     signLanguageData?.videos?.some((v) => v.sectionId !== null) ?? false
-  const previewCompleted = packageStatus?.hasAdt ?? false
-  const exportCompleted = tasks.some(
+  const previewCompleted = modeCompatible && (packageStatus?.hasAdt ?? false)
+  const exportCompleted = modeCompatible && tasks.some(
     (t) => t.kind === "prepare-export" && t.status === "completed",
   )
   const completionOverrides: Record<string, boolean> = {
@@ -759,4 +760,3 @@ function BookOverviewCard({ bookLabel }: { bookLabel: string }) {
     </section>
   )
 }
-

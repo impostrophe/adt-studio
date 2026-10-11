@@ -36,6 +36,7 @@ export function useUpdateBookConfig() {
       queryClient.invalidateQueries({ queryKey: ["books"] }),
       queryClient.invalidateQueries({ queryKey: ["book", label] }),
       queryClient.invalidateQueries({ queryKey: ["book-config", label] }),
+      queryClient.invalidateQueries({ queryKey: ["package-adt-status", label] }),
       queryClient.invalidateQueries({ queryKey: ["validation", "catalog", label] }),
       queryClient.invalidateQueries({ queryKey: ["debug"] }),
     ]),
