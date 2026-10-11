@@ -1,23 +1,29 @@
 import { withBookWriter, resolveBookPaths } from "@adt/storage"
 import {
   createStoryboardPublication, FIXED_LAYOUT_SECTIONING_NODE, SectioningSafetyError,
-  isFixedLayoutBook, processFixedLayoutPages,
+  isFixedLayoutBook, processFixedLayoutPages, stampGeneratedRendering, renderedSectionId,
+  readGenerationCatalog, inputSignature, reconcileTextCatalog,
 } from "@adt/pipeline"
 import crypto from "node:crypto"
 import path from "node:path"
 import { createBookStorage } from "@adt/storage"
 import { createLLMModel, createPromptEngine } from "@adt/llm"
-import type { LLMModel, ResolvedCredentials } from "@adt/llm"
+import type { LLMModel, ResolvedCredentials, PromptEngine } from "@adt/llm"
 import { renderPage, buildRenderStrategyResolver, buildBookFontsPromptContext, readTypography, buildTypographyCss, collectReferencedImageIds, collectSourcePageImages, createTemplateEngine, loadBookConfig, createScreenshotRenderer, runVisualReviewLoop, DEFAULT_VISUAL_REVIEW_MODEL_ID, buildScreenshotHtml, SCREENSHOT_VIEWPORTS, inspectOrderingActivityHtml, validateRetainedHeadingHierarchy } from "@adt/pipeline"
 import type { VisualRefinementDeps } from "@adt/pipeline"
 import { PageSectioningOutput, WebRenderingOutput, webRenderingLLMSchema, editVerifyLLMSchema, DEFAULT_LLM_MODEL_ID } from "@adt/types"
 import { loadStyleguideContent } from "./styleguide.js"
-import { resolvePromptRoots } from "./prompt-roots.js"
+import { resolvePromptRoots, resolvePromptOverridesDir } from "./prompt-roots.js"
+import { storedSynchronization, synchronizationLayout } from "./storyboard-save.js"
+import { assertEditVersion } from "./catalog-output-service.js"
+import type { SectioningRepairRequest } from "@adt/types"
 
 export interface ReRenderOptions {
   label: string
   pageId: string
   sectionIndex?: number
+  repair?: SectioningRepairRequest
+  signal?: AbortSignal
   /** Optional user prompt/instructions to guide the LLM during re-render */
   prompt?: string
   booksDir: string
@@ -63,7 +69,27 @@ export async function reRenderPages(options: ReRenderOptions[]): Promise<ReRende
   return withBookWriter(resolveBookPaths(label, booksDir).bookDir, async () => {
     const storage = createBookStorage(label, booksDir)
     try {
-      const publication = createStoryboardPublication(storage, label, booksDir, configPath)
+      const publication = createStoryboardPublication(storage, label, booksDir, configPath, undefined, false)
+      const config = loadBookConfig(label, booksDir, configPath)
+      const capturedEngine = createPromptEngine(resolvePromptRoots({ booksDir, promptsDir: options[0].promptsDir, bookPromptsDir: path.join(resolveBookPaths(label, booksDir).bookDir, "prompts") }), { basePromptModelId: config.base_prompt_model, capture: true })
+      const generationInputs = (promptEngine?: PromptEngine) => readGenerationCatalog({ storage, promptEngine, config: loadBookConfig(label, booksDir, configPath),
+        bookDir: resolveBookPaths(label, booksDir).bookDir, promptsDir: options[0].promptsDir,
+        promptOverridesDir: resolvePromptOverridesDir(booksDir), configPath }).filter((status) => status.identity.kind === "storyboard" && options.some((item) => item.pageId === status.identity.id))
+      const capturedInputs = options.some((item) => item.repair) ? inputSignature(generationInputs(capturedEngine).map((status) => [status.identity, status.signature, status.contentHash])) : null
+      const validate = () => {
+        for (const item of options) {
+          item.signal?.throwIfAborted()
+          if (!item.repair) continue
+          assertEditVersion(storage.getLatestNodeData("page-sectioning", item.pageId)?.version, item.repair.baseVersion)
+          assertEditVersion(storage.getLatestNodeData("web-rendering", item.pageId)?.version, item.repair.renderingVersion)
+          const sync = storedSynchronization(storage, item.pageId, synchronizationLayout(storage, item.pageId, config))
+          if (item.repair.sectionIds.some((id) => sync.sections.filter((section) => section.sectionId === id && section.action === "repair").length !== 1)) {
+            throw new Error("The requested sections are no longer eligible for repair. Reload and review their current protection and source.")
+          }
+        }
+        if (capturedInputs && capturedInputs !== inputSignature(generationInputs().map((status) => [status.identity, status.signature, status.contentHash]))) throw new Error("Rendering inputs changed during repair. Previous output is retained.")
+      }
+      validate()
       const pages = new Set(publication.storage.getPages().map((page) => page.pageId))
       if (options.some((item) => !pages.has(item.pageId))) throw new Error("Requested page is outside the active source-page window")
       if (isFixedLayoutBook(loadBookConfig(label, booksDir, configPath))) {
@@ -82,21 +108,25 @@ export async function reRenderPages(options: ReRenderOptions[]): Promise<ReRende
         })
       }
       const results: ReRenderResult[] = []
-      for (const item of options) results.push(await reRenderAdmittedPage(item, publication))
+      for (const item of options) results.push(await reRenderAdmittedPage(item, publication, capturedEngine))
+      validate()
+      for (const item of options) if (item.repair) {
+        const verified = storedSynchronization(publication.storage, item.pageId, "reflowable")
+        if (item.repair.sectionIds.some((id) => verified.sections.find((section) => section.sectionId === id)?.status !== "current")) throw new Error("Generated output did not establish safe source correspondence. Previous output is retained; review the section.")
+      }
       publication.publish(options.map((item) => item.pageId))
-      return results
+      return results.map((result, index) => ({ ...result, version: storage.getLatestNodeData("web-rendering", options[index].pageId)!.version }))
     } finally { storage.close() }
   })
 }
 
 async function reRenderAdmittedPage(
-  options: ReRenderOptions, publication: ReturnType<typeof createStoryboardPublication>,
+  options: ReRenderOptions, publication: ReturnType<typeof createStoryboardPublication>, capturedEngine: PromptEngine,
 ): Promise<ReRenderResult> {
   const { label, pageId, sectionIndex, prompt, booksDir, promptsDir, webAssetsDir, configPath, credentials } = options
 
   const storage = publication.storage
   let visualRefinement: VisualRefinementDeps | undefined
-  let renderingCommitted = false
   // Book typography (editable size-per-role map), shared with every rendered page.
   const typography = readTypography(storage)
 
@@ -147,7 +177,7 @@ async function reRenderAdmittedPage(
     // Keep write-through so later ordinary calls with identical inputs reuse it.
     const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
-    const promptEngine = createPromptEngine(resolvePromptRoots({ booksDir, promptsDir, bookPromptsDir }), { basePromptModelId: config.base_prompt_model, capture: true })
+    const promptEngine = capturedEngine
     const templatesDir = path.join(path.dirname(promptsDir), "templates")
     const templateEngine = createTemplateEngine(templatesDir)
     const renderModels = new Map<string, LLMModel>()
@@ -204,12 +234,13 @@ async function reRenderAdmittedPage(
     // Render either a single section (preferred) or the full page.
     // For section re-render we force all other sections to pruned in-memory so
     // renderPage preserves the original sectionIndex while skipping extra LLM calls.
-    const structuringForRender = sectionIndex === undefined
+    const targetIds = options.repair?.sectionIds ?? (sectionIndex === undefined ? undefined : [sectioning.sections[sectionIndex].sectionId])
+    const structuringForRender = !targetIds
       ? sectioning
       : {
           ...sectioning,
           sections: sectioning.sections.map((section, idx) =>
-            idx === sectionIndex ? section : { ...section, isPruned: true }
+            targetIds.includes(section.sectionId) ? section : { ...section, isPruned: true }
           ),
         }
 
@@ -230,69 +261,34 @@ async function reRenderAdmittedPage(
       resolveRenderModel,
       templateEngine,
       visualRefinement,
+      { signal: options.signal },
     )
 
-    if (sectionIndex === undefined) {
-      const version = storage.putNodeData("web-rendering", pageId, renderResult)
-      renderingCommitted = true
-      return { version, rendering: renderResult }
+    const proven = stampGeneratedRendering(renderResult, sectioning, pageId, structuringRow.version)
+    options.signal?.throwIfAborted()
+    if (!targetIds) {
+      const version = storage.putNodeData("web-rendering", pageId, proven)
+      return { version, rendering: proven }
     }
-
-    // Merge the newly rendered section back into existing rendering, preserving
-    // other sections as-is.
-    const existingRenderingRow = storage.getLatestNodeData("web-rendering", pageId)
-    const existingRenderingParsed = existingRenderingRow
-      ? WebRenderingOutput.safeParse(existingRenderingRow.data)
-      : null
-    if (existingRenderingRow && !existingRenderingParsed?.success) {
-      throw new Error("Invalid web-rendering data")
-    }
-    const existingSections = existingRenderingParsed?.success
-      ? existingRenderingParsed.data.sections
-      : []
-    const withoutTarget = existingSections.filter((s) => s.sectionIndex !== sectionIndex)
-    const newTarget = renderResult.sections.find((s) => s.sectionIndex === sectionIndex)
-    const mergedSections = newTarget
-      ? [...withoutTarget, newTarget].sort((a, b) => a.sectionIndex - b.sectionIndex)
-      : withoutTarget.sort((a, b) => a.sectionIndex - b.sectionIndex)
-    const mergedRendering = { sections: mergedSections }
-
-    const version = storage.putNodeData("web-rendering", pageId, mergedRendering)
-    renderingCommitted = true
-    return { version, rendering: mergedRendering }
+    const existing = storage.getLatestNodeData("web-rendering", pageId)
+    const parsed = WebRenderingOutput.safeParse(existing?.data)
+    if (existing && !parsed.success) throw new Error("Invalid web-rendering data")
+    const incoming = new Map(proven.sections.map((section) => [renderedSectionId(section), section]))
+    if (targetIds.some((id) => !incoming.has(id))) throw new Error("Generation omitted a requested stable section")
+    const matched = new Set<string>()
+    const merged = (parsed.success ? parsed.data.sections : []).map((section) => {
+      const id = renderedSectionId(section)
+      if (!id || !targetIds.includes(id)) return section
+      if (matched.has(id)) throw new Error("Ambiguous rendered section identity")
+      matched.add(id)
+      return incoming.get(id)!
+    })
+    for (const id of targetIds) if (!matched.has(id)) merged.push(incoming.get(id)!)
+    const rendering = { sections: merged }
+    const version = storage.putNodeData("web-rendering", pageId, rendering)
+    return { version, rendering }
   } finally {
-    try {
-      if (visualRefinement) await visualRefinement.screenshotRenderer.close()
-      // A failed generation did not change rendering. In particular, a fresh
-      // provider failure must not delete downstream manual work or completion.
-      // Successful invalidation still awaits the shared scoped-preservation API.
-      if (renderingCommitted) {
-        storage.clearNodesByType([
-          "image-captioning",
-          "text-catalog",
-          "easy-read",
-          "text-catalog-translation",
-          "core-tts-catalog",
-          "tts",
-          "tts-timestamps",
-          "accessibility-assessment",
-        ])
-        storage.clearStepRuns([
-          "image-captioning",
-          "text-catalog",
-          "easy-read",
-          "catalog-translation",
-          "core-tts-catalog",
-          "image-translation",
-          "tts",
-          "word-timestamps",
-          "package-web",
-          "accessibility-assessment",
-        ])
-      }
-    } finally {
-      storage.close()
-    }
+    if (visualRefinement) await visualRefinement.screenshotRenderer.close()
   }
 }
 

@@ -513,3 +513,5 @@ export { assertPackageReadable, recoverPackagePublication } from "./packaging/pu
 
 export { writePackageInventory, packageInventoryValid } from "./packaging/publication.js"
 export { classifySectioningSynchronization } from "./sectioning-sync.js"
+export { classifyStoredSectioning, renderedSectionId, sectionRenderingContent, generatedSectionEvidence, stampGeneratedRendering } from "./sectioning-sync-evidence.js"
+export type { GenerationCatalogOptions } from "./generation-catalog.js"

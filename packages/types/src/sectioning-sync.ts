@@ -3,7 +3,7 @@ import { PageSectioningOutput } from "./page-sectioning.js"
 import { WebRenderingOutput } from "./web-rendering.js"
 
 export const SectionSyncStatus = z.enum([
-  "current", "text-patched", "structural-drift", "invalid-rendering",
+  "current", "text-patched", "text-drift", "structural-drift", "invalid-rendering",
   "protected-divergence", "unknown-origin", "fixed-layout-unmapped",
 ])
 export type SectionSyncStatus = z.infer<typeof SectionSyncStatus>
@@ -12,6 +12,7 @@ export const SectionSyncResult = z.object({
   sectionId: z.string(),
   status: SectionSyncStatus,
   diagnostics: z.array(z.string()),
+  action: z.enum(["repair", "review", "none"]).optional(),
 })
 export type SectionSyncResult = z.infer<typeof SectionSyncResult>
 
@@ -27,8 +28,7 @@ export type SectioningSynchronization = z.infer<typeof SectioningSynchronization
 
 /**
  * Ephemeral evidence supplied by a trusted caller, never a client save flag.
- * This slice does not persist or manufacture these proofs. Their production
- * adapter must be supplied by the shared protection/freshness integration.
+ * Derived from shared OutputMetadata and retained source history by the server.
  */
 export const SectionSyncProof = z.object({
   sectionId: z.string(),
@@ -42,6 +42,7 @@ export type SectionSyncProof = z.infer<typeof SectionSyncProof>
 export const SectioningSyncInput = z.object({
   pageId: z.string(),
   priorSource: PageSectioningOutput.nullable(),
+  priorSources: z.array(z.object({ version: z.number().int().positive(), source: PageSectioningOutput })).optional(),
   source: PageSectioningOutput,
   rendering: WebRenderingOutput.nullable(),
   sourceVersion: z.number().int().positive(),
@@ -60,3 +61,26 @@ export const SectioningSyncCandidate = z.object({
   diagnostics: z.array(z.string()),
 })
 export type SectioningSyncCandidate = z.infer<typeof SectioningSyncCandidate>
+
+export const StoryboardSaveRequest = z.object({
+  baseVersion: z.number().int().nonnegative(),
+  renderingVersion: z.number().int().nonnegative(),
+  sectioning: PageSectioningOutput.omit({ source: true }).optional(),
+  rendering: WebRenderingOutput.optional(),
+  renderingInSync: z.boolean().optional(), // Compatibility hint; never proof.
+}).refine((value) => value.sectioning || value.rendering, "A source or rendering edit is required")
+export type StoryboardSaveRequest = z.infer<typeof StoryboardSaveRequest>
+
+export const StoryboardSaveResponse = z.object({
+  sectioningVersion: z.number().int().positive().nullable(),
+  renderingVersion: z.number().int().positive().nullable(),
+  synchronization: SectioningSynchronization,
+})
+export type StoryboardSaveResponse = z.infer<typeof StoryboardSaveResponse>
+
+export const SectioningRepairRequest = z.object({
+  baseVersion: z.number().int().positive(),
+  renderingVersion: z.number().int().nonnegative(),
+  sectionIds: z.array(z.string().min(1)).min(1).refine((ids) => new Set(ids).size === ids.length, "Duplicate section identities"),
+})
+export type SectioningRepairRequest = z.infer<typeof SectioningRepairRequest>

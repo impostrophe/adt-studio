@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { createBookStorage } from "@adt/storage"
+import { createBookStorage, writeSectioningLifecycle } from "@adt/storage"
 import { reRenderPage } from "./page-edit-service.js"
 
 const fetchMock = vi.fn()
@@ -56,6 +56,7 @@ beforeEach(() => {
     storage.putNodeData("text-catalog-translation", "es", { manual: "preserve on failure" })
     storage.markStepCompleted("catalog-translation")
   } finally { storage.close() }
+  writeSectioningLifecycle(path.join(booksDir, label), "dynamic", true)
   fs.writeFileSync(path.join(booksDir, label, "config.yaml"), "default_model: openai:gpt-4o-mini\ndefault_render_strategy: llm\nrender_strategies:\n  llm:\n    render_type: llm\n    config:\n      prompt: web_generation_html\n      max_retries: 0\n      visual_refinement:\n        enabled: false\n")
 })
 afterEach(() => {

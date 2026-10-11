@@ -1,4 +1,4 @@
-import { AuthoredSaveGuard } from "@adt/types"
+import { StoryboardSaveRequest, SectioningRepairRequest, AuthoredSaveGuard } from "@adt/types"
 import { assertAuthoredIdle } from "../services/authored-output-service.js"
 import { captureOutputReferences } from "@adt/pipeline"
 import { scopeLegacyActivityIds, getRenderSectioning } from "@adt/pipeline"
@@ -7,7 +7,7 @@ import { catalogOutputs, editSourceSignature, assertEditSource, assertEditVersio
 import { OutputEditGuard } from "@adt/types"
 import { outputEvidence } from "@adt/pipeline"
 import { restoreSpeechOutput } from "@adt/storage"
-import { reconcileTextCatalog, assignActivityIds } from "@adt/pipeline"
+import { renderedSectionId, sectionRenderingContent, inputSignature, reconcileTextCatalog, assignActivityIds } from "@adt/pipeline"
 import { randomUUID } from "node:crypto"
 import { assertSectioningCurrent } from "@adt/pipeline"
 import { bookWriterMiddleware } from "../middleware/book-writer.js"
@@ -73,6 +73,7 @@ import { samplePageEdges, extractPages, computeGroups, countPdfPages } from "@ad
 import { reRenderPage, reRenderPages, aiEditSection } from "../services/page-edit-service.js"
 
 import { readSectioningSynchronization } from "../services/sectioning-sync.js"
+import { saveStoryboard, storedSynchronization, synchronizationLayout } from "../services/storyboard-save.js"
 import {
   getBookStyleguidesDir,
   getGeneratedStyleguideName,
@@ -80,7 +81,7 @@ import {
   writeStyleguideFiles,
 } from "../services/styleguide.js"
 import type { TaskService } from "../services/task-service.js"
-import { resolvePromptRoots } from "../services/prompt-roots.js"
+import { resolvePromptRoots, resolvePromptOverridesDir } from "../services/prompt-roots.js"
 import {
   segmentPageImages,
   getSegmentedImageId,
@@ -502,7 +503,7 @@ function clearRestoredNodeDependents(
     case "image-filtering":
     case "page-sectioning":
     case "web-rendering":
-      clearCaptionData(storage)
+      reconcileTextCatalog(storage, { preserveRendering: true })
       return
 
     case "image-captioning":
@@ -651,7 +652,13 @@ function saveStoryboardNode(
     const parsed = node === "web-rendering" ? WebRenderingOutput.safeParse(data) : null
     const saved = parsed?.success ? {
       ...parsed.data,
-      sections: parsed.data.sections.map((section) => scopeLegacyActivityIds(section, getRenderSectioning(storage, itemId)?.sections[section.sectionIndex]?.sectionId ?? itemId)),
+      sections: parsed.data.sections.map((section) => {
+        const previous = WebRenderingOutput.safeParse(storage.getLatestNodeData("web-rendering", itemId)?.data)
+        const id = renderedSectionId(section)
+        const matches = previous.success ? previous.data.sections.filter((value) => renderedSectionId(value) === id) : []
+        if (matches.length === 1 && inputSignature(sectionRenderingContent(matches[0])) === inputSignature(sectionRenderingContent(section))) return matches[0]
+        return { ...sectionRenderingContent(section), generationEvidence: { source: "manual" as const } }
+      }),
     } : node === "page-sectioning" ? { ...PageSectioningOutput.parse(data), source: "manual" } : data
     if (node === "page-sectioning") {
       const before = PageSectioningOutput.safeParse(storage.getLatestNodeData(node, itemId)?.data)
@@ -660,8 +667,7 @@ function saveStoryboardNode(
       if (before.success) retireSectionIds(storage, before.data.sections.filter((section) => !active.has(section.sectionId)).map((section) => section.sectionId))
     }
     const nextVersion = storage.putNodeData(node, itemId, saved)
-    reconcileTextCatalog(storage)
-    clearCaptionData(storage)
+    reconcileTextCatalog(storage, { preserveRendering: true })
     // A sectioning change invalidates the storyboard's rendered HTML — and the
     // structural ops go further: a split drops both halves' HTML and a cross-page
     // merge empties both pages, so those sections would silently vanish from the
@@ -1025,6 +1031,11 @@ export function createPageRoutes(
       })
     }
 
+    const catalogStorage = createBookStorage(safeLabel, booksDir)
+    let captionSourceSignature = "unavailable"
+    try { captionSourceSignature = editSourceSignature(catalogOutputs(catalogStorage, safeLabel, booksDir, promptsDir, configPath), "caption", undefined, pageId) }
+    catch { /* Invalid legacy/config inputs must remain inspectable for repair. No valid edit guard is fabricated. */ }
+    finally { catalogStorage.close() }
     const db = openBookDb(dbPath)
     try {
       // Keep source, rendering and graph ownership in one read snapshot.
@@ -1163,10 +1174,6 @@ export function createPageRoutes(
         return meta
       })
 
-      const catalogStorage = createBookStorage(safeLabel, booksDir)
-      let captionSourceSignature: string
-      try { captionSourceSignature = editSourceSignature(catalogOutputs(catalogStorage, safeLabel, booksDir, promptsDir, configPath), "caption", undefined, pageId) }
-      finally { catalogStorage.close() }
       const result: PageDetail = {
         captionSourceSignature,
 
@@ -1521,7 +1528,7 @@ export function createPageRoutes(
 
     const body = await c.req.json()
     // Authorship is server-owned, not an editable field in the request body.
-    const parsed = PageSectioningOutput.omit({ source: true }).extend(AuthoredSaveGuard.shape).safeParse(body)
+    const parsed = PageSectioningOutput.omit({ source: true }).extend({ ...AuthoredSaveGuard.shape, renderingVersion: z.number().int().nonnegative() }).safeParse(body)
     if (!parsed.success) {
       throw new HTTPException(400, {
         message: `Invalid page-sectioning data: ${parsed.error.message}`,
@@ -1536,10 +1543,9 @@ export function createPageRoutes(
         throw new HTTPException(404, { message: `Page not found: ${pageId}` })
       }
 
-      assertEditVersion(storage.getLatestNodeData("page-sectioning", pageId)?.version, parsed.data.baseVersion)
-      // Sectioning change cascades to everything downstream.
-      const version = saveStoryboardNode(storage, "page-sectioning", pageId, parsed.data)
-      return c.json({ version })
+      const result = saveStoryboard(storage, pageId, { sectioning: parsed.data, baseVersion: parsed.data.baseVersion, renderingVersion: parsed.data.renderingVersion }, loadBookConfig(safeLabel, booksDir, configPath), undefined,
+        { bookDir: storage.bookDir!, promptsDir, configPath, promptOverridesDir: resolvePromptOverridesDir(booksDir) })
+      return c.json({ version: result.sectioningVersion, ...result })
     } finally {
       storage.close()
     }
@@ -1606,90 +1612,44 @@ export function createPageRoutes(
     }
   })
 
-  // PUT /books/:label/pages/:pageId/storyboard — one Storyboard editor save.
-  //
-  // Sectioning and rendering are two nodes but one user action, and splitting
-  // them across two requests is what made the editor fragile: the second PUT can
-  // fail (or be rejected by the pipeline-run guard) after the first has already
-  // landed, leaving the HTML and the tree disagreeing with no way back. Writing
-  // both here means the guard runs once, up front, and the pair moves together.
-  //
-  // `renderingInSync` says the stored HTML reflects this sectioning, or will
-  // shortly: the caller either mirrored the edit into the rendering it is
-  // sending, needed no HTML change at all, or has queued a re-render of the one
-  // section it touched. Storyboard editing is incremental by design, so a
-  // per-section edit must not reset the stage for the whole book. It is false
-  // only when the HTML cannot be brought back in sync — no API key, or a custom
-  // activity a re-render would flatten — and false is also the default, so the
-  // Sectioning stage and the structural ops that drop HTML without re-rendering
-  // (split, cross-page merge) keep marking the chain stale.
+  // One server-owned transaction for both Storyboard and Sectioning saves.
   app.put("/books/:label/pages/:pageId/storyboard", async (c) => {
     const { label, pageId } = c.req.param()
     const safeLabel = parseBookLabel(label)
-
-    const body = await c.req.json()
-    const parsed = z
-      .object({
-        sectioning: PageSectioningOutput.omit({ source: true }).optional(),
-        baseVersion: AuthoredSaveGuard.shape.baseVersion.optional(),
-        rendering: WebRenderingOutput.optional(),
-        renderingInSync: z.boolean().default(false),
-      })
-      .safeParse(body)
-    if (!parsed.success) {
-      throw new HTTPException(400, {
-        message: `Invalid storyboard save: ${parsed.error.message}`,
-      })
-    }
-    const { sectioning, rendering, renderingInSync } = parsed.data
-    if (!sectioning && !rendering) {
-      throw new HTTPException(400, {
-        message: "Storyboard save must include sectioning, rendering, or both",
-      })
-    }
-    // The flag only describes a sectioning write; on its own it would silently
-    // do nothing, which is worth a 400 rather than a puzzling no-op.
-    if (renderingInSync && !sectioning) {
-      throw new HTTPException(400, {
-        message: "renderingInSync requires sectioning",
-      })
-    }
-
+    const parsed = StoryboardSaveRequest.safeParse(await c.req.json())
+    if (!parsed.success) throw new HTTPException(400, { message: `Invalid storyboard save: ${parsed.error.message}` })
     const storage = createBookStorage(safeLabel, booksDir)
     try {
-      const pages = storage.getPages()
-      const page = pages.find((p) => p.pageId === pageId)
-      if (!page) {
-        throw new HTTPException(404, { message: `Page not found: ${pageId}` })
-      }
+      const outputs = parsed.data.rendering ? catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath) : []
+      return c.json(saveStoryboard(storage, pageId, parsed.data, loadBookConfig(safeLabel, booksDir, configPath),
+        (rendering) => saveAuthoredImageAlts(storage, pageId, rendering, outputs),
+        { bookDir: storage.bookDir!, promptsDir, configPath, promptOverridesDir: resolvePromptOverridesDir(booksDir) }))
+    } finally { storage.close() }
+  })
 
-      // Guard before either write, so a rejected save changes nothing at all.
-      if (sectioning) {
-        const guard = AuthoredSaveGuard.safeParse(parsed.data)
-        if (!guard.success) throw new HTTPException(400, { message: "baseVersion is required for sectioning saves" })
-        assertNoActivePipelineRun(storage)
-        assertEditVersion(storage.getLatestNodeData("page-sectioning", pageId)?.version, guard.data.baseVersion)
-      }
-
-      // Rendering, sectioning, downstream invalidations, and step status are a
-      // single editor save. If any statement fails, none of them may survive.
-      const outputs = rendering ? catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath) : []
-      const { renderingVersion, sectioningVersion } = storage.transaction(() => {
-        if (rendering) saveAuthoredImageAlts(storage, pageId, rendering, outputs)
-        return {
-        renderingVersion: rendering
-          ? saveStoryboardNode(storage, "web-rendering", pageId, rendering)
-          : null,
-        sectioningVersion: sectioning
-          ? saveStoryboardNode(storage, "page-sectioning", pageId, sectioning, { renderingInSync })
-          : null,
-        }
-      })
-
-      return c.json({ sectioningVersion, renderingVersion })
-    } finally {
-      storage.close()
+  app.post("/books/:label/pages/:pageId/synchronization/repair", async (c) => {
+    const { label, pageId } = c.req.param()
+    const safeLabel = parseBookLabel(label)
+    const parsed = SectioningRepairRequest.safeParse(await c.req.json())
+    if (!parsed.success) throw new HTTPException(400, { message: `Invalid repair request: ${parsed.error.message}` })
+    const credentials = readProviderCredentials(c)
+    const storage = createBookStorage(safeLabel, booksDir)
+    try {
+      assertEditVersion(storage.getLatestNodeData("page-sectioning", pageId)?.version, parsed.data.baseVersion)
+      assertEditVersion(storage.getLatestNodeData("web-rendering", pageId)?.version, parsed.data.renderingVersion)
+      const config = loadBookConfig(safeLabel, booksDir, configPath)
+      assertSectioningCurrent(storage, config, storage.bookDir!)
+      const state = storedSynchronization(storage, pageId, synchronizationLayout(storage, pageId, config))
+      if (parsed.data.sectionIds.some((id) => state.sections.filter((section) => section.sectionId === id && section.action === "repair").length !== 1)) throw new HTTPException(409, { message: "These sections require review or are no longer active. Reload before repairing." })
+    } finally { storage.close() }
+    const execute = (_progress: unknown, signal?: AbortSignal) => reRenderPage({ label: safeLabel, pageId,
+      repair: parsed.data, signal, booksDir, promptsDir, webAssetsDir, configPath, credentials })
+    if (taskService) {
+      const { taskId } = taskService.submitTask(safeLabel, "re-render", `Repairing ${parsed.data.sectionIds.join(", ")} on ${pageId}`, execute,
+        { pageId, url: `/books/${safeLabel}/storyboard/${pageId}`, cancellable: true })
+      return c.json({ taskId, status: "submitted" })
     }
+    return c.json(await execute(undefined))
   })
 
   // POST /books/:label/versions/:node/:itemId/restore — roll an entity back to

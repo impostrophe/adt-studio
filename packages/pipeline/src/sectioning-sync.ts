@@ -107,7 +107,7 @@ function patchSection(before: PageSectioningSection, after: PageSectioningSectio
     matches.push(element)
     byId.set(id, matches)
     if (matches.length !== 1) return fail("invalid-rendering", `Duplicate rendered node: ${id}`)
-    if (!ids.has(id) && !id.startsWith("activity_gen_")) return fail("structural-drift", `Unknown rendered node: ${id}`)
+    if (!ids.has(id) && !id.startsWith("activity_gen_") && !id.startsWith(`${after.sectionId}__activity_gen_`)) return fail("structural-drift", `Unknown rendered node: ${id}`)
   }
   const optional = collectOptionalTextIds(nodes.filter((n) => n.role && n.role !== "image").map((n) => ({
     text_id: n.nodeId, text_type: n.role!, text: n.text ?? "",
@@ -202,8 +202,11 @@ export function classifySectioningSynchronization(input: SectioningSyncInput): S
       continue
     }
     const proof = input.proofs.filter((p) => p.sectionId === section.sectionId)
-    const previous = priorSource?.sections.filter((s) => s.sectionId === section.sectionId && !s.isPruned)
-    if (proof.length !== 1 || proof[0].pageId !== input.pageId || proof[0].sourceVersion !== input.sourceVersion || proof[0].renderingVersion !== input.renderingVersion || !previous || previous.length !== 1 || proof[0].origin === "unknown") {
+    const prior = proof.length === 1 && input.priorSources
+      ? input.priorSources.find((row) => row.version === proof[0].sourceVersion)?.source
+      : proof[0]?.sourceVersion === input.sourceVersion ? priorSource : null
+    const previous = prior?.sections.filter((s) => s.sectionId === section.sectionId && !s.isPruned)
+    if (proof.length !== 1 || proof[0].pageId !== input.pageId || proof[0].renderingVersion !== input.renderingVersion || !previous || previous.length !== 1 || proof[0].origin === "unknown") {
       add("unknown-origin", "The source and protection provenance of this rendering is unverified.")
       continue
     }

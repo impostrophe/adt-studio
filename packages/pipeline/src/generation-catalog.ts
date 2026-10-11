@@ -36,6 +36,11 @@ const kindStage = (kind: GenerationKind): StageName => kind === "extract-generat
 export function generationContent(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value
   const { generationEvidence: _evidence, ...content } = value as Record<string, unknown>
+  if (Array.isArray(content.sections)) content.sections = content.sections.map((section) => {
+    if (!section || typeof section !== "object" || typeof section.html !== "string") return section
+    const { generationEvidence: _sectionEvidence, ...rendering } = section
+    return rendering
+  })
   return content
 }
 

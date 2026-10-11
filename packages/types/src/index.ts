@@ -587,4 +587,7 @@ export {
   SectioningSynchronization,
   SectioningSyncInput,
   SectioningSyncCandidate,
+  StoryboardSaveRequest,
+  StoryboardSaveResponse,
+  SectioningRepairRequest,
 } from "./sectioning-sync.js"

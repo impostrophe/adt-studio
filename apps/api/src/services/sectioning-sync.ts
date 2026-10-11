@@ -1,5 +1,5 @@
 import { openBookDb, readCurrentNodeRow } from "@adt/storage"
-import { classifySectioningSynchronization } from "@adt/pipeline"
+import { classifyStoredSectioning } from "@adt/pipeline"
 import { PageSectioningOutput, WebRenderingOutput, type SectioningSynchronization } from "@adt/types"
 
 /** Project current pointers only. No timestamp/index-based provenance inference. */
@@ -48,18 +48,11 @@ export function readSectioningSynchronization(
       result.diagnostics.push("Part of the active section graph could not be read.")
     }
   }
-  const comparison = classifySectioningSynchronization({
-    pageId,
-    source: tree.data,
-    priorSource: null,
-    sourceVersion: source!.version,
-    renderingVersion: rendering?.version ?? null,
-    rendering: rendered.success ? rendered.data : null,
-    layout,
-    sectionOwners: graphVerified ? owners : {},
-    // Shared provenance/protection is not implemented yet. Equality with the
-    // source is not proof of generated origin, including after a task succeeds.
-    proofs: [],
+  const history = (db.all("SELECT version, data FROM node_data WHERE node = ? AND item_id = ?", ["page-sectioning", pageId]) as Array<{ version: number; data: string }>).flatMap((row) => {
+    try { return [{ version: row.version, data: JSON.parse(row.data) }] } catch { return [] }
+  })
+  const comparison = classifyStoredSectioning({ pageId, source: source!, rendering,
+    history, layout, sectionOwners: graphVerified ? owners : {},
   })
   result.sections = comparison.sections
   result.diagnostics.push(...comparison.diagnostics)
