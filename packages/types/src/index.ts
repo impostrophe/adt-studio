@@ -1,3 +1,5 @@
+export { AuthoredContent, AuthoredSaveGuard, AuthoredReplacement, AuthoredRunOptions } from "./content-authorship.js"
+
 export {
   SCHEMA_VERSION,
   ImageSource,
@@ -253,6 +255,7 @@ export {
 
 export { ExtractionWarning } from "./extraction-warning.js"
 export { PackagingWarning } from "./packaging-warning.js"
+export { PackagingStatus } from "./packaging-status.js"
 
 export {
   FIXED_LAYOUT_MAX_SCALE,
@@ -312,6 +315,7 @@ export {
   parseQuizId,
   resolveQuizId,
   withResolvedQuizIds,
+  resolveQuizOptionId,
   ensureQuizIds,
   QuizIdExhaustedError,
   QuizId,
@@ -470,6 +474,7 @@ export {
 } from "./translation-evaluation.js"
 
 export {
+  DEFAULT_SCREENSHOT_TIMEOUT_MS,
   screenshotIpcViewportSchema,
   screenshotIpcRequestSchema,
   screenshotIpcCloseSchema,
@@ -547,3 +552,30 @@ export {
   ProviderHealthResponse,
 } from "./ai-provider.js"
 export { PromptName, PromptVersion, PromptRevision, PromptMutation, PromptSave, PromptModels, PromptSelection, ResolvedPromptFile } from "./prompt.js"
+export { GOOGLE_IMAGE_MODELS, GoogleImageModelId, DEFAULT_GOOGLE_IMAGE_MODEL, GoogleImageResponse } from "./google-image.js"
+export { imageFileExtension, ImageAspectRatio, GeneratedImagePayload, ValidatedGeneratedImage } from "./image.js"
+
+export { OutputSource, OutputReference, OutputInputEvidence, OutputReview, OutputMetadata, OutputKind, OutputIdentity, OutputWarning, OutputStatus, OutputSelection, OutputReviewRequest, OutputSummary, BookWriterOwner } from "./output-freshness.js"
+
+export { CATALOG_OUTPUT_NODES } from "./pipeline-effects.js"
+
+export { OutputReplacement, OutputRunScope } from "./output-freshness.js"
+
+export { TranslatedImageAsset } from "./output-freshness.js"
+
+export { OUTPUT_KIND_TO_STAGE, OUTPUT_KIND_TO_STEP } from "./pipeline.js"
+
+export { OutputEditGuard } from "./output-freshness.js"
+
+export { OutputSkipRequest } from "./output-freshness.js"
+
+export { OutputDisclosureOptions } from "./output-freshness.js"
+export * from "./sectioning-lifecycle.js"
+
+export * from "./extraction.js"
+
+export { PipelineResumeSummary } from "./extraction.js"
+export { OUTPUT_KIND_STEP } from "./pipeline.js"
+export { GENERATION_OUTPUT_KINDS } from "./output-freshness.js"
+
+export { PackagePublication } from "./extraction.js"

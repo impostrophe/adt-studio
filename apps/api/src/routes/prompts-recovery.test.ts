@@ -131,3 +131,20 @@ it("serializes save, reset and restore competing for the same loaded revision", 
     expect(fs.readFileSync(path.join(overrides, ".versions", "test", previous.version), "utf8")).toBe(previous.content)
   }
 })
+
+it("retains migrated model ownership even when the destination already has its own model list", async () => {
+  fs.mkdirSync(overrides)
+  fs.writeFileSync(path.join(overrides, ".models.json"), JSON.stringify({ models: ["ollama:other"] }))
+  fs.writeFileSync(path.join(bundled, ".models.json"), JSON.stringify({ models: ["ollama:alpha-beta"] }))
+  const versions = path.join(bundled, ".versions", "test__ollama_alpha_beta")
+  fs.mkdirSync(versions, { recursive: true })
+  fs.writeFileSync(path.join(versions, "20260101T000000Z.liquid"), "legacy owner alpha-beta")
+  const routes = app()
+  const correct = await routes.request("/prompts/test?model=ollama:alpha-beta")
+  expect(correct.status).toBe(200)
+  expect((await correct.json()).content).toBe("legacy owner alpha-beta")
+  const wrong = await routes.request("/prompts/test?model=ollama:alpha_beta")
+  expect(wrong.status).toBe(400)
+  expect(() => resolvePromptFile([overrides, bundled], "test", "ollama:alpha_beta")).toThrow(/collides/)
+  expect(fs.readFileSync(path.join(versions, "20260101T000000Z.liquid"), "utf8")).toBe("legacy owner alpha-beta")
+})

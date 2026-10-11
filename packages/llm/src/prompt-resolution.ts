@@ -1,6 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
-import { DEFAULT_BASE_PROMPT_MODEL_ID, PromptName, safeParseModelId } from "@adt/types"
+import { DEFAULT_BASE_PROMPT_MODEL_ID, PromptName, PromptModels, safeParseModelId } from "@adt/types"
 import type { ResolvedPromptFile } from "@adt/types"
 import { legacyPromptSelection, promptPath, readPromptSelection, PromptFileError, promptDigest, assertWritablePromptRoot } from "./prompt-files.js"
 
@@ -25,6 +25,18 @@ export function promptNameForModel(name: string, modelId: string | null | undefi
  * then generic candidates across all roots. Reset applies to one candidate only. */
 export function resolvePromptFile(roots: string[], name: string, modelId: string | null): ResolvedPromptFile | null {
   PromptName.parse(name)
+  if (modelId) for (const root of roots) {
+    const metadata = promptPath(root, ".models.json")
+    if (!fs.existsSync(metadata)) continue
+    const { models } = PromptModels.parse(JSON.parse(fs.readFileSync(metadata, "utf8")))
+    for (const value of models) {
+      const parsed = safeParseModelId(value.trim().toLowerCase())
+      if (!parsed.ok || parsed.value.usedLegacyDefault) throw new PromptFileError("PROMPT_INVALID_MODEL", "Invalid prompt model metadata")
+      if (parsed.value.qualified !== modelId && promptModelFolderName(parsed.value.qualified) === promptModelFolderName(modelId)) {
+        throw new PromptFileError("PROMPT_MODEL_CONFLICT", "Model id collides with an existing prompt candidate")
+      }
+    }
+  }
   const candidates = modelId ? [`${name}__${promptModelFolderName(modelId)}`, name] : [name]
   const state: string[] = []
   let result: ResolvedPromptFile | null = null

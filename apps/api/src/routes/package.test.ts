@@ -4,7 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { Hono } from "hono"
 import type { ExtractedPage } from "@adt/pdf"
-import { createBookStorage, openBookDb } from "@adt/storage"
+import { createBookStorage, openBookDb, writeSectioningLifecycle } from "@adt/storage"
 import { AccessibilityAssessmentOutput, type TaskInfo } from "@adt/types"
 import { errorHandler } from "../middleware/error-handler.js"
 import type { TaskService } from "../services/task-service.js"
@@ -73,7 +73,7 @@ describe("Package routes", () => {
           sectionIndex: 0,
           sectionType: "content",
           reasoning: "ok",
-          html: '<main><img src="cover.png"></main>',
+          html: '<main><p data-id="pg001_n0001">Original text</p><img src="cover.png"></main>',
         },
       ],
     })
@@ -128,6 +128,19 @@ describe("Package routes", () => {
   }
 
   describe("POST /api/books/:label/package-adt", () => {
+    it("rejects stale mode output even when an existing build can be cached", async () => {
+      createRenderedBook("stale-mode")
+      createWebAssets()
+      const first = await app.request("/api/books/stale-mode/package-adt", { method: "POST" })
+      expect(first.status).toBe(200)
+      const dir = path.join(tmpDir, "stale-mode")
+      const hash = fs.readFileSync(path.join(dir, "adt", ".build-hash"), "utf8")
+      writeSectioningLifecycle(dir, "dynamic", false)
+      const response = await app.request("/api/books/stale-mode/package-adt", { method: "POST" })
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({ code: "SECTIONING_STALE" })
+      expect(fs.readFileSync(path.join(dir, "adt", ".build-hash"), "utf8")).toBe(hash)
+    })
     it("returns 404 for missing book", async () => {
       const res = await app.request("/api/books/missing/package-adt", {
         method: "POST",
@@ -230,6 +243,7 @@ describe("Package routes", () => {
 
     it("repackages when Easy Read content changes even if the stored version is unchanged", { timeout: 20_000 }, async () => {
       createRenderedBook("book-easy-cache")
+      fs.writeFileSync(path.join(tmpDir, "book-easy-cache", "config.yaml"), "easy_read:\n  enabled: true\n")
       createWebAssets()
 
       const storage = createBookStorage("book-easy-cache", tmpDir)
@@ -365,6 +379,32 @@ describe("Package routes", () => {
   })
 
   describe("GET /api/books/:label/package-adt/status", () => {
+    it.each([
+      { mode: "dynamic" as const, ready: false, pending: true },
+      { mode: "dynamic" as const, ready: true, pending: true },
+      { mode: "page" as const, ready: true, pending: false },
+    ])("reports retained mode-incompatible packages without deleting them: %j", async ({ mode, ready, pending }) => {
+      createRenderedBook("retained")
+      const dir = path.join(tmpDir, "retained")
+      const pagesPath = path.join(dir, "adt", "content", "pages.json")
+      fs.mkdirSync(path.dirname(pagesPath), { recursive: true })
+      const pages = JSON.stringify([{ section_id: "pg001", href: "pg001.html" }])
+      fs.writeFileSync(pagesPath, pages)
+      writeSectioningLifecycle(dir, mode, ready, pending)
+      const response = await app.request("/api/books/retained/package-adt/status")
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ hasAdt: true, modeCompatible: false })
+      expect(fs.readFileSync(pagesPath, "utf8")).toBe(pages)
+
+      // Compatible warning-bearing output remains available under SPEC-0001.
+      writeSectioningLifecycle(dir, "dynamic", true, false)
+      fs.writeFileSync(path.join(dir, "adt", ".build-warnings"), JSON.stringify([{ kind: "orphaned-rendering", pageId: "pg001", sectionIndex: 2 }]))
+      const usable = await app.request("/api/books/retained/package-adt/status")
+      const usableStatus = await usable.json()
+      expect(usableStatus).toMatchObject({ hasAdt: true })
+      expect(usableStatus.modeCompatible).not.toBe(false)
+    })
+
     it("returns hasAdt=false when pages.json is missing", async () => {
       createTestBook("book2")
 

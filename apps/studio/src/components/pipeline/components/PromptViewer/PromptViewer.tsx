@@ -1,3 +1,4 @@
+import { invalidatePromptConsumers } from "@/components/pipeline/components/PromptViewer/promptDraftSave"
 import { PromptPersistenceInfo } from "./PromptPersistenceInfo"
 import { toast } from "@/components/ui/sonner"
 import { ApiError } from "@/api/client"
@@ -139,6 +140,7 @@ export function PromptViewer({
     queryClient.setQueryData(["prompts", changedPromptName, changedBookLabel, changedModelId], prompt)
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["prompts", changedPromptName, changedBookLabel, changedModelId] }),
+      invalidatePromptConsumers(queryClient, changedBookLabel),
       queryClient.invalidateQueries({ queryKey: ["prompt-versions", changedPromptName, changedModelId, changedBookLabel] }),
     ])
   }
@@ -163,6 +165,7 @@ export function PromptViewer({
     queryClient.setQueryData(["prompts", promptName, bookLabel, promptModelId], resetPrompt)
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["prompts", promptName, bookLabel, promptModelId] }),
+      invalidatePromptConsumers(queryClient, bookLabel),
       queryClient.invalidateQueries({ queryKey: ["prompt-versions", promptName, promptModelId, bookLabel] }),
     ])
     } catch (error) {

@@ -79,6 +79,7 @@ export {
   createElevenLabsTTSSynthesizer,
   resolveElevenLabsVoiceSettings,
   buildElevenLabsOutputFormat,
+  buildAzureOutputFormat,
   transcribeWithWhisper,
   type TTSSynthesizer,
   type ElevenLabsVoiceSettings,

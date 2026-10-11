@@ -1,3 +1,4 @@
+import { invalidatePromptConsumers } from "@/components/pipeline/components/PromptViewer/promptDraftSave"
 import { useEffectiveBasePromptModel } from "@/hooks/use-effective-base-prompt-model"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -215,6 +216,7 @@ export function useGlobalPrompts(): GlobalPromptsController {
     }
     updatePromptCaches(queryClient, promptName, modelId, prompt)
     await Promise.all([
+        invalidatePromptConsumers(queryClient),
       queryClient.invalidateQueries({ queryKey: ["prompts"] }),
       queryClient.invalidateQueries({ queryKey: ["prompt-versions", promptName, modelId] }),
     ])
@@ -244,6 +246,7 @@ export function useGlobalPrompts(): GlobalPromptsController {
       }
       updatePromptCaches(queryClient, submitted.name, submitted.model, saved)
       await Promise.all([
+        invalidatePromptConsumers(queryClient),
         queryClient.invalidateQueries({ queryKey: ["prompts"] }),
         queryClient.invalidateQueries({ queryKey: ["prompt-versions", submitted.name, submitted.model] }),
       ])
@@ -260,6 +263,7 @@ export function useGlobalPrompts(): GlobalPromptsController {
         draftRevision.current = saved.revision
       }
       updatePromptCaches(queryClient, submitted.name, submitted.model, saved)
+      await invalidatePromptConsumers(queryClient)
       await queryClient.invalidateQueries({ queryKey: ["prompt-versions", submitted.name, submitted.model] })
       toast.success(t`Global prompt reset to default.`)
     },
@@ -290,6 +294,7 @@ export function useGlobalPrompts(): GlobalPromptsController {
         draftRevision.current = resetPrompt.revision
       }
       await Promise.all([
+        invalidatePromptConsumers(queryClient),
         queryClient.invalidateQueries({ queryKey: ["prompts"] }),
         queryClient.invalidateQueries({ queryKey: ["prompt-versions"] }),
       ])
@@ -327,6 +332,7 @@ export function useGlobalPrompts(): GlobalPromptsController {
         setDraft(null)
       }
       await Promise.all([
+        invalidatePromptConsumers(queryClient),
         queryClient.invalidateQueries({ queryKey: ["prompts"] }),
         queryClient.invalidateQueries({ queryKey: ["prompt-models"] }),
         queryClient.invalidateQueries({ queryKey: ["prompt-versions"] }),
@@ -387,6 +393,7 @@ export function useGlobalPrompts(): GlobalPromptsController {
       setModel(normalizedTargetModel)
       setDraft(null)
       await Promise.all([
+        invalidatePromptConsumers(queryClient),
         queryClient.invalidateQueries({ queryKey: ["prompts"] }),
         queryClient.invalidateQueries({ queryKey: ["prompt-models"] }),
         queryClient.invalidateQueries({ queryKey: ["prompt-versions"] }),

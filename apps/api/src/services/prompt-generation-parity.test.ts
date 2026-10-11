@@ -2,7 +2,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, expect, it, vi } from "vitest"
-import { createBookStorage, openBookDb } from "@adt/storage"
+import { createBookStorage, openBookDb, writeSectioningLifecycle } from "@adt/storage"
 import { promptRoots } from "@adt/llm"
 import { createPromptRoutes } from "../routes/prompts.js"
 import { createStageRunner } from "./stage-runner.js"
@@ -24,6 +24,7 @@ it.each(["stage", "targeted", "agent"])("%s uses the editor-selected prompt at t
   storage.putNodeData("page-sectioning", "pg001", { reasoning: "fixture", sections: [section] })
   storage.putNodeData("web-rendering", "pg001", { sections: [{ sectionIndex: 0, sectionType: "content", reasoning: "fixture", html: '<section data-section-id="pg001_sec001"><p data-id="t1">original</p></section>' }] })
   storage.close()
+  writeSectioningLifecycle(path.join(books, "book"), "dynamic", true)
   const requests: string[] = []
   vi.stubEnv("PROMPT_OVERRIDES_DIR", global)
   vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init: RequestInit) => {

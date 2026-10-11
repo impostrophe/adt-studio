@@ -1,3 +1,5 @@
+import { localizeExtractionError } from "@/lib/extraction-errors"
+import { sectioningErrorMessage } from "@/lib/sectioning-error"
 import { useEffect, useCallback, useRef, createContext, useContext, useState } from "react"
 import { useQueryClient, useQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
@@ -37,6 +39,8 @@ export interface StepProgress {
 }
 
 export interface QueueRunOptions {
+  replaceManual?: boolean
+  protectedReplacements?: import("@adt/types").AuthoredReplacement[]
   fromStage: string
   toStage: string
   apiKey: string
@@ -478,7 +482,7 @@ export function useBookRunStatus(label: string): BookRunContextValue {
       if (me.data) {
         try {
           const d = JSON.parse(me.data)
-          const runError = d.error ?? i18n._(msg`Step run failed`)
+          const runError = d.sectioningPreflight ? sectioningErrorMessage(d.sectioningPreflight) : localizeExtractionError(d.error ?? i18n._(msg`Step run failed`))
           queryClient.setQueryData<StepStatusResponse>(stepStatusKey(label), (old) => {
             if (!old) return old
             return { ...old, error: runError }
@@ -760,7 +764,7 @@ export function useBookRunStatus(label: string): BookRunContextValue {
       runChainRef.current = runChainRef.current.then(async () => {
         try {
           // The Studio always opts into interactive page-error handling.
-          await api.runStages(label, apiKey, { fromStage, toStage, renderOnly, pageErrorPolicy: "ask" }, providerCredentials)
+          await api.runStages(label, apiKey, { fromStage, toStage, renderOnly, pageErrorPolicy: "ask", replaceManual: options.replaceManual, protectedReplacements: options.protectedReplacements }, providerCredentials)
         } catch (error) {
           // The server refused to start (e.g. a model in the run's range has no
           // credential). Nothing ran, so say why instead of silently snapping

@@ -24,7 +24,7 @@ it("the actual CLI resolves a global model variant before a book generic and sen
   const fixture = path.join(process.cwd(), "tests/fixtures/raven.pdf")
   try {
     const result = await new Promise<{code: number | null; error: string}>((resolve, reject) => {
-      const child = spawn(process.execPath, ["--import", stub, cli, "book", fixture, "--start-page", "1", "--end-page", "1", "--books-dir", books], { cwd: root, env: { PATH: process.env.PATH, HOME: root, OPENAI_API_KEY: "test-key", PROMPTS_DIR: bundled }, timeout: 60000 })
+      const child = spawn(process.execPath, ["--import", stub, cli, "book", fixture, "--start-page", "1", "--end-page", "1", "--books-dir", books, "--from-stage", "extract", "--to-stage", "extract"], { cwd: root, env: { PATH: process.env.PATH, HOME: root, OPENAI_API_KEY: "test-key", PROMPTS_DIR: bundled }, timeout: 60000 })
       let error = ""
       child.stderr.on("data", (data) => { error += data })
       child.on("error", reject); child.on("exit", (code) => resolve({ code, error }))

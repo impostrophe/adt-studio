@@ -1,3 +1,4 @@
+import { invalidatePromptConsumers } from "@/components/pipeline/components/PromptViewer/promptDraftSave"
 import { useEffect, useMemo, useState } from "react"
 import { CheckCircle2, GitCompare } from "lucide-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -95,6 +96,7 @@ export function PromptVersionHistory({
       if (variables.promptName === promptName && variables.modelId === modelId && variables.bookLabel === bookLabel) {
         await onCurrentVersionChanged(variables.promptName, variables.modelId, prompt, variables.bookLabel)
       }
+      await invalidatePromptConsumers(queryClient, variables.bookLabel)
       await queryClient.invalidateQueries({
         queryKey: ["prompt-versions", variables.promptName, variables.modelId, variables.bookLabel],
       })

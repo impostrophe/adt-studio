@@ -1,5 +1,6 @@
 import { resolvePromptFile, resolvePromptModelId } from "./prompt-resolution.js"
 export { resolvePromptModelId, promptModelFolderName, promptNameForModel } from "./prompt-resolution.js"
+import { createHash } from "node:crypto"
 import {
   Liquid,
   Tag,
@@ -18,6 +19,8 @@ export interface CreatePromptEngineOptions {
   /** Model the base templates target; steps on it skip variant lookup.
    *  Defaults to DEFAULT_BASE_PROMPT_MODEL_ID. */
   basePromptModelId?: string
+  /** Pin resolved bytes for one admitted operation, including its dependencies. */
+  capture?: boolean
 }
 
 export interface PromptRenderOptions {
@@ -32,6 +35,8 @@ export interface PromptResolution {
 }
 
 export interface PromptEngine {
+  fingerprint(templateName: string, options?: PromptRenderOptions): string
+  renderText(templateName: string, context: Record<string, unknown>, options?: PromptRenderOptions): Promise<string>
   renderPrompt(
     templateName: string,
     context: Record<string, unknown>,
@@ -50,18 +55,48 @@ export function createPromptEngine(
 ): PromptEngine {
   const roots = Array.isArray(promptsDir) ? promptsDir : [promptsDir]
   const basePromptModelId = options?.basePromptModelId ?? DEFAULT_BASE_PROMPT_MODEL_ID
+  // One operation can pin the inputs used by its admission fingerprint. Later
+  // calls render these same bytes even when another host publishes a selection.
+  const captured = new Map<string, ReturnType<typeof resolvePromptFile>>()
+  const read = (name: string, model: string | null) => {
+    const key = JSON.stringify([name, model])
+    if (!options?.capture) return resolvePromptFile(roots, name, model)
+    if (!captured.has(key)) captured.set(key, resolvePromptFile(roots, name, model))
+    return captured.get(key) ?? null
+  }
 
   return {
+    fingerprint(templateName: string, renderOptions?: PromptRenderOptions): string {
+      const model = resolvePromptModelId(renderOptions?.modelId, basePromptModelId)
+      const sources = new Map<string, string>()
+      const visit = (name: string) => {
+        name = name.replace(/\.liquid$/, "")
+        if (sources.has(name)) return
+        const resolved = read(name, model)
+        if (!resolved) throw new Error(`Prompt template not found: ${name}`)
+        sources.set(name, resolved.content)
+        if (/{%-?\s*(?:include|render|layout)\s+[^"'\s]/.test(resolved.content)) throw new Error("Dynamic prompt includes need an explicit input basis before catalog generation")
+        for (const match of resolved.content.matchAll(/{%-?\s*(?:include|render|layout)\s+["']([^"']+)["']/g)) visit(match[1])
+      }
+      visit(templateName)
+      // Selection UUIDs, paths and version names are incidental to effective input.
+      return createHash("sha256").update(JSON.stringify([...sources.values()])).digest("hex")
+    },
     resolvePrompt(templateName: string, renderOptions?: PromptRenderOptions): PromptResolution {
-      return resolvePromptTemplate(roots, templateName, renderOptions, basePromptModelId)
+      const resolved = read(templateName, resolvePromptModelId(renderOptions?.modelId, basePromptModelId))
+      if (!resolved) throw new Error(`Prompt template not found: ${templateName}`)
+      return resolved
     },
 
+    async renderText(templateName, context, renderOptions) {
+      return renderCapturedPrompt(templateName, context, (name) => read(name, resolvePromptModelId(renderOptions?.modelId, basePromptModelId))?.content ?? null)
+    },
     async renderPrompt(
       templateName: string,
       context: Record<string, unknown>,
       renderOptions?: PromptRenderOptions,
     ): Promise<Message[]> {
-      const raw = renderPromptText(roots, templateName, context, renderOptions?.modelId, basePromptModelId)
+      const raw = renderCapturedPrompt(templateName, context, (name) => read(name, resolvePromptModelId(renderOptions?.modelId, basePromptModelId))?.content ?? null)
       return parseMessages(raw)
     },
   }
@@ -75,11 +110,15 @@ export function renderPromptText(
   requestedModel?: string, basePromptModelId = DEFAULT_BASE_PROMPT_MODEL_ID,
 ): string {
   const model = resolvePromptModelId(requestedModel, basePromptModelId)
+  return renderCapturedPrompt(name, context, (candidate) => resolvePromptFile(roots, candidate, model)?.content ?? null)
+}
+
+function renderCapturedPrompt(name: string, context: Record<string, unknown>, resolve: (name: string) => string | null): string {
   const captured = new Map<string, string | null>()
   const read = (file: string): string | null => {
     const candidate = file.replace(/\.liquid$/, "")
     PromptName.parse(candidate)
-    if (!captured.has(candidate)) captured.set(candidate, resolvePromptFile(roots, candidate, model)?.content ?? null)
+    if (!captured.has(candidate)) captured.set(candidate, resolve(candidate))
     return captured.get(candidate) ?? null
   }
   const template = read(name)
@@ -105,15 +144,6 @@ export function renderPromptText(
   engine.registerTag("chat", createChatTag(engine))
   engine.registerTag("image", ImageTag)
   return engine.parseAndRenderSync(template, context)
-}
-
-function resolvePromptTemplate(
-  roots: string[], templateName: string, options?: PromptRenderOptions,
-  basePromptModelId: string = DEFAULT_BASE_PROMPT_MODEL_ID,
-): PromptResolution {
-  const resolved = resolvePromptFile(roots, templateName, resolvePromptModelId(options?.modelId, basePromptModelId))
-  if (!resolved) throw new Error(`Prompt template not found: ${templateName}`)
-  return resolved
 }
 
 /**

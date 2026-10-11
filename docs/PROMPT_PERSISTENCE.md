@@ -1,10 +1,13 @@
 # Prompt persistence operations
 
 SPEC-0011 is implemented for review in PR #887. The specification and ADR 027
-remain in review/proposed. Shared freshness integration is unavailable: saving
-starts no generation, and affected outputs need regeneration. Studio shows that
-notice in the editor and warns that imported projects use this host's global
-settings. It does not automatically compare imported outputs with host globals.
+remain in review/proposed. The continuation is stacked on SPEC-0010 and uses the
+shared freshness catalogs. Saving starts no generation. Effective template,
+include and layout changes mark their consuming outputs stale; restoring the
+same bytes permits request-cache reuse. Imported outputs are compared against
+the destination host's effective global inputs, while historical call logs keep
+the actual rendered prompts from their original generation. Studio retains the
+explicit notice that affected outputs need regeneration.
 
 ## Roots and compatibility
 
@@ -95,9 +98,11 @@ post-upgrade books and application settings untouched for the compatible reader.
 
 ## Development acceptance commands
 
-`pnpm test --maxWorkers=4`, `pnpm typecheck`, `pnpm lint` and `pnpm build` cover the
-available invariant checks. `pnpm lint:invariants` is not implemented in this repo.
-Run `pnpm --filter @adt/studio extract` and check zero missing entries in all locales.
+`pnpm test --maxWorkers=2`, `pnpm typecheck`, `pnpm lint`, `pnpm build` and
+`pnpm lint:invariants` cover repository checks. Run
+`pnpm --filter @adt/studio extract` and `pnpm --filter @adt/studio exec lingui compile --strict`
+and check zero missing entries in all locales. Current continuation evidence is
+recorded in [the acceptance report](verification/spec-0011-full-continuation.md).
 
 For the Desktop harness, build an unpacked app, compile
 `scripts/prompt-persistence-desktop-smoke.ts` with the existing API esbuild, then

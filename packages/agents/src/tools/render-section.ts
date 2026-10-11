@@ -129,7 +129,7 @@ export async function renderSyntheticActivity(
     input.bookLabel,
     ".cache",
   )
-  const promptEngine = createPromptEngine(input.promptRoots, { basePromptModelId: config.base_prompt_model })
+  const promptEngine = createPromptEngine(input.promptRoots, { basePromptModelId: config.base_prompt_model, capture: true })
   const llmModel = createLLMModel({
     modelId: renderConfig.modelId,
     cacheDir,

@@ -58,8 +58,9 @@ export async function migratePromptOverrides(bundled: string, target: string, bo
       // selection. Preserve it instead of replacing it with source history.
       const separator = name.indexOf("__")
       const flat = promptPath(target, `${name}.liquid`)
+      const owner = separator < 0 ? null : owners.get(name.slice(separator + 2)) ?? null
       const folderFlat = separator < 0 ? flat : promptPath(target, name.slice(separator + 2), `${name.slice(0, separator)}.liquid`)
-      if (!fs.existsSync(dir) && (fs.existsSync(flat) || fs.existsSync(folderFlat))) initializePromptSelection(target, name, null)
+      if (!fs.existsSync(dir) && (fs.existsSync(flat) || fs.existsSync(folderFlat))) initializePromptSelection(target, name, owner)
       if (!fs.existsSync(dir)) {
         // Publish the whole new directory atomically. An interrupted copy is
         // never visible to the resolver and is safe to retry on next startup.
@@ -73,12 +74,12 @@ export async function migratePromptOverrides(bundled: string, target: string, bo
           const legacy = selected ? null : legacyPromptSelection(bundled, name)
           const kind = selected?.kind ?? (legacy === "default" || legacy === "fallback" ? legacy : legacy ? "version" : "flat")
           const version = selected?.version ?? (kind === "version" ? legacy! : undefined)
-          publishPromptSelection(stagingRoot, name, { format: 1, id: randomUUID(), previous: null, modelId: selected?.modelId ?? null, kind, ...(version ? { version } : {}) })
+          publishPromptSelection(stagingRoot, name, { format: 1, id: randomUUID(), previous: null, modelId: selected?.modelId ?? owner, kind, ...(version ? { version } : {}) })
           fs.mkdirSync(promptPath(target, ".versions"), { recursive: true })
           fs.renameSync(promptPath(stagingRoot, ".versions", name), dir)
         } finally { fs.rmSync(stagingRoot, { recursive: true, force: true }) }
       } else {
-        if (!readPromptSelection(target, name)) initializePromptSelection(target, name, null)
+        if (!readPromptSelection(target, name)) initializePromptSelection(target, name, owner)
         for (const version of listPromptVersionFiles(bundled, name)) {
           const destination = promptPath(target, ".versions", name, version)
           if (!fs.existsSync(destination)) writePromptFileExclusive(destination, fs.readFileSync(promptPath(bundled, ".versions", name, version), "utf8"))
@@ -95,7 +96,7 @@ export async function migratePromptOverrides(bundled: string, target: string, bo
       const versions = promptPath(root, ".versions")
       if (!fs.existsSync(versions)) continue
       for (const name of fs.readdirSync(versions).filter((name) => PromptName.safeParse(name).success)) {
-        if (!readPromptSelection(root, name)) initializePromptSelection(root, name, null)
+        if (!readPromptSelection(root, name)) initializePromptSelection(root, name, owners.get(name.split("__")[1]) ?? null)
       }
     }
   })

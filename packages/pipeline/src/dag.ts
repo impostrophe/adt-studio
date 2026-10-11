@@ -80,6 +80,7 @@ export async function runDAG<T extends string>(
 export type StepExecutor = (progress: Progress) => Promise<void>
 
 export interface PipelineDAGResult {
+  resume?: import("@adt/types").PipelineResumeSummary
   stages: DAGResult<StageName>
   steps: DAGResult<StepName>
 }
@@ -99,13 +100,16 @@ export interface PipelineDAGResult {
 export async function runPipelineDAG(
   executors: Map<StepName, StepExecutor>,
   progress: Progress,
+  selectedStages?: readonly StageName[],
 ): Promise<PipelineDAGResult> {
   const allStepStatuses = new Map<StepName, NodeStatus>()
   const allStepErrors = new Map<StepName, Error>()
 
-  const stageNodes: DAGNode<StageName>[] = PIPELINE.map((s) => ({
+  // Callers must validate persisted prerequisites before selecting a subgraph.
+  const stages = PIPELINE.filter((stage) => !selectedStages || selectedStages.includes(stage.name))
+  const stageNodes: DAGNode<StageName>[] = stages.map((s) => ({
     id: s.name,
-    dependsOn: [...s.dependsOn],
+    dependsOn: s.dependsOn.filter((dependency) => stages.some((stage) => stage.name === dependency)),
   }))
 
   const stageResult = await runDAG(

@@ -1,3 +1,5 @@
+export { isProtectedContent, stampManualEdits, mergePreservingManual } from "./manual-edits.js"
+
 export {
   type Progress,
   nullProgress,
@@ -459,3 +461,54 @@ export {
   generateActivityFeedback,
   type ActivityFeedbackConfig,
 } from "./activity-feedback.js"
+
+export { inputSignature, outputEvidence, outputIdentityKey, deriveOutputStatus, selectedOutput, summarizeOutputs, needsOutputGeneration } from "./output-freshness.js"
+
+export { buildTextCatalogSnapshot } from "./text-catalog.js"
+export { assignActivityIds, reconcileActivityIds, reconcileTextCatalog, buildImageInventory } from "./catalog-reconciliation.js"
+
+export { coreTtsInputBasis, resolveCoreTtsSpeechCatalog } from "./core-tts.js"
+export { reconcileSpeechInputs } from "./speech-inputs.js"
+
+export { withOutputLocations, selectedForGeneration } from "./output-freshness.js"
+
+export { translationInputSignature, translateCatalog } from "./catalog-translation.js"
+
+export { easyReadInputSignature } from "./easy-read.js"
+
+export { readOutputCatalog, captionInputSignature } from "./output-catalog.js"
+
+export { assertOutputPublication } from "./output-freshness.js"
+
+export { computePageSpeechInputSignature, speechPageId } from "./speech.js"
+
+export { timestampInputSignature } from "./output-catalog.js"
+
+export { scopeLegacyActivityIds } from "./catalog-reconciliation.js"
+
+export { retainedCoreTts, retainedEasyRead, retainedTranslation } from "./retained-catalog.js"
+
+export { authoredImageAlts } from "./catalog-reconciliation.js"
+
+export { outputSkipped } from "./output-freshness.js"
+
+export { captureOutputReferences } from "./output-references.js"
+export { preflightSectioning, SectioningPreflightError } from "./sectioning-preflight.js"
+export { SectioningSafetyError, effectiveSectioningMode, sectioningInvalidationSteps, activeSectioningPages, assertPersistedSectioning, assertSectioningCurrent, assertSectioningReplacementSafe, prepareSectioningRun, completeSectioning, createStoryboardPublication } from "./sectioning-lifecycle.js"
+
+export { extractionOptionsFromConfig, prepareExtractionAdmission, assertSafeExtractionRun } from "./extraction-admission.js"
+
+export { protectedAuthoredRecords, assertAuthoredReplacement, replacementConfirmed, AuthoredReplacementError } from "./authored-output.js"
+
+export { getBundledStyleguidesDir, getWritableStyleguidesDir, getBookStyleguidesDir, getGeneratedStyleguideName, getStyleguideSearchDirs, resolveStyleguideSource, loadStyleguideContent, StyleguideWriteError, writeStyleguideFiles, type StyleguideSourceKind, type ResolvedStyleguideSource } from "./styleguide.js"
+
+export { beginSpeechRun, endSpeechRun, getLiveSpeechRun, type LiveSpeechSnapshot } from "./speech-progress.js"
+
+export type { StageRunner, StageRunOptions, StageRunProgress } from "./stage-execution-options.js"
+
+export { ResumeIncompleteError, catalogResumeStages } from "./catalog-resume.js"
+export { readGenerationCatalog, GENERATION_NODES, isGenerationKind } from "./generation-catalog.js"
+
+export { assertPackageReadable, recoverPackagePublication } from "./packaging/publication.js"
+
+export { writePackageInventory, packageInventoryValid } from "./packaging/publication.js"

@@ -43,6 +43,7 @@ async function persistPromptDraft(
   setDraft?.((current) => reconcilePromptDraft(current, draft, savedPrompt.revision))
   queryClient.setQueryData(queryKey, savedPrompt)
   await Promise.all([
+    invalidatePromptConsumers(queryClient, bookLabel),
     queryClient.invalidateQueries({ queryKey: ["prompts", promptName, bookLabel, draft.modelId] }),
     queryClient.invalidateQueries({ queryKey: ["prompt-versions", promptName, draft.modelId, bookLabel] }),
   ])
@@ -60,4 +61,10 @@ export function savePromptDraft(
     mutationKey: ["prompt-save", bookLabel, promptName, draft.modelId],
     mutationFn: () => persistPromptDraft(queryClient, promptName, bookLabel, draft, setDraft),
   }).execute(undefined)
+}
+
+export function invalidatePromptConsumers(queryClient: QueryClient, bookLabel?: string) {
+  return queryClient.invalidateQueries({ predicate: (query) =>
+    query.queryKey[0] === "books" && (bookLabel === undefined || query.queryKey[1] === bookLabel) && query.queryKey[2] === "outputs",
+  })
 }

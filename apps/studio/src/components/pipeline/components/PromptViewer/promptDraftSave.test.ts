@@ -23,3 +23,16 @@ it("uses the book draft's loaded revision and keeps newer keystrokes after save"
   expect(api.updatePrompt).toHaveBeenCalledWith("test", "sent", "book", null, "old")
   expect(current).toEqual({ content: "new typing", modelId: null, revision: "new" })
 })
+
+it("refreshes only the affected book's freshness read models after a book prompt save", async () => {
+  const client = new QueryClient()
+  const affected = ["books", "book", "outputs", "disclosure"]
+  const other = ["books", "other", "outputs", "disclosure"]
+  const content = ["books", "book", "pages"]
+  for (const key of [affected, other, content]) client.setQueryData(key, {})
+  vi.mocked(api.updatePrompt).mockResolvedValue({ content: "sent", revision: "new" } as never)
+  await savePromptDraft(client, "test", "book", { content: "sent", revision: "old", modelId: null }, () => {})
+  expect(client.getQueryState(affected)?.isInvalidated).toBe(true)
+  expect(client.getQueryState(other)?.isInvalidated).toBe(false)
+  expect(client.getQueryState(content)?.isInvalidated).toBe(false)
+})

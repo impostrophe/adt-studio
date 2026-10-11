@@ -418,7 +418,7 @@ export function createFontRoutes(
       )
       const llmCacheDir = path.join(path.resolve(booksDir), safeLabel, ".cache")
       const bookPromptsDir = path.join(path.resolve(booksDir), safeLabel, "prompts")
-      const promptEngine = createPromptEngine(resolvePromptRoots({ booksDir, promptsDir, bookPromptsDir }), { basePromptModelId: config.base_prompt_model })
+      const promptEngine = createPromptEngine(resolvePromptRoots({ booksDir, promptsDir, bookPromptsDir }), { basePromptModelId: config.base_prompt_model, capture: true })
       const rateLimiter = config.rate_limit
         ? createRateLimiter(config.rate_limit.requests_per_minute)
         : undefined

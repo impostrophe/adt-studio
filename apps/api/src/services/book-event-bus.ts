@@ -1,10 +1,10 @@
-import type { ProgressEvent, TaskEvent } from "@adt/types"
+import type { ProgressEvent, TaskEvent, SectioningPreflightResult } from "@adt/types"
 
 export type BookSSEEvent =
   | { type: "progress"; data: ProgressEvent }
-  | { type: "stage-run-complete"; label: string }
-  | { type: "stage-run-error"; label: string; error: string }
-  | { type: "stage-run-cancelled"; label: string }
+  | { type: "stage-run-complete"; label: string; summary?: import("@adt/types").PipelineResumeSummary }
+  | { type: "stage-run-error"; label: string; summary?: import("@adt/types").PipelineResumeSummary; error: string; sectioningPreflight?: SectioningPreflightResult }
+  | { type: "stage-run-cancelled"; label: string; summary?: import("@adt/types").PipelineResumeSummary }
   | { type: "queue-next"; label: string; fromStage: string; toStage: string }
   | {
       type: "decision-required"

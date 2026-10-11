@@ -1,3 +1,12 @@
+import { localizeExtractionError } from "@/lib/extraction-errors"
+import { i18n } from "@lingui/core"
+import { msg } from "@lingui/core/macro"
+import type { OutputSkipRequest, PackagingStatus } from "@adt/types"
+import type { OutputStatus, OutputSummary, OutputRunScope, OutputReviewRequest, OutputDisclosureOptions, OutputReplacement } from "@adt/types"
+
+import { sectioningErrorMessage } from "@/lib/sectioning-error"
+import type { SectioningPreflightResult } from "@adt/types"
+import type { SectioningModeState } from "@adt/types"
 import { isElectron } from "@/lib/utils"
 import type {
   AccessibilityAssessmentOutput,
@@ -110,7 +119,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly body: unknown,
+    readonly body: unknown = undefined,
   ) {
     super(message)
     this.name = "ApiError"
@@ -135,12 +144,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     let body: unknown = text
     try {
       body = JSON.parse(text) as unknown
-      message = (body as { error?: string }).error
+      const details = body as Partial<SectioningPreflightResult> & { code?: string; error?: string }
+      message = details.code === "SECTIONING_PREFLIGHT_FAILED" && typeof details.total === "number" && Array.isArray(details.displayedPages)
+        ? sectioningErrorMessage(details as SectioningPreflightResult)
+        : details.error
     } catch {
       message = text || undefined
     }
-    // eslint-disable-next-line lingui/no-unlocalized-strings -- Last-resort transport error; API-provided user-facing messages are preferred.
-    throw new ApiError(message ?? `Request failed: ${res.status}`, res.status, body)
+    throw new ApiError(localizeExtractionError(message ?? i18n._(msg`Request failed: ${res.status}`)), res.status, body)
   }
 
   return res.json()
@@ -268,6 +279,10 @@ export interface StageRunProviderCredentials {
 }
 
 export interface RunStagesOptions {
+  resume?: boolean
+  replaceManual?: boolean
+  protectedReplacements?: import("@adt/types").AuthoredReplacement[]
+  outputScope?: OutputRunScope
   fromStage: string
   toStage: string
   /** When true, skip page-sectioning and only re-render from existing section data. */
@@ -415,6 +430,7 @@ export interface PendingDecision {
 }
 
 export interface StageRunStatus {
+  summary?: import("@adt/types").PipelineResumeSummary
   label: string
   status: "idle" | "running" | "cancelling" | "cancelled" | "completed" | "failed"
   fromStage?: string
@@ -480,6 +496,7 @@ export interface AiEditHistoryTurn {
 }
 
 export interface PageDetail {
+  captionSourceSignature: string
   pageId: string
   pageNumber: number
   text: string
@@ -502,6 +519,7 @@ export interface PageDetail {
     }>
   } | null
   sectioningTree: {
+    source?: "ai" | "manual"
     reasoning: string
     sections: Array<{
       sectionId: string
@@ -581,6 +599,7 @@ export interface TocEntry {
 }
 
 export interface TocGenerationOutput {
+  source?: "ai" | "manual"
   entries: TocEntry[]
   pageCount: number
   generatedAt: string
@@ -602,6 +621,7 @@ export interface QuizOption {
 }
 
 export interface QuizItem {
+  source?: "ai" | "manual"
   /** Stable output-page id (`qz001`). Filled in by GET /quizzes; optional only
    *  because a book written before it existed has none stored. Round-trip it on
    *  every write — it keys the quiz's catalog entries, translations and audio. */
@@ -632,10 +652,7 @@ export interface QuizzesResponse {
 
 // --- Text Catalog types ---
 
-export interface TextCatalogEntry {
-  id: string
-  text: string
-}
+export type TextCatalogEntry = import("@adt/types").TextCatalogEntry
 
 export interface CoreTtsCatalogEntry {
   id: string
@@ -656,8 +673,8 @@ export interface TextCatalogResponse {
   entries: TextCatalogEntry[]
   generatedAt: string
   version: number
-  translations: Record<string, { entries: TextCatalogEntry[]; version: number }>
-  speechTexts: Record<string, { entries: CoreTtsCatalogEntry[]; version: number }>
+  translations: Record<string, { entries: TextCatalogEntry[]; version: number; sourceSignature: string }>
+  speechTexts: Record<string, { entries: CoreTtsCatalogEntry[]; version: number; sourceSignature: string }>
 }
 
 export interface TranslationEvaluationStatusResponse {
@@ -701,6 +718,7 @@ export interface EasyReadSectionBlock {
 }
 
 export interface EasyReadResponse {
+  sourceSignature: string
   blocks: EasyReadSectionBlock[]
   generatedAt: string
   version: number
@@ -770,6 +788,8 @@ export interface WordTimestamp {
 }
 
 export interface WordTimestampEntry {
+  version: number
+  audioHash?: string
   textId: string
   language: string
   voiceSlot?: "primary" | "secondary"
@@ -1244,6 +1264,9 @@ export const api = {
       }
     ),
 
+  skipOutputs: (label: string, body: OutputSkipRequest) =>
+    request(`/books/${label}/stages/skip-outputs`, { method: "POST", body: JSON.stringify(body) }),
+
   getStagesStatus: (label: string) =>
     request<StageRunStatus>(`/books/${label}/stages/status`),
 
@@ -1317,7 +1340,7 @@ export const api = {
   saveStoryboard: (
     label: string,
     pageId: string,
-    data: { sectioning?: unknown; rendering?: unknown; renderingInSync?: boolean }
+    data: { sectioning?: unknown; rendering?: unknown; renderingInSync?: boolean; baseVersion?: number }
   ) =>
     request<{ sectioningVersion: number | null; renderingVersion: number | null }>(
       `/books/${label}/pages/${pageId}/storyboard`,
@@ -1330,20 +1353,22 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  cloneSection: (label: string, pageId: string, sectionIndex: number) =>
+  cloneSection: (label: string, pageId: string, sectionIndex: number, baseVersion: number) =>
     request<{
       clonedSectionIndex: number
       sectioningVersion: number
       renderingVersion: number | null
     }>(`/books/${label}/pages/${pageId}/sections/${sectionIndex}/clone`, {
       method: "POST",
+      body: JSON.stringify({ baseVersion }),
     }),
 
   splitSection: (
     label: string,
     pageId: string,
     sectionIndex: number,
-    at: { beforeNodeIndex: number } | { beforeNodeId: string }
+    at: { beforeNodeIndex: number } | { beforeNodeId: string },
+    baseVersion: number
   ) =>
     request<{
       splitSectionIndex: number
@@ -1351,7 +1376,7 @@ export const api = {
       renderingVersion: number | null
     }>(`/books/${label}/pages/${pageId}/sections/${sectionIndex}/split`, {
       method: "POST",
-      body: JSON.stringify(at),
+      body: JSON.stringify({ ...at, baseVersion }),
     }),
 
   /** `renderingInSync` is for callers that re-render the affected sections
@@ -1361,7 +1386,8 @@ export const api = {
     pageId: string,
     sectionIndex: number,
     direction: "next" | "prev" = "next",
-    renderingInSync = false
+    renderingInSync: boolean,
+    baseVersion: number
   ) =>
     request<{
       mergedSectionIndex: number
@@ -1369,18 +1395,29 @@ export const api = {
       renderingVersion: number | null
     }>(
       `/books/${label}/pages/${pageId}/sections/${sectionIndex}/merge?direction=${direction}${renderingInSync ? "&renderingInSync=1" : ""}`,
-      { method: "POST" }
+      { method: "POST", body: JSON.stringify({ baseVersion }) }
     ),
 
   /** Moves a section across a page boundary and empties both renderings. The
    *  Storyboard is always marked stale until reRenderPages repairs both. */
-  mergeSectionCrossPage: (
+  mergeSectionCrossPage: async (
     label: string,
     pageId: string,
     sectionIndex: number,
-    direction: "next" | "prev"
-  ) =>
-    request<{
+    direction: "next" | "prev",
+    baseVersion: number,
+    targetBaseVersion?: number
+  ) => {
+    // The source guard is the displayed version. Load the adjacent page before
+    // this immediate structural action if it is not already visible/cached.
+    if (targetBaseVersion === undefined) {
+      const pages = await api.getPages(label)
+      const index = pages.findIndex((p) => p.pageId === pageId)
+      const target = pages[index + (direction === "next" ? 1 : -1)]
+      if (!target) throw new Error("Adjacent page no longer exists")
+      targetBaseVersion = (await api.getPage(label, target.pageId)).versions.sectioning ?? 0
+    }
+    return request<{
       sourcePageId: string
       targetPageId: string
       targetSectionIndex: number
@@ -1390,16 +1427,18 @@ export const api = {
       targetRenderingVersion: number | null
     }>(
       `/books/${label}/pages/${pageId}/sections/${sectionIndex}/merge-cross-page?direction=${direction}`,
-      { method: "POST" }
-    ),
+      { method: "POST", body: JSON.stringify({ baseVersion, targetBaseVersion }) }
+    )
+  },
 
-  deleteSection: (label: string, pageId: string, sectionIndex: number) =>
+  deleteSection: (label: string, pageId: string, sectionIndex: number, baseVersion: number) =>
     request<{
       sectioningVersion: number
       renderingVersion: number | null
       remainingSections: number
     }>(`/books/${label}/pages/${pageId}/sections/${sectionIndex}`, {
       method: "DELETE",
+      body: JSON.stringify({ baseVersion }),
     }),
 
   reRenderPage: async (label: string, pageId: string, apiKey: string, sectionIndex?: number, prompt?: string) =>
@@ -1430,7 +1469,8 @@ export const api = {
     sectionIndex: number,
     instruction: string,
     apiKey: string,
-    currentHtml?: string,
+    currentHtml: string | undefined,
+    baseVersion: number,
   ) =>
     request<{
       taskId?: string
@@ -1443,7 +1483,7 @@ export const api = {
       {
         method: "POST",
         headers: await buildApiHeaders(apiKey),
-        body: JSON.stringify({ instruction, currentHtml }),
+        body: JSON.stringify({ instruction, currentHtml, baseVersion }),
         signal: AbortSignal.timeout(30_000),
       }
     ),
@@ -1680,11 +1720,14 @@ export const api = {
 
   /** Roll an entity back to an existing version (moves the current-version
    *  pointer; does not create a new version). */
-  restoreVersion: (label: string, node: string, itemId: string, version: number) =>
+  restoreVersion: (label: string, node: string, itemId: string, version: number, baseVersion: number) =>
     request<{ node: string; itemId: string; version: number }>(
       `/books/${label}/versions/${node}/${itemId}/restore`,
-      { method: "POST", body: JSON.stringify({ version }) }
+      { method: "POST", body: JSON.stringify({ version, baseVersion }) }
     ),
+
+  getSectioningModeState: (label: string) =>
+    request<SectioningModeState>(`/books/${label}/sectioning-state`),
 
   getBookConfig: (label: string) =>
     request<BookConfigResponse>(`/books/${label}/config`),
@@ -1784,6 +1827,8 @@ export const api = {
       pageIds: string[]
       afterPageId: string
       placement?: "replace" | "after"
+      baseVersion: number
+      replaceQuizIds?: string[]
     },
     providerCredentials?: StageRunProviderCredentials
   ) =>
@@ -1836,13 +1881,17 @@ export const api = {
   getTocSections: (label: string) =>
     request<TocSection[]>(`/books/${label}/toc/sections`),
 
+  getOutputDisclosure: (label: string, features: OutputDisclosureOptions = {}) => request<{ outputs: OutputStatus[]; summary: OutputSummary }>(`/books/${label}/outputs/disclosure?features=${encodeURIComponent(JSON.stringify(features))}`),
+  getOutputs: (label: string) => request<{ outputs: OutputStatus[]; summary: OutputSummary }>(`/books/${label}/outputs`),
+  reviewOutput: (label: string, review: OutputReviewRequest) => request<{ version: number }>(`/books/${label}/outputs/review`, { method: "POST", body: JSON.stringify(review) }),
+
   getTextCatalog: (label: string) =>
     request<TextCatalogResponse | null>(`/books/${label}/text-catalog`),
 
   getEasyRead: (label: string) =>
     request<EasyReadResponse | null>(`/books/${label}/easy-read`),
 
-  updateEasyRead: (label: string, data: { blocks: EasyReadSectionBlock[]; generatedAt: string }) =>
+  updateEasyRead: (label: string, data: { blocks: EasyReadSectionBlock[]; generatedAt: string; baseVersion: number; sourceSignature: string }) =>
     request<{ version: number }>(`/books/${label}/easy-read`, {
       method: "PUT",
       body: JSON.stringify(data),
@@ -1865,12 +1914,14 @@ export const api = {
     language: string,
     entryId: string,
     speechText: string,
+    baseVersion: number,
+    sourceSignature: string,
   ) =>
     request<{ version: number; entry: CoreTtsCatalogEntry }>(
       `/books/${label}/core-tts-catalog/${language}/${entryId}`,
       {
         method: "PUT",
-        body: JSON.stringify({ speechText }),
+        body: JSON.stringify({ speechText, baseVersion, sourceSignature }),
       },
     ),
 
@@ -1911,8 +1962,10 @@ export const api = {
       error: string | null
       stepErrors: Record<string, string> | null
       stepMessages: Record<string, string> | null
+      resumeSummary?: import("@adt/types").PipelineResumeSummary
       runStatus: "idle" | "running" | "cancelling" | "cancelled" | "completed" | "failed"
       pendingDecisions: PendingDecision[]
+      protectedWork?: Array<import("@adt/types").AuthoredReplacement & { pageNumber?: number }>
     }>(`/books/${label}/step-status`),
 
   getTTS: (label: string) =>
@@ -1948,8 +2001,10 @@ export const api = {
     language: string,
     voiceSlot: "primary" | "secondary",
     file: File,
+    baseline: OutputReplacement,
   ) => {
     const formData = new FormData()
+    formData.append("baseline", JSON.stringify(baseline))
     formData.append("audio", file)
     formData.append("textId", textId)
     formData.append("language", language)
@@ -1970,7 +2025,7 @@ export const api = {
       body: JSON.stringify({ textId, language, voiceSlot }),
     }),
 
-  saveWordTimestamps: (label: string, language: string, textId: string, data: { words: WordTimestamp[]; duration: number; voiceSlot?: "primary" | "secondary" }) =>
+  saveWordTimestamps: (label: string, language: string, textId: string, data: { words: WordTimestamp[]; duration: number; voiceSlot?: "primary" | "secondary"; baseVersion: number; audioHash: string }) =>
     request<{ ok: boolean }>(`/books/${label}/tts/timestamps/${language}/${textId}`, {
       method: "PUT",
       body: JSON.stringify(data),
@@ -2000,7 +2055,7 @@ export const api = {
     request<{ tasks: TaskInfoResponse[] }>(`/books/${label}/tasks`),
 
   getPackageAdtStatus: (label: string) =>
-    request<{ label: string; hasAdt: boolean; version?: string }>(
+    request<PackagingStatus>(
       `/books/${label}/package-adt/status`
     ),
 

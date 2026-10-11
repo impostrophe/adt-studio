@@ -2,10 +2,12 @@ import fs from "node:fs"
 import path from "node:path"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
-import { parseBookLabel, PackagingWarning } from "@adt/types"
+import { parseBookLabel, PackagingWarning, type PackagingStatus } from "@adt/types"
 import { createBookStorage } from "@adt/storage"
 import {
   packageAdtWeb,
+  packageInventoryValid,
+  writePackageInventory,
   computePackagingInputHash,
   loadBookConfig,
   normalizeLocale,
@@ -13,6 +15,8 @@ import {
   runBrowserAccessibilityAssessment,
   mergeAccessibilityResults,
   isFixedLayoutBook,
+  prepareSectioningRun,
+  SectioningSafetyError,
 } from "@adt/pipeline"
 import type { Storage } from "@adt/storage"
 import type { TaskService } from "../services/task-service.js"
@@ -22,12 +26,6 @@ const PACKAGE_VERSION_LENGTH = 16
 interface PackagingCacheState {
   cached: boolean
   version: string
-}
-
-interface PackagingStatus {
-  label: string
-  hasAdt: boolean
-  version?: string
 }
 
 interface PackagingResult {
@@ -87,7 +85,7 @@ function readBuildWarnings(bookDir: string): PackagingWarning[] {
 function isBuildCacheValid(bookDir: string, hash: string): boolean {
   const hashPath = getBuildHashPath(bookDir)
   if (!fs.existsSync(hashPath) || fs.readFileSync(hashPath, "utf-8").trim() !== hash) return false
-  return fs.existsSync(getBuildWarningsPath(bookDir))
+  return fs.existsSync(getBuildWarningsPath(bookDir)) && packageInventoryValid(path.join(bookDir, "adt"))
 }
 
 function readBuildVersion(bookDir: string, fallbackHash: string): string {
@@ -113,6 +111,7 @@ function getPackagingCacheState(
   bookDir: string,
   webAssetsDir: string,
   configPath?: string,
+  promptsDir = path.resolve("prompts"),
 ): PackagingCacheState {
   const { language, outputLanguages, title, config } = resolvePackagingParams(
     storage, safeLabel, booksDir, configPath,
@@ -121,6 +120,7 @@ function getPackagingCacheState(
     storage, bookDir, label: safeLabel, language, outputLanguages, title,
     webAssetsDir, applyBodyBackground: config.apply_body_background,
     config: config as unknown as Record<string, unknown>,
+    promptsDir, configDir: configPath ? path.join(path.dirname(configPath), "config") : path.resolve("config"),
   })
   const cached = isBuildCacheValid(bookDir, hash)
   return {
@@ -135,6 +135,9 @@ function resolvePackagingParams(
   booksDir: string,
   configPath?: string,
 ) {
+  // Cached builds and direct preview tasks obey the same stale-state boundary
+  // as the Package stage; retained files alone do not authorize a rebuild.
+  prepareSectioningRun(safeLabel, booksDir, "package", "package", configPath)
   const config = loadBookConfig(safeLabel, booksDir, configPath)
   const metadataRow = storage.getLatestNodeData("metadata", "book")
   const metadata = metadataRow?.data as {
@@ -160,6 +163,7 @@ export function createPackageRoutes(
   webAssetsDir: string,
   configPath?: string,
   taskService?: TaskService,
+  promptsDir = path.resolve("prompts"),
 ): Hono {
   const app = new Hono()
 
@@ -234,7 +238,7 @@ export function createPackageRoutes(
         "package-adt",
         "Packaging ADT preview",
         async () => {
-          return await runPackaging(safeLabel, booksDir, bookDir, webAssetsDir, configPath)
+          return await runPackaging(safeLabel, booksDir, bookDir, webAssetsDir, configPath, promptsDir)
         },
         { url: `/books/${safeLabel}/preview` },
       )
@@ -242,7 +246,7 @@ export function createPackageRoutes(
     }
 
     try {
-      const result = await runPackaging(safeLabel, booksDir, bookDir, webAssetsDir, configPath)
+      const result = await runPackaging(safeLabel, booksDir, bookDir, webAssetsDir, configPath, promptsDir)
       return c.json({
         status: "completed",
         label: safeLabel,
@@ -275,6 +279,16 @@ export function createPackageRoutes(
 
     const status: PackagingStatus = { label: safeLabel, hasAdt }
     if (version) status.version = version
+    if (fs.existsSync(path.join(bookDir, `${safeLabel}.db`))) {
+      try {
+        // Use the same admission rule as preview/export. File existence says
+        // the package is retained, not that it is compatible with this mode.
+        prepareSectioningRun(safeLabel, booksDir, "package", "package", configPath)
+      } catch (error) {
+        if (!(error instanceof SectioningSafetyError) || error.code !== "SECTIONING_STALE") throw error
+        status.modeCompatible = false
+      }
+    }
     return c.json(status)
   })
 
@@ -287,6 +301,7 @@ async function runPackaging(
   bookDir: string,
   webAssetsDir: string,
   configPath?: string,
+  promptsDir = path.resolve("prompts"),
 ): Promise<PackagingResult> {
   const storage = createBookStorage(safeLabel, booksDir)
   try {
@@ -305,6 +320,7 @@ async function runPackaging(
       webAssetsDir,
       applyBodyBackground: config.apply_body_background,
       config: config as unknown as Record<string, unknown>,
+    promptsDir, configDir: configPath ? path.join(path.dirname(configPath), "config") : path.resolve("config"),
     }
     const hashPath = getBuildHashPath(bookDir)
     const versionPath = getBuildVersionPath(bookDir)
@@ -318,6 +334,7 @@ async function runPackaging(
     }
 
     const { warnings } = await packageAdtWeb(storage, {
+      promptsDir, configDir: configPath ? path.join(path.dirname(configPath), "config") : path.resolve("config"),
       bookDir,
       label: safeLabel,
       language,
@@ -326,6 +343,7 @@ async function runPackaging(
       webAssetsDir,
       bundleVersion,
       applyBodyBackground: config.apply_body_background,
+      config,
       speechConfig: config.speech,
       fixedLayout: isFixedLayoutBook(config),
       reflowableFont: config.reflowable_font,
@@ -358,6 +376,7 @@ async function runPackaging(
     const postHash = computePackagingInputHash(hashOptions)
     fs.writeFileSync(hashPath, postHash, "utf-8")
     fs.writeFileSync(versionPath, bundleVersion, "utf-8")
+    writePackageInventory(path.join(bookDir, "adt"))
     return { version: bundleVersion, warnings }
   } finally {
     storage.close()

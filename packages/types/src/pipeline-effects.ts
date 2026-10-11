@@ -1,6 +1,13 @@
 import { PIPELINE, STAGE_ORDER } from "./pipeline.js"
 import type { StageName, StepName } from "./pipeline.js"
 
+/** Content-addressed downstream outputs are retained until validated
+ * publication. Invalidating completion never authorizes deleting their data. */
+export const CATALOG_OUTPUT_NODES: readonly string[] = [
+  "image-captioning", "text-catalog", "easy-read", "text-catalog-translation",
+  "core-tts-catalog", "tts", "tts-timestamps", "image-translation",
+]
+
 export type PipelineNodeName =
   | StepName
   | "text-catalog-translation"
@@ -226,7 +233,11 @@ export function getStageRerunClearNodes(
   const fromIndex = STAGE_ORDER.indexOf(fromStage)
   const toIndex = STAGE_ORDER.indexOf(toStage)
 
-  const preservedNodes = new Set<PipelineNodeName>()
+  // Authored units remain current until successful publication, even when the
+  // downstream stage is outside this run. Clearing completion is independent.
+  const preservedNodes = new Set<PipelineNodeName>([
+    "page-sectioning", "toc-generation", "quiz-generation", "glossary", "web-rendering",
+  ])
   for (const stage of STAGES_PRESERVING_OWN_OUTPUT) {
     const index = STAGE_ORDER.indexOf(stage)
     if (index >= fromIndex && index <= toIndex) {

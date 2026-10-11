@@ -1,10 +1,11 @@
+import { resolvePromptOverridesDir } from "./prompt-roots.js"
 import fs from "node:fs"
 import path from "node:path"
 import { HTTPException } from "hono/http-exception"
 import { parseBookLabel } from "@adt/types"
 import type { PackagingWarning } from "@adt/types"
-import { createBookStorage } from "@adt/storage"
-import { packageAdtWeb, packageWebpub, packageEpub, packagePnld, loadBookConfig, normalizeLocale, isFixedLayoutBook } from "@adt/pipeline"
+import { createBookStorage, withBookWriter, recoverSectioningTransition, resolveBookPaths } from "@adt/storage"
+import { packageAdtWeb, packageWebpub, packageEpub, packagePnld, loadBookConfig, normalizeLocale, isFixedLayoutBook, prepareSectioningRun } from "@adt/pipeline"
 import { collectFilePaths, createZipStream } from "./zip-util.js"
 import { promptPath, withPromptGates } from "@adt/llm"
 import { readPartInfo } from "./book-service.js"
@@ -79,6 +80,28 @@ export async function prepareExport(
   configPath?: string,
   features?: ExportFeatures,
   defaultSettingsOverride?: ExportDefaultSettings,
+  promptsDir = path.resolve("prompts"),
+): Promise<PrepareExportResult> {
+  const { bookDir } = resolveBookPaths(label, booksDir)
+  if (!fs.existsSync(bookDir)) throwBookNotFound(label)
+  // A project archive preserves source data and excludes generated bundles.
+  // It must remain available even when regeneration is safely blocked.
+  if (format === "project") return { warnings: [] }
+  return withBookWriter(bookDir, () => {
+    prepareSectioningRun(label, booksDir, "package", "package", configPath)
+    return prepareAdmittedExport(label, format, booksDir, webAssetsDir, configPath, features, defaultSettingsOverride, promptsDir)
+  })
+}
+
+async function prepareAdmittedExport(
+  label: string,
+  format: "project" | "webpub" | "scorm" | "adt" | "epub" | "pnld",
+  booksDir: string,
+  webAssetsDir: string,
+  configPath?: string,
+  features?: ExportFeatures,
+  defaultSettingsOverride?: ExportDefaultSettings,
+  promptsDir = path.resolve("prompts"),
 ): Promise<PrepareExportResult> {
   const safeLabel = parseBookLabel(label)
   const resolvedDir = path.resolve(booksDir)
@@ -146,6 +169,7 @@ export async function prepareExport(
     })()
 
     const opts = {
+      promptsDir, promptOverridesDir: resolvePromptOverridesDir(booksDir), configDir: configPath ? path.join(path.dirname(configPath), "config") : path.resolve("config"),
       bookDir,
       label: safeLabel,
       language,
@@ -153,6 +177,7 @@ export async function prepareExport(
       title,
       webAssetsDir,
       applyBodyBackground: config.apply_body_background,
+      config,
       speechConfig: config.speech,
       features,
       defaultSettings: mergedDefaultSettings,
@@ -180,6 +205,47 @@ export async function prepareExport(
   }
 }
 
+/** Keep YAML, lifecycle and SQLite from different transitions out of one ZIP.
+ * The existing ZIP producer yields while reading larger books, so admission
+ * must last until it has finished reading, not merely until it returns a stream. */
+function createProjectZipStream(bookDir: string): ReadableStream<Uint8Array> {
+  let cancelled = false
+  return new ReadableStream({
+    start(controller) {
+      return withBookWriter(bookDir, async () => {
+        recoverSectioningTransition(bookDir)
+
+  // Capture prompt selection metadata and its retained bytes under the same
+  // writer gate used by Save. ZIP streaming yields between batches; reading
+  // these files later could otherwise pair a new pointer with an older list.
+  const promptRoot = path.join(bookDir, "prompts")
+  const promptEntries = await withPromptGates([promptRoot], () =>
+    collectFilePaths(promptRoot)
+      .filter((file) => !file.startsWith(".prompt-write.lock/"))
+      .map((file) => ({ path: `prompts/${file}`, data: new Uint8Array(fs.readFileSync(promptPath(promptRoot, file))) })),
+  )
+  const zipOptions = { excludeDirs: new Set(["adt", "webpub", "prompts"]), extraEntries: promptEntries }
+        const reader = createZipStream(bookDir, {
+          ...zipOptions,
+          excludeFiles: new Set([".book-writer.json", ".book-writer.json.recovery"]),
+        }).getReader()
+        try {
+          for (;;) {
+            const { done, value } = await reader.read()
+            if (done) { if (!cancelled) controller.close(); break }
+            if (!cancelled) {
+              // A cancelled consumer must not release admission while the
+              // eager ZIP producer is still reading later source files.
+              try { controller.enqueue(value) } catch { cancelled = true }
+            }
+          }
+        } finally { reader.releaseLock() }
+      })
+    },
+    cancel() { cancelled = true },
+  })
+}
+
 export async function exportProject(
   label: string,
   booksDir: string,
@@ -192,16 +258,6 @@ export async function exportProject(
     throwBookNotFound(safeLabel)
   }
 
-  // Capture prompt selection metadata and its retained bytes under the same
-  // writer gate used by Save. ZIP streaming yields between batches; reading
-  // these files later could otherwise pair a new pointer with an older list.
-  const promptRoot = promptPath(resolvedDir, safeLabel, "prompts")
-  const promptEntries = await withPromptGates([promptRoot], () =>
-    collectFilePaths(promptRoot)
-      .filter((file) => !file.startsWith(".prompt-write.lock/"))
-      .map((file) => ({ path: `prompts/${file}`, data: new Uint8Array(fs.readFileSync(promptPath(promptRoot, file))) })),
-  )
-  const zipOptions = { excludeDirs: new Set(["adt", "webpub", "prompts"]), extraEntries: promptEntries }
   const title = readBookTitle(safeLabel, resolvedDir)
 
   // When this book is an imported page-range part, name the returned archive
@@ -215,14 +271,14 @@ export async function exportProject(
     const { startPage, endPage } = part.range
     const pad3 = (n: number) => String(n).padStart(3, "0")
     return {
-      stream: createZipStream(bookDir, zipOptions),
+      stream: createProjectZipStream(bookDir),
       filename: `${title}-part-${startPage}-${endPage}-processed.zip`,
       safeFilename: `${part.sourceLabel}-p${pad3(startPage)}-${pad3(endPage)}-processed.zip`,
     }
   }
 
   return {
-    stream: createZipStream(bookDir, zipOptions),
+    stream: createProjectZipStream(bookDir),
     filename: `${title}-project.zip`,
     safeFilename: `${safeLabel}-project.zip`,
   }

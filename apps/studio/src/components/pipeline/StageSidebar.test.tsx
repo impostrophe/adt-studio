@@ -12,6 +12,7 @@ const cancelRunMock = vi.fn()
 const toastInfoMock = vi.fn()
 const matchRouteMock = vi.fn(() => true)
 const searchMock = { tab: "reviewer-checklist" }
+const packageStatusMock = { hasAdt: false, modeCompatible: true }
 
 vi.mock("@lingui/core", () => ({
   i18n: {
@@ -108,7 +109,7 @@ vi.mock("@/hooks/use-book-tasks", () => ({
 }))
 
 vi.mock("@/hooks/use-books", () => ({
-  usePackageAdtStatus: () => ({ data: { hasAdt: false } }),
+  usePackageAdtStatus: () => ({ data: packageStatusMock }),
 }))
 
 vi.mock("@/hooks/use-sign-language-videos", () => ({
@@ -134,6 +135,7 @@ vi.mock("@/routes/books.$label", () => ({
 
 beforeEach(() => {
   matchRouteMock.mockReturnValue(true)
+  Object.assign(packageStatusMock, { hasAdt: false, modeCompatible: true })
 })
 
 afterEach(() => {
@@ -143,6 +145,18 @@ afterEach(() => {
 })
 
 describe("StageSidebar", () => {
+  it("keeps retained mode-incompatible preview and validation from claiming completion", async () => {
+    stageStateMock.mockImplementation(() => "idle")
+    Object.assign(packageStatusMock, { hasAdt: true, modeCompatible: false })
+    const { StageSidebar } = await import("./components/StageSidebar")
+    const { rerender } = render(<StageSidebar bookLabel="demo-book" activeStep="book" />)
+    expect(screen.getByTitle("Preview").getAttribute("aria-label")).toBe("Preview: not started")
+    expect(screen.getByTitle("Validation").getAttribute("aria-label")).toBe("Validation: not started")
+    packageStatusMock.modeCompatible = true
+    rerender(<StageSidebar bookLabel="demo-book" activeStep="book" />)
+    expect(screen.getByTitle("Preview").getAttribute("aria-label")).toBe("Preview: done")
+  })
+
   it("routes the book settings button to the API Keys section", async () => {
     matchRouteMock.mockReturnValue(true)
     const { StageSidebar } = await import("./components/StageSidebar")

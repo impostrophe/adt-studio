@@ -29,6 +29,8 @@ This document records all significant technology and architecture decisions made
 21. [Context-Aware Top Bar Button](#021-context-aware-top-bar-button)
 22. [Unified Stage/Step Status via useBookRun](#022-unified-stagestep-status-via-usebookrun)
 23. [Visual Refinement + File-Based Debug Screenshots](#023-visual-refinement--file-based-debug-screenshots)
+24. [Catalog-Based Freshness from Saved Input Signatures (proposed)](#adr-024)
+25. [Sectioning mode changes preserve content and gate rendering](#025-sectioning-mode-changes-preserve-content-and-gate-rendering)
 27. [Prompt overrides use writable roots and versioned selections (proposed)](#027-prompt-overrides-use-writable-roots-and-versioned-selections)
 
 ---
@@ -863,6 +865,156 @@ The first implementation stored screenshots in a SQLite `debug_images` table. Th
 | Store screenshots in SQLite BLOBs | Adds DB bloat/churn for debug binaries, harder cleanup |
 | External object store for screenshots | Unnecessary infrastructure for local/self-hosted workflows |
 
+<a id="adr-024"></a>
+
+## 024: Catalog-Based Freshness from Saved Input Signatures
+
+**Status**: Proposed
+
+**Date**: 2026-09-11
+
+**Updated**: 2026-09-27
+
+**Spec**: [SPEC-0001](specs/SPEC-0001-per-section-staleness.md)
+
+**Issues**: #735, #733, #736, #131, #619, #626
+
+### Context
+
+Book-wide clearing destroys unrelated output and history. A universal section
+freshness flag also groups independent outputs and fits glossary/quiz text poorly.
+The catalog already identifies text; some operations still require section or
+neighboring context. Failed Core TTS preparation currently withholds speech text.
+
+### Proposed Decision
+
+Compare each output's saved input signature against relevant current content,
+settings and context. Use the derived book-local text catalog and image inventory;
+retain provenance, manual protection and review evidence separately. Sections
+remain selection/context groups. Saves preserve output and make no provider calls.
+
+Expose **Update needed**, **Warning** and **Missing**, with plain explanations.
+Manual content keeps a **Manual edit** label and survives ordinary runs, including
+full-section easy-read processing. Attach keep/edit/explicit-replacement actions
+to its warning. Successful replacement becomes generated content; retain history.
+Unknown authorship stays protected. Derive stage warning counts from affected
+outputs; review resolves against the inputs/output shown and is reassessed on
+relevant change. Bulk replacement identifies the edits and is off by default.
+
+Requested generation may use available inputs with unresolved warnings. Missing
+usable input prevents only affected work; never silently launch upstream provider
+calls. Failed/missing/outdated generated Core TTS preparation uses selected display
+text in the requested language, recording fallback inputs and reason. Preserve
+manual speech text; disabled normalization is not a failure. This deliberately
+changes the withholding policy, including failed LaTeX conversion.
+
+Ordinary runs reuse unchanged fallback input and matching audio. Retry preparation
+explicitly attempts normalization; relevant input changes make it eligible when
+requested. Mark checked resolves the fallback warning without inventing successful
+normalization or manual authorship. Skip this run is temporary; pruning persists
+until restored. Current output needs no extra badge.
+
+Keep existing request caching and context-dependent batching. Merge new versions
+without replacing unrelated/protected work. Validate captured inputs and target
+protection/selection before publication; conflicting edits reject obsolete results.
+Preserve previous playable output on failure, cancellation or rejection, and keep
+physical assets referenced by history independently of disposable caches.
+
+### Scope and Consequences
+
+- V1 covers captions, easy-read, Translate's existing steps and Speech's existing
+  steps. Storyboard freshness and Sectioning-to-Storyboard selection are deferred.
+  Existing glossary/quiz catalog entries participate; their generation and TOC
+  generation remain outside scope.
+- Cosmetic changes do not invalidate content. Stable identity and explicit context
+  are required; transport batching alone does not authorize replacing unchanged IDs.
+  Cache identity differs from freshness, so no fixed cost saving is promised.
+- Count expected work, including failures and omissions. Missing means no usable
+  output; disabled/pruned/not-applicable work is not unfinished.
+- A finished run does not prove freshness. Declared TTS fallback may be current
+  with a quality warning; unresolved upstream freshness cannot be certified current.
+  Resolve inherited warnings at their source and reuse unchanged downstream inputs.
+- Fallback may pronounce raw notation poorly. Warnings allow later checking or
+  correction; accepting content cannot invent authorship or missing files.
+- Preview/export permit usable stale/review-needed content under existing gates,
+  disclose included/omitted/fallback output, and add no warning-approval popup.
+  Export does not resolve warnings or freshness.
+- Hash representation and physical publication mechanisms remain implementation
+  choices. This ADR is proposed; no runtime behavior is delivered by these docs.
+
+#735 is partially addressed. #131's inline generation is deferred in favor of a
+separate action after saving. #619 and #626 remain background/deferred.
+
+### Alternatives Considered
+
+- Whole-stage execution: fallback only with disclosed scope and the same protection,
+  warning, text-fallback and physical-artifact guarantees; no claim of precise scope.
+- Universal section snapshots: too coarse for independent outputs and non-section IDs.
+- Raw entity versions: incorrectly treat cosmetic saves as content changes.
+- General dependency engine: unnecessary for fixed input rules on existing steps.
+- Blocking unresolved inputs or requiring fallback approval: interrupts usable work;
+  V1 continues with explicit warnings and preserves user control over replacement.
+
+---
+
+## 025: Sectioning mode changes preserve content and gate rendering
+
+**Status**: proposed
+**Date**: 2026-09-22
+**Spec**: [SPEC-0003](specs/SPEC-0003-sectioning-modes.md)
+**Issues**: #708
+
+### Context
+
+Changing page_sectioning.mode currently updates YAML independently of pipeline completion state. Historical or imported multi-section output can reach By Page rendering, and destructive pre-run cleanup can occur before validation.
+
+### Decision
+
+Treat an effective mode transition as non-destructive invalidation of Sectioning and its downstream dependency closure. Serialize and recover configuration/status publication, preserve entity history and Extract state, and require one valid latest section per active source page before any By Page Storyboard mutation.
+
+### Consequences
+
+Mode changes need writer admission and a recoverable cross-file/database transition. Rendering entry points must share the same preflight; neither mode changes nor preflight failures authorize content deletion. The wider B2 mode/merge design is not approved by this B1 proposal.
+
+This ADR is under review with its spec; no implementation acceptance criterion is satisfied by publishing it. The spec owns the acceptance/test mapping and approval questions. The same PR now includes the stacked B1 implementation and executable invariant regressions, including protected existing-book regeneration and bounded CLI/DAG resume; see its [current evidence and rollout limits](verification/spec-0003-stack-implementation.md). This does not approve the proposed decision.
+
+### Alternatives Considered
+
+| Approach | Why Not |
+|---|---|
+| UI warning only | Does not protect API, imported books or CLI execution. |
+| Automatically merge or truncate old sections | Ambiguous content and identity changes would destroy editorial intent. |
+
+---
+
+## 026: Existing books require verified extraction reuse
+
+**Status**: proposed
+**Date**: 2026-09-22
+**Spec**: [SPEC-0010](specs/SPEC-0010-safe-cli-reruns.md)
+**Issues**: #810
+
+### Context
+
+CLI and API extraction entry points can clear the existing page graph and historical entities; retained LLM caches do not restore user edits. A same-label run currently does not distinguish compatible reuse from changed-source replacement.
+
+### Decision
+
+Admit an existing book only when a completed extraction manifest proves the same source bytes, effective extraction inputs and intact extraction-owned assets. Reuse that extraction and enter only preservation-aware downstream execution; otherwise reject before mutation. In B1, changed-source or unverifiable legacy extraction requires a new user-chosen book destination.
+
+### Consequences
+
+This deliberately restricts same-label reruns for legacy or changed-source books. Provenance and writer admission stay book-local, destructive force/reset behavior is excluded, and safe full resume remains dependent on reviewed downstream policies. In-place extraction generations require a later design.
+
+This ADR is under review with its spec; no implementation acceptance criterion is satisfied by publishing it. The spec owns the acceptance/test mapping and approval questions. Existing invariant-registry checks remain as documented; new enforcement belongs to the implementing change.
+
+### Alternatives Considered
+
+| Approach | Why Not |
+|---|---|
+| Warn and reset or expand survivor allowlists | Does not preserve history or establish source identity. |
+| Version every extraction generation now | Requires a broader active-graph, reader and media migration beyond B1. |
+
 ---
 
 ## 027: Prompt overrides use writable roots and versioned selections
@@ -923,8 +1075,12 @@ This ADR is under review with its spec; no implementation acceptance criterion i
 | 022 | Stage/step status | Unified `useBookRun()` with SSE cache-patching | Dual-source (local SSE state + query cache) |
 | 023 | Visual QA + debug screenshots | Screenshot-based refinement + file-backed debug images | Structural-only validation, DB BLOB storage |
 | 027 | Prompt overrides use writable roots and versioned selections (proposed) | See SPEC-0011 | Only add UI labels to existing bundled-directory writes |
+| 024 (proposed) | Downstream freshness | Catalog-based input signatures and scoped regeneration with existing caching | Whole-stage clearing, universal section flags, general dependency graph |
+| 025 | Sectioning mode changes preserve content and gate rendering (proposed) | See SPEC-0003 | UI warning only |
 
 ---
+
+| 026 | Existing books require verified extraction reuse (proposed) | See SPEC-0010 | Warn and reset or expand survivor allowlists |
 
 ## ADR template
 
@@ -937,7 +1093,7 @@ This file has **two** hand-maintained indexes, and a new ADR must appear in both
 2. The **Decision Log Summary** table at the bottom.
 
 The heading continues the existing numbering in this file's own style — `## NNN: Title`,
-matching all 23 entries above. Retrospective ADRs use the same shape, dated when the
+matching the existing numbered entries above. Retrospective ADRs use the same shape, dated when the
 decision was actually taken, with a note that it is recorded after the fact.
 
 See [SPEC_DRIVEN_DEVELOPMENT.md §6](SPEC_DRIVEN_DEVELOPMENT.md#6-adrs) for when an ADR is
