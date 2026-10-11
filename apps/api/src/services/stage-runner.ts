@@ -2250,6 +2250,11 @@ async function runTocStep(
   const storage = createBookStorage(label, booksDir)
 
   try {
+    const previous = storage.getLatestNodeData("toc-generation", "book")
+    if (previous && isProtectedContent(previous.data as { source?: "ai" | "manual" }) && !replacementConfirmed(options, "toc-generation", "book", previous.version)) {
+      progress.emit({ type: "step-skip", step: "toc-generation" })
+      return
+    }
     const config = loadBookConfig(label, booksDir, configPath)
     const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
@@ -2303,7 +2308,11 @@ async function runTocStep(
       config: tocConfig,
       llmModel: tocModel,
     })
-    storage.putNodeData("toc-generation", "book", toc)
+    options.signal?.throwIfAborted()
+    storage.transaction(() => {
+      assertEditVersion(storage.getLatestNodeData("toc-generation", "book")?.version, previous?.version ?? 0)
+      storage.putNodeData("toc-generation", "book", { ...toc, source: "ai" })
+    })
 
     progress.emit({
       type: "step-progress",
