@@ -943,12 +943,17 @@ export function createAdtPreviewRoutes(
     if (!match) throw new HTTPException(400, { message: "Invalid video filename" })
     const sectionId = match[1]
 
-    const storage = createBookStorage(label, booksDir)
+    const { safeLabel, bookDir } = resolveBook(label)
+    const videosDir = resolvePathWithin(bookDir, "videos")
+    if (!videosDir) throw new HTTPException(403, { message: "Forbidden" })
+    const storage = createBookStorage(safeLabel, booksDir)
     try {
       const video = storage.getSignLanguageVideos().find((v) => v.sectionId === sectionId)
       if (!video) throw new HTTPException(404, { message: "No video assigned to this section" })
 
-      const filePath = storage.getSignLanguageVideoPath(video.videoId)
+      const storedPath = storage.getSignLanguageVideoPath(video.videoId)
+      const filePath = storedPath ? resolvePathWithin(videosDir, storedPath) : null
+      if (storedPath && !filePath) throw new HTTPException(403, { message: "Forbidden" })
       if (!filePath || !fs.existsSync(filePath)) {
         throw new HTTPException(404, { message: "Video file not found" })
       }
