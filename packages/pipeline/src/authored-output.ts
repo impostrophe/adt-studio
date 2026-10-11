@@ -44,4 +44,3 @@ export function assertAuthoredReplacement(storage: Storage, options: {
 export function replacementConfirmed(options: { replaceManual?: boolean; protectedReplacements?: AuthoredReplacement[] }, node: AuthoredReplacement["node"], itemId: string, version: number): boolean {
   return options.replaceManual === true && !!options.protectedReplacements?.some((r) => r.node === node && r.itemId === itemId && r.version === version)
 }
-

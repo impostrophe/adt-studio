@@ -15,4 +15,3 @@ export function figureExtractionFlags(
   const mode = resolveFigureExtractionMode(config)
   return { vectorTextGrouping: mode !== "off", keepCoveredRasters: mode === "auto" }
 }
-
