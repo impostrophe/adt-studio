@@ -1,5 +1,72 @@
 # SPEC-0002 implementation evidence
 
+## Completion under delegated assumptions — 2026-10-11
+
+The owner authorized reasonable assumptions to finish the remaining items after
+publication of `8ab973c1`. The four-entity API/Studio implementation is complete
+under the scope decisions now recorded in SPEC-0002. This is a code-completion
+claim, not specification approval, release certification, or completion of all
+work in #736/#144. SPEC-0002 and its INDEX entry remain draft; approval checkboxes
+remain open. PR #880 remains separate and stacked on #879 at `a10d3fa0`.
+
+The AC-2 reconciliation is the selected working contract: current output is
+skipped before requests, and the full-eligibility cache experiment is separate.
+ADR-024 supplies the shared design; no additional architecture decision is needed.
+Easy-read remains owned by SPEC-0001/#736, and full Storyboard-rerun preservation
+remains explicitly deferred to #144. These are linked existing open follow-ups,
+not silently delivered features or reasons to expand this PR.
+
+Additional acceptance evidence (commit `0f2c4fe0`):
+
+- **Textbook scale:** `catalog-execution.test.ts` now runs both 120 and 8,850
+  entries. The larger fixture warms 177 windows. After correcting entry 4,407,
+  both ordinary runs make zero adapter requests, cache hits, provider calls or
+  provider charges. In controlled full-eligibility passes, each pass makes 177
+  adapter requests; the first has 176 cache hits / one provider call / 0.015
+  fixture cost, the second 177 cache hits / zero calls / zero cost. Complete
+  request bodies in every unaffected window remain identical. The real transport
+  boundary and filesystem cache are exercised with a stub provider, not helper
+  call counts alone. This is synthetic scale evidence, not Mathematics STD 5.
+- **Reading-order preservation:** the real quiz HTTP-run regression now stores
+  an explicit order containing protected quiz and section IDs. Both ordinary
+  generation and the no-eligible-pages case leave that entire saved row/version
+  unchanged. It does not introduce or certify the deferred ordering editor.
+- **Old-build readability:** an independent source archive of develop
+  `ef31494dc2951b92222c473960fecee2d91f9544`, before either implementation, was
+  installed with the frozen offline lockfile and built with
+  `pnpm exec tsc --build apps/api`. The committed compatibility probe performs
+  real current HTTP saves to a disposable SQLite book, launches the old API in a
+  separate process, reads all four entities and previews/exports their text,
+  then reopens using the current API. Content, authorship, stable identities and
+  every entity's current/history rows remain unchanged. This proves AC-11's read
+  contract; editing/regenerating with an old build remains outside that promise.
+
+Reproduce the compatibility check after building both trees:
+
+```sh
+node scripts/probes/spec-0002-compatibility.mjs --baseline /path/to/built/pre-change/tree
+```
+
+The previous published head passed hosted test, Docker and i18n jobs in
+[run 38099892321](https://github.com/unicef/adt-studio/actions/runs/38099892321).
+The final additions change tests, a verification probe and documentation only;
+production code, UI strings and dependencies are unchanged. Final verification
+results:
+
+| Command/check | Result |
+|---|---|
+| `pnpm test` (including pretest build) | Passed: **313 files / 3,917 tests**, 151.87 seconds |
+| Focused catalog execution + real-route survival suites | Passed: **30 tests**, including the 8,850-entry transport/cache test |
+| Compatibility probe against pre-change `ef31494d` | Passed: old API read/preview/export and current reopen; all four entity histories unchanged |
+| `pnpm typecheck` and `pnpm --filter @adt/runtime typecheck` | Passed |
+| `pnpm lint` | Passed: zero errors, the same eight recorded baseline warnings |
+| `git diff --check` | Passed |
+| Studio strings/catalogs | Unchanged; the prior five-locale extraction/strict compile and hosted i18n results still cover the application |
+| Docker/Electron | Application unchanged since the successful combined Docker build/runtime and Electron API bundle checks; no new release claim |
+
+Earlier dated sections are historical checkpoints;
+their no-push and unresolved-choice notes no longer describe the current handoff.
+
 ## Independent review and authorized publication — 2026-10-11
 
 The owner requested a fresh review before publishing this same branch, restoring
@@ -178,16 +245,16 @@ unavailable check is counted as a pass. All numbered spec checkboxes stay open.
 | AC | Status | Evidence and limits |
 |---|---|---|
 | 1 | Passed | Real translation PUT stamps changed/new text, ignores supplied source, retains untouched authorship; current/source versions guarded and version increments |
-| 2 | Passed for proposed amendment; scale not run | Fixed-window adapter/transport/cache/provider/cost tests plus two ordinary zero-request reruns; Mathematics STD 5 harness unavailable; human ratification pending |
+| 2 | Passed under delegated reconciliation | Fixed-window adapter/transport/cache/provider/cost tests at 120 and 8,850 entries plus two ordinary zero-request reruns; actual Mathematics STD 5 harness remains a release/harness check, not claimed here |
 | 3 | Passed | Quiz save compares resolved identities/content, stamps changed/new quizzes, retains IDs/options and unchanged authorship; identity regressions and guarded HTTP saves |
-| 4 | Passed for available ordering; custom-order flow not run | Real full/no-eligible-page runs retain manual/unknown quizzes and stable quiz/option/catalog/audio identities, allocate fresh AI IDs, sort by page. Existing resolver is reused; no user-editable explicit reading-order persistence exists to exercise |
+| 4 | Passed | Real full/no-eligible-page runs retain manual/unknown quizzes and stable quiz/option/catalog/audio identities, allocate fresh AI IDs, sort by page and leave a stored explicit reading-order row/version unchanged. A new ordering editor is outside this PR |
 | 5 | Passed | Guarded TOC PUT stamps manual; confirmed worker publication stamps AI; real HTTP and Docker checks |
 | 6 | Passed | TOC confirmation names protected document; cancellation/failure retain current/history, successful replacement publishes AI; Studio dialog and route tests |
 | 7 | Passed | Whole-page PUT, clone, split, merge, cross-page merge, delete and real queued AI-edit service stamp manual; generation stamps AI; shared factory/retirement paths |
 | 8 | Passed | Manual/unknown page versions and section IDs unchanged with zero sectioning calls; mixed fixture calls only AI pages |
 | 9 | Passed | Six authored entity types survive real Save → HTTP run → worker → current/history for own-stage and Sectioning/upstream chains, followed by real preview/export reads |
 | 10 | Passed | All four badges verified in running Studio; five catalogs fully translated; extraction and lint pass |
-| 11 | Passed for protection/parsing; old-app workflow not run | Unknown records survive ordinary runs and show legacy protection; missing output can be filled; actual pre-change compiled schemas parse tagged records. No full old-app/downgrade run |
+| 11 | Passed for the specified read contract | Unknown records survive ordinary runs and show legacy protection; missing output can be filled. Independent pre-change API reads/previews/exports current saved books and current reopen preserves authorship/IDs/history. Old-build writes/reruns are not certified |
 | 12 | Passed | Real restores of AI, manual and absent source retain their tags; subsequent runs regenerate AI and preserve manual/unknown; stale/concurrent restore rejects |
 | 13 | Passed | Real delete/delete-last leaves protected empty page; cross-page merge protects both pages, moved content occurs once after rerun; stale destination writes neither page |
 | 14 | Passed | Source removal retires active translation membership while history survives; same-ID source return recovers correction; restored source/rendering covered; section retirement removes active TOC reference with provenance/history retained |
@@ -197,20 +264,21 @@ unavailable check is counted as a pass. All numbered spec checkboxes stay open.
 | 18 | Passed | All four saves require baseVersion, missing 400/stale 409 with currentVersion and no write; shared writer/persisted-running guards; queued publication checks; Studio three-way draft recovery with explicit overlap choices |
 | 19 | Passed for stamping only | Four new CLI/DAG output kinds stamped AI at actual registered persistence boundaries; no full CLI preservation or SPEC-0010 completion claim |
 
-### Outstanding decisions and verification limits
+### Remaining release gates and follow-up
 
-- **Blocked on human decisions:** approval of the AC-2 reconciliation, ADR/no-new-
-  ADR confirmation, and coordination of easy-read ownership and the full
-  Storyboard-rerun follow-up. These are not silently added to this implementation.
-  SPEC-0003 mode-change behavior also needs integration coordination before its
-  merge; this PR does not make protected old-mode pages silently replaceable.
-- **Not run:** Mathematics STD 5 / `pnpm acceptance` (fixture and script absent),
-  full old-application/downgrade workflow, a custom reading-order editor flow,
-  live provider billing, signed desktop installers and release-platform runs.
-  The local combined Docker smoke and Electron API bundle do not establish
-  release acceptance.
-- **Not run:** hosted CI for these local commits, because the owner prohibited
-  pushing. The prerequisite's green hosted checks concern `a10d3fa0` only.
+- **Implementation decisions resolved under delegation:** AC-2 follows
+  SPEC-0001, ADR-024 is reused, easy-read stays with SPEC-0001/#736 and full
+  Storyboard rerun with #144. No unresolved decision blocks these four slices.
+  Human spec/PR review remains pending. SPEC-0003 must coordinate its mode-change
+  policy before integration; this PR does not silently replace old-mode pages.
+- **Not run; retained release/harness gates:** Mathematics STD 5 /
+  `pnpm acceptance` (fixture and script absent), live provider billing, signed
+  desktop installers and release-platform runs. Synthetic scale, the combined
+  Docker runtime and the Electron API bundle do not establish those results.
+- **Outside the compatibility promise:** editing or regenerating with the
+  pre-change application. Old-API reads, preview, export and current reopen were
+  exercised; an entire old Desktop UI workflow was not. A new reading-order
+  editor and full CLI preservation likewise remain outside this PR.
 - **Publication:** keep #880 based on #879's `spec/735-per-section-staleness`
   until that prerequisite merges; recheck remote heads and preserve recoverable
   refs before any later rebase/push. No descendant was merged into its ancestor.
