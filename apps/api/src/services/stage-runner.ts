@@ -1634,6 +1634,28 @@ async function runStoryboardStep(
   try {
     const config = loadBookConfig(label, booksDir, configPath)
 
+    if (isFixedLayoutBook(config)) {
+      const pages = storage.getPages()
+      const totalPages = pages.length
+      // Fixed-layout: build the positioned tree (into `fixed-layout-sectioning`)
+      // and render from it, driven off the positioned-text + image-filtering
+      // data the extract step already wrote. No LLM call. This is the
+      // web-rendering step only — the semantic `page-sectioning` is owned and
+      // already produced by the sectioning stage, so we don't re-emit its
+      // progress here (that would wrongly re-mark the sectioning stage running).
+      console.log(`[stage-run] ${label}: fixed-layout rendering for ${totalPages} pages`)
+      progress.emit({ type: "step-start", step: "web-rendering" })
+      const { processFixedLayoutPages } = await import("@adt/pipeline")
+      if (options.signal?.aborted) throw new RunCancelledError()
+      const imageUrlPrefix = `/api/books/${label}/images`
+      processFixedLayoutPages(storage, imageUrlPrefix)
+      if (options.signal?.aborted) throw new RunCancelledError()
+      publication.publish(pages.map((page) => page.pageId))
+      progress.emit({ type: "step-complete", step: "web-rendering" })
+      console.log(`[stage-run] ${label}: fixed-layout rendering complete`)
+      return
+    }
+
     const styleguideContent = loadStyleguideContent(
       config.styleguide,
       configPath,
@@ -1719,26 +1741,6 @@ async function runStoryboardStep(
     const effectiveConcurrency = config.concurrency ?? 32
     // Book typography (editable size-per-role map) — resolve once, share with all pages.
     const typography = readTypography(storage)
-
-    if (isFixedLayoutBook(config)) {
-      // Fixed-layout: build the positioned tree (into `fixed-layout-sectioning`)
-      // and render from it, driven off the positioned-text + image-filtering
-      // data the extract step already wrote. No LLM call. This is the
-      // web-rendering step only — the semantic `page-sectioning` is owned and
-      // already produced by the sectioning stage, so we don't re-emit its
-      // progress here (that would wrongly re-mark the sectioning stage running).
-      console.log(`[stage-run] ${label}: fixed-layout rendering for ${totalPages} pages`)
-      progress.emit({ type: "step-start", step: "web-rendering" })
-      const { processFixedLayoutPages } = await import("@adt/pipeline")
-      if (options.signal?.aborted) throw new RunCancelledError()
-      const imageUrlPrefix = `/api/books/${label}/images`
-      processFixedLayoutPages(storage, imageUrlPrefix)
-      if (options.signal?.aborted) throw new RunCancelledError()
-      publication.publish(pages.map((page) => page.pageId))
-      progress.emit({ type: "step-complete", step: "web-rendering" })
-      console.log(`[stage-run] ${label}: fixed-layout rendering complete`)
-      return
-    }
 
     console.log(
       `[stage-run] ${label}: rendering storyboard for ${totalPages} pages (concurrency=${effectiveConcurrency})`

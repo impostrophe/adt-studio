@@ -54,6 +54,31 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
 
 describe("Storyboard layout publication", () => {
+  it("targeted fixed-layout rendering keeps the positioned renderer and leaves other pages untouched", async () => {
+    const db = openBookDb(path.join(root, label, `${label}.db`))
+    db.run("UPDATE images SET width = ? WHERE page_id = ?", [8, "p7"])
+    db.close()
+    await run()
+    const before = store()
+    const targetTree = before.getLatestNodeData("fixed-layout-sectioning", "p2")
+    const targetRendering = before.getLatestNodeData("web-rendering", "p2")
+    const other = [before.getAllNodeVersions("fixed-layout-sectioning", "p7"), before.getAllNodeVersions("web-rendering", "p7")]
+    before.close()
+
+    const [result] = await reRenderPages([{ ...options(), label, pageId: "p2" }])
+
+    expect(render).not.toHaveBeenCalled()
+    const after = store()
+    try {
+      expect(getRenderSectioning(after, "p2")?.sections[0].sectionType).toBe("fixed-layout-page")
+      expect(after.getAllNodeVersions("fixed-layout-sectioning", "p2")).toEqual([targetTree, { ...targetTree, version: 2 }])
+      expect(after.getLatestNodeData("web-rendering", "p2")).toEqual({ ...targetRendering, version: 2 })
+      expect(result.version).toBe(2)
+      expect(result.rendering).toEqual(targetRendering?.data)
+      expect([after.getAllNodeVersions("fixed-layout-sectioning", "p7"), after.getAllNodeVersions("web-rendering", "p7")]).toEqual(other)
+    } finally { after.close() }
+  })
+
   it.each(["stage", "targeted"])("switches the active tree with %s reflowable output and retains fixed history", async (entry) => {
     await run()
     const before = store()

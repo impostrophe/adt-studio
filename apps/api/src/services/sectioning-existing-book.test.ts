@@ -146,6 +146,25 @@ it("does not publish a protected replacement against externally changed configur
   expect(readSectioningLifecycle(dir)?.sectioningReady).toBe(false)
 })
 
+it("rejects stale replacement confirmation synchronously after a previous failed run", async () => {
+  await send("config", { page_sectioning: { mode: "page" } }, "PUT")
+  expect((await run()).status).toBe("failed")
+  const s = store()
+  s.putNodeData("page-sectioning", "p2", tree("p2", 2, "manual"))
+  const before = s.getStepRuns()
+  s.close()
+  const response = await send("stages/run", { fromStage: "sectioning", toStage: "storyboard", ...replacement() })
+  if (response.status === 200) await vi.waitFor(() => expect(service.getStatus(label).active?.status).toBe("failed"))
+  expect(response.status).toBe(409)
+  expect(await response.json()).toMatchObject({ currentVersion: 2 })
+  expect(sectionPage).not.toHaveBeenCalled()
+  const after = store()
+  try { expect(after.getStepRuns()).toEqual(before) }
+  finally { after.close() }
+  expect(history("page-sectioning", "p2")).toHaveLength(2)
+  expect(history("web-rendering", "p2")).toHaveLength(1)
+})
+
 it("keeps preview and export blocked between Sectioning completion and whole-book Storyboard publication", async () => {
   expect((await send("config", { page_sectioning: { mode: "page" } }, "PUT")).status).toBe(200)
   expect((await run({ ...replacement(), toStage: "sectioning" })).status).toBe("completed")
