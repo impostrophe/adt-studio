@@ -17,7 +17,8 @@ prerequisite; no descendant was merged into an ancestor.
 
 Implementation commit: `9560f0af` plus the bundled-startup correction recorded
 in the subsequent commit. Final runtime/test head: `e906ecc6`.
-The remote branch remains `spec/708-sectioning-mode-lifecycle`; PR #884 remains
+Later delivery commits change documentation, the acceptance screenshot and trailing
+blank lines only; they do not change runtime behavior. The remote branch remains `spec/708-sectioning-mode-lifecycle`; PR #884 remains
 open against develop at `e3737abe6bd32e09302571a8f3de153cff37a365`. No push,
 force update, retarget, merge, title or description edit was made in this
 continuation. Retargeting the old published head before publishing the matching
