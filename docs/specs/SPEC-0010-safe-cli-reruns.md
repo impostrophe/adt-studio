@@ -23,7 +23,7 @@ For B1, changed-source extraction uses a **new book label/directory**. In-place 
 
 [PR #879 / SPEC-0001](https://github.com/unicef/adt-studio/pull/879) and [PR #880 / SPEC-0002](https://github.com/unicef/adt-studio/pull/880) are still proposals. References below describe required interfaces and safety properties, not approval or implementation of those PRs. This spec does not publish or depend on unpublished local revisions of them.
 
-The current freshness draft covers four downstream output families, and the preservation draft does not establish complete CLI/DAG parity or safe reuse of every stage. This spec requires that missing coverage before enabling full resume. Unknown-origin protection here is a proposed safety requirement; it must be reconciled with the preservation draft's legacy-as-AI rule.
+At drafting, the freshness proposal covered four downstream output families, and the preservation proposal did not establish complete CLI/DAG parity or safe reuse of every stage. This spec requires that coverage before enabling full resume. The implementation continuation extends the published shared policies and reconciles unknown-origin protection; see [current implementation evidence](../verification/spec-0010-full-resume.md). Human review remains pending.
 
 ## Problem (with evidence)
 
@@ -131,7 +131,7 @@ Legacy books without manifests are not automatically backfilled from today's PDF
 | SPEC-0003 | Reused extraction still must pass the Sectioning-mode rendering preflight. |
 | Stable IDs/retained media | No rerun retirement or allocator reset on reuse; preserve historical asset bytes, recordings and video assignments. |
 
-The proposed decision is recorded in [ADR 026](../DECISIONS.md#026-existing-books-require-verified-extraction-reuse). It remains proposed until this spec's blocking review questions are resolved. The implementation in this PR delivers extraction admission and verified reuse, with the documented `UNSAFE_RESUME_UNAVAILABLE` fallback. Full downstream resume remains blocked. See [the implementation evidence](SPEC-0010-implementation-evidence.md) and [operator guidance](../SAFE_EXTRACTION.md); implementation does not approve this proposed decision.
+The proposed decision is recorded in [ADR 026](../DECISIONS.md#026-existing-books-require-verified-extraction-reuse). It remains proposed until this spec's blocking review questions are resolved. The implementation in this PR extends the published SPEC-0001/0002/0003 stack with shared full-run resume, staged generation publication and artifact recovery. The documented `UNSAFE_RESUME_UNAVAILABLE` fallback remains for unavailable capabilities. See [the current implementation and acceptance evidence](../verification/spec-0010-full-resume.md) and [operator guidance](../SAFE_EXTRACTION.md); implementation does not approve this proposed decision.
 
 ## Acceptance criteria
 

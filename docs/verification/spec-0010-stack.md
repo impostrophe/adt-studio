@@ -1,5 +1,7 @@
 # SPEC-0010 published-stack continuation
 
+Historical checkpoint: the current implementation and acceptance status is in [full resume evidence](spec-0010-full-resume.md). Statements below about unavailable full-book resume describe the earlier delivery, not the current continuation. Approval remains pending.
+
 Before-edit map, 2026-10-11. This is a plan, not passing acceptance or approval.
 Target #886: `876cc2ae`; prerequisite #884: `a5670d46`, including #880
 `373619dd` and #879 `a10d3fa0`; develop: `ef31494d`.

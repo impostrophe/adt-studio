@@ -1,5 +1,7 @@
 # SPEC-0010 downstream integration requirements
 
+Historical checkpoint: the current implementation and acceptance status is in [full resume evidence](../verification/spec-0010-full-resume.md). Statements below about unavailable full-book resume describe the earlier delivery, not the current continuation. Approval remains pending.
+
 Status: proposed coordination requirements; human review remains pending.
 
 2026-10-11 implementation update: [published-stack continuation evidence](../verification/spec-0010-stack.md)

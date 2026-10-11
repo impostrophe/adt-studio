@@ -6,15 +6,18 @@ effective extraction settings, contract version, original page records, metadata
 versions and asset hashes. It does not overwrite the source, clear history,
 retire IDs, detach media or discard LLM caches.
 
-This implementation is a **partial delivery of SPEC-0010**, stacked on published
-SPEC-0003 (`a5670d46`, including SPEC-0002 and SPEC-0001). Direct `extractPDF`
-returns `reused` after verification. Supported CLI ranges now include the existing
-Sectioning–Storyboard replacement path and catalog stages: `captions` alone,
-`easy-read`, `translate`, `speech`, and contiguous ranges within the latter three.
-Catalog resume calls the **same stage executors as the API** and uses SPEC-0001's
-output signatures and SPEC-0002's protected-output decisions. It holds the writer
-from extraction verification through publication, checks persisted Sectioning
-mode/readiness, and never invokes a destructive pre-run callback.
+Full initial runs and same-label resumes now share the API stage executors and
+SPEC-0001/0002 output evidence, selection and protection policies. This extends
+those shared policies in SPEC-0010 for generated Extract, page-level Sectioning
+and Storyboard, book-level quiz/glossary/TOC generation, and packaging. The stack
+is SPEC-0001 → SPEC-0002 → SPEC-0003 → SPEC-0010; pending review does not imply a
+missing implementation prerequisite. Human specification approval remains pending.
+
+Direct `extractPDF` returns `reused` after verification. Ordinary full CLI runs
+and API `fromStage: extract` use the preservation-aware planner automatically.
+Scoped CLI ranges and HTTP `resume: true` use the same policy. The writer remains
+held from admission through publication, including queued execution-time checks.
+Current output is reused; successful completion flags alone establish no freshness.
 
 ```sh
 pnpm pipeline my-book /path/to/unchanged.pdf --books-dir /path/to/books \
@@ -30,31 +33,39 @@ and blocked identities; required unresolved output exits 1. A usable upstream
 freshness warning does not prohibit generation or export, but remains visible in
 the result. Mode-incompatible output is a separate blocking preflight.
 
-The HTTP stage endpoint accepts `resume: true` for these catalog ranges. Queued
+The HTTP stage endpoint accepts `resume: true` for downstream ranges. Queued
 requests revalidate extraction and replan when they execute. SSE completion,
-error and cancellation events carry the available summary; JSON stage/step status
-also exposes the last result in this server session. That report is not a new
-provenance store: after restart the shared catalog reassesses persisted outputs.
-No new Studio resume button is introduced; existing output controls and translated
-errors remain available.
+error and cancellation events carry the summary; JSON stage/step status also
+exposes the last result in this server session. After restart, the shared catalog
+reassesses persisted outputs. Existing Studio output review controls show the
+new generation units and offer the same exact-content keep/replacement decisions.
+A full-run summary distinguishes newly created extraction from verified reuse.
 
-**Full CLI runs and API Extract stage reruns still refuse** with
-`UNSAFE_RESUME_UNAVAILABLE`. Generated Extract steps, general Storyboard freshness,
-quiz/glossary/TOC generation and full packaging orchestration have no common
-resume coverage in the published dependencies. SPEC-0001 explicitly excludes
-those freshness families; SPEC-0003 supplies bounded structural publication,
-not full-book freshness. An Extract-only stage request includes generated steps.
-Uncovered ranges stop before content writes/provider calls. No preserved book
-enters the legacy full-run body. Review or merge of the existing stack alone
-will not supply these missing capabilities.
+Unknown or changed content evidence remains protected even when a legacy `source`
+field says AI. A required protected, missing or incompatible scope makes the run
+incomplete; a skipped unresolved scope is not success. Explicit replacement is
+bound to both reviewed content and effective inputs. Keeping Sectioning requires
+the persisted-mode preflight; a review cannot waive incompatible structure.
 
-Verified reuse refusal includes an admission-only summary. The CLI reports that
-extraction is verified reusable, downstream execution is blocked, no content was
-changed or generated, and current/stale/protected scopes have not been assessed.
-It exits 1, not success. HTTP adds a structured `summary` with these same facts
-while retaining HTTP 409 and the existing `error`/`code` fields. Invalid source
-or asset failures never report verified reuse. See the proposed
-[shared planner handoff and integration acceptance map](specs/SPEC-0010-resume-integration.md).
+Generation is staged through the Storage interface and published only after
+input/content revalidation. Provider failure, cancellation and conflicting edits
+retain prior active versions and physical assets. Book-level generation units
+may rerun their own unit when relevant inputs change; normal ordered-input caches
+still avoid duplicate requests. Other current units and retained pages are not
+rewritten. Manual quiz/glossary replacement requires an explicit reviewed decision
+and still preserves previous versions and retired identities.
+
+Packaging builds a real bundle in a book-local attempt directory. File inventories
+and byte-based input fingerprints invalidate missing or corrupted artifacts.
+Publication retains the previous bundle and a durable rename journal; a subsequent
+admitted writer recovers an interrupted switch. Readers refuse unresolved switches.
+Old bundle generations and failed attempts remain in the book as recoverable assets.
+No timeout-based deletion of an anonymous SQLite mutex is introduced.
+
+`UNSAFE_RESUME_UNAVAILABLE` remains the fail-closed fallback when a requested
+capability or required upstream rendering is unavailable. Its admission-only
+summary never claims completed downstream work. Invalid source or asset failures
+never report verified reuse. See [full implementation evidence](verification/spec-0010-full-resume.md).
 
 ## New-source workflow
 

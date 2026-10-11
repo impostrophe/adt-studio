@@ -20,7 +20,7 @@ already holds its number — check both before taking one
 | SPEC-0008 | Stable identifiers and reading order (retrospective)            | draft  | TBD         | Block 1   |
 | [SPEC-0015](SPEC-0015-nano-banana-image-models.md) | Nano Banana image models | in-review | @elasticsounds | #579 / #904 |
 
-| [SPEC-0010](SPEC-0010-safe-cli-reruns.md) | Safe CLI reruns and extraction admission | in-review | @ksokolovic | [Stacked implementation evidence](../verification/spec-0010-stack.md); safe extraction and scoped catalog resume; full-book resume remains unavailable; approval pending |
+| [SPEC-0010](SPEC-0010-safe-cli-reruns.md) | Safe CLI reruns and extraction admission | in-review | @ksokolovic | [Full implementation evidence](../verification/spec-0010-full-resume.md); safe extraction and shared full-book resume on SPEC-0003/0002/0001; approval pending |
 
 Legacy notes, from before this process existed, now in [`docs/analysis/`](../analysis/):
 [SECTIONING_CROSSWORD_BUG.md](../analysis/SECTIONING_CROSSWORD_BUG.md),
