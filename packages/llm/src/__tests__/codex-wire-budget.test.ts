@@ -3,6 +3,7 @@
 // These original assertions exposed internal continuations; the forwarding gate
 // must satisfy them without hiding or relabeling any upstream request.
 import http from "node:http"
+import { gzipSync } from "node:zlib"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -22,7 +23,7 @@ describe.skipIf(!executable)("real Codex CLI automatic budget", () => {
   let dir: string
   let server: http.Server
   let origin: string
-  let mode: number | "quota" | "valid" | "invalid" | "closed" | "reset" | "truncated" | "hold" | "tool"
+  let mode: number | "quota" | "gzip-quota" | "no-retry" | "valid" | "invalid" | "closed" | "reset" | "truncated" | "hold" | "tool"
   let calls: Array<{
     authorization?: string
     account?: string
@@ -84,6 +85,16 @@ describe.skipIf(!executable)("real Codex CLI automatic budget", () => {
       if (mode === "hold") return
       if (mode === "reset") {
         req.socket.destroy()
+        return
+      }
+      if (mode === "no-retry") {
+        res.writeHead(503, { "content-type": "application/json", "x-should-retry": "false" })
+        res.end(JSON.stringify({ error: { type: "overloaded_error", message: "Synthetic local failure" } }))
+        return
+      }
+      if (mode === "gzip-quota") {
+        res.writeHead(429, { "content-type": "application/json", "content-encoding": "gzip" })
+        res.end(gzipSync(JSON.stringify({ error: { type: "insufficient_quota", message: "Synthetic local failure" } })))
         return
       }
       if (typeof mode === "number" || mode === "quota") {
@@ -225,14 +236,14 @@ describe.skipIf(!executable)("real Codex CLI automatic budget", () => {
     timeoutMs: 15000,
   }
 
-  it.each(["quota", 503, 429, 403, "invalid", "closed", "reset", "truncated"] as const)(
+  it.each(["quota", "gzip-quota", "no-retry", 503, 429, 403, "invalid", "closed", "reset", "truncated"] as const)(
     "counts actual requests for %s",
     async (failure) => {
       mode = failure
       const error = await model()
         .generateObject(request)
         .catch((error: unknown) => error)
-      const expected = failure === "quota" || failure === 403 ? 1 : 3
+      const expected = failure === "quota" || failure === "gzip-quota" || failure === "no-retry" || failure === 403 ? 1 : 3
       expect(calls).toHaveLength(expected)
       expect(error).toMatchObject({ providerCalls: expected })
       expect(calls.every((call) => call.authorization === `Bearer ${apiKey}`)).toBe(true)

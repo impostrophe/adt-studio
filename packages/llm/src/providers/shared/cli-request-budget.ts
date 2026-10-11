@@ -3,6 +3,7 @@ import http, { type IncomingHttpHeaders, type RequestOptions } from "node:http"
 import https from "node:https"
 import tls from "node:tls"
 import { randomBytes } from "node:crypto"
+import * as zlib from "node:zlib"
 import { LLMValidationError } from "../../errors.js"
 import type { TokenUsage } from "../../types.js"
 
@@ -25,8 +26,11 @@ export async function createCliRequestBudget(options: {
   let blocked = false
   let status: number | undefined
   let retryAfter: string | undefined
+  let explicitlyNonRetryable = false
   let transportError: unknown
-  let response = ""
+  const responseChunks: Buffer[] = []
+  let responseBytes = 0
+  let responseEncoding: string | undefined
   const requests = new Set<http.ClientRequest>()
   const server = http.createServer((incoming, outgoing) => {
     const prefix = `/${token}/`
@@ -60,6 +64,13 @@ export async function createCliRequestBudget(options: {
     const headers = { ...incoming.headers, host: destination.host }
     delete headers.connection
     delete headers["proxy-authorization"]
+    // Never negotiate an encoding this runtime cannot inspect. Older supported
+    // Node versions lack zstd, even when the external CLI advertises it.
+    if (headers["accept-encoding"]) {
+      headers["accept-encoding"] = headers["accept-encoding"].split(",")
+        .filter((entry) => supportedEncoding(entry.split(";")[0].trim().toLowerCase()))
+        .join(",") || "identity"
+    }
     const send = async () => {
       const transport = await transportOptions(destination, options.env, signal, options.clientTls)
       if (signal.aborted) return
@@ -77,11 +88,15 @@ export async function createCliRequestBudget(options: {
           status = result.statusCode
           const delay = result.headers["retry-after"]
           if (typeof delay === "string" && delay.length <= 128) retryAfter = delay
+          explicitlyNonRetryable = result.headers["x-should-retry"] === "false"
           outgoing.writeHead(result.statusCode ?? 502, result.headers)
+          responseEncoding = result.headers["content-encoding"]
           result.on("data", (chunk: Buffer) => {
-            // Only bounded in-memory error/usage evidence; no request headers/body.
-            if (response.length < 65536)
-              response += chunk.toString("utf8").slice(0, 65536 - response.length)
+            // Keep wire forwarding untouched. Bound both captured compressed
+            // bytes and decoded diagnostic evidence; never retain request data.
+            const retained = chunk.subarray(0, Math.max(0, RESPONSE_EVIDENCE_LIMIT - responseBytes))
+            if (retained.length) responseChunks.push(Buffer.from(retained))
+            responseBytes += retained.length
           })
           result.on("error", (error) => {
             transportError = error
@@ -134,6 +149,7 @@ export async function createCliRequestBudget(options: {
     },
     check() {
       options.signal.throwIfAborted()
+      const response = decodeResponseEvidence(Buffer.concat(responseChunks), responseEncoding)
       if (status && status >= 400)
         throw new APICallError({
           message: "Provider request failed",
@@ -141,6 +157,7 @@ export async function createCliRequestBudget(options: {
           requestBodyValues: {},
           statusCode: status,
           responseBody: response,
+          ...(explicitlyNonRetryable ? { isRetryable: false } : {}),
           ...(retryAfter ? { responseHeaders: { "retry-after": retryAfter } } : {}),
         })
       if (transportError) throw transportError
@@ -158,6 +175,37 @@ export async function createCliRequestBudget(options: {
       abort()
       await new Promise<void>((resolve) => server.close(() => resolve()))
     },
+  }
+}
+
+const RESPONSE_EVIDENCE_LIMIT = 65536
+const nativeZstd = (zlib as typeof zlib & {
+  zstdDecompressSync?: (body: Buffer, options: { maxOutputLength: number }) => Buffer
+}).zstdDecompressSync
+function supportedEncoding(encoding: string): boolean {
+  return ["identity", "gzip", "x-gzip", "deflate", "br"].includes(encoding) ||
+    (encoding === "zstd" && !!nativeZstd)
+}
+
+/** Content-Encoding applies to the wire bytes, not the CLI's decoded body.
+ * Decode only the bounded diagnostic copy, in reverse encoding order. Broken,
+ * unsupported or oversized evidence remains unknown; never interpret compressed
+ * bytes as text or allocate an unbounded decompression result. */
+function decodeResponseEvidence(body: Buffer, encoding?: string): string {
+  const encodings = (encoding ?? "identity").split(",").map((value) => value.trim().toLowerCase())
+  if (encodings.length > 4) return ""
+  try {
+    for (const value of encodings.reverse()) {
+      const options = { maxOutputLength: RESPONSE_EVIDENCE_LIMIT }
+      if (value === "gzip" || value === "x-gzip") body = zlib.gunzipSync(body, options)
+      else if (value === "deflate") body = zlib.inflateSync(body, options)
+      else if (value === "br") body = zlib.brotliDecompressSync(body, options)
+      else if (value === "zstd" && nativeZstd) body = nativeZstd(body, options)
+      else if (value !== "identity") return ""
+    }
+    return body.toString("utf8")
+  } catch {
+    return ""
   }
 }
 

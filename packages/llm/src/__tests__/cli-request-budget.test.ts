@@ -1,7 +1,9 @@
 import http from "node:http"
 import net from "node:net"
+import * as zlib from "node:zlib"
 import { afterEach, expect, it, vi } from "vitest"
 import { createCliRequestBudget } from "../providers/shared/cli-request-budget.js"
+import { classifyLLMError } from "../errors.js"
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -25,6 +27,82 @@ async function budget(
   cleanup.push(() => gate.close())
   return gate
 }
+
+async function wireResponse(url: string, encoding = "gzip, deflate, br, zstd, future-encoding") {
+  return new Promise<{ bytes: Buffer; encoding?: string }>((resolve, reject) => {
+    const req = http.request(url, { method: "POST", headers: { "accept-encoding": encoding } }, async (res) => {
+      try {
+        const chunks: Buffer[] = []
+        for await (const chunk of res) chunks.push(chunk)
+        resolve({ bytes: Buffer.concat(chunks), encoding: res.headers["content-encoding"] })
+      } catch (error) { reject(error) }
+    })
+    req.on("error", reject)
+    req.end("fixture")
+  })
+}
+const zstdCompress = (zlib as typeof zlib & { zstdCompressSync?: (body: Buffer) => Buffer }).zstdCompressSync
+const encoders: Array<[string, (body: Buffer) => Buffer]> = [
+  ["gzip", zlib.gzipSync], ["deflate", zlib.deflateSync], ["br", zlib.brotliCompressSync],
+  ["gzip, br", (body) => zlib.brotliCompressSync(zlib.gzipSync(body))],
+  ...(zstdCompress ? [["zstd", zstdCompress] as [string, (body: Buffer) => Buffer]] : []),
+]
+it.each(encoders)("classifies %s quota evidence without changing forwarded bytes", async (encoding, encode) => {
+  const body = JSON.stringify({ error: { type: "insufficient_quota", message: "Synthetic échec" } })
+  const bytes = encode(Buffer.from(body))
+  let calls = 0, accepted: string | undefined
+  const origin = await listen(http.createServer((req, res) => {
+    calls++
+    accepted = req.headers["accept-encoding"]
+    res.writeHead(429, { "content-encoding": encoding, "content-type": "application/json" })
+    res.write(bytes.subarray(0, 3))
+    res.end(bytes.subarray(3))
+  }))
+  const gate = await budget(origin)
+  expect(await wireResponse(`${gate.url}/responses`)).toEqual({ bytes, encoding })
+  expect(accepted).not.toContain("future-encoding")
+  expect(accepted?.includes("zstd")).toBe(!!zstdCompress)
+  const error = (() => { try { gate.check() } catch (error) { return error } })()
+  expect(error).toMatchObject({ responseBody: body })
+  expect(classifyLLMError(error)).toMatchObject({ retryable: false, errorClass: "non-retryable" })
+  expect(calls).toBe(1)
+})
+it.each(["malformed", "oversized"])("bounds %s compressed diagnostic evidence while forwarding the response", async (mode) => {
+  const bytes = mode === "malformed" ? Buffer.from("not gzip") : zlib.gzipSync(Buffer.alloc(1024 * 1024, "x"))
+  const origin = await listen(http.createServer((_req, res) => {
+    res.writeHead(429, { "content-encoding": "gzip" })
+    res.end(bytes)
+  }))
+  const gate = await budget(origin)
+  expect((await wireResponse(`${gate.url}/responses`)).bytes).toEqual(bytes)
+  expect(() => gate.check()).toThrow(expect.objectContaining({ responseBody: "", statusCode: 429 }))
+})
+it("retains compressed SSE usage when the continuation is denied", async () => {
+  const bytes = zlib.gzipSync('data: {"message":{"usage":{"input_tokens":7,"output_tokens":0}}}\n\ndata: {"usage":{"output_tokens":4}}\n\n')
+  const origin = await listen(http.createServer((_req, res) => {
+    res.writeHead(200, { "content-encoding": "gzip", "content-type": "text/event-stream" })
+    res.end(bytes)
+  }))
+  const gate = await budget(origin)
+  await wireResponse(`${gate.url}/messages`)
+  await fetch(`${gate.url}/messages`, { method: "POST" }).catch(() => {})
+  expect(() => gate.check()).toThrow(expect.objectContaining({ usage: { inputTokens: 7, outputTokens: 4 } }))
+})
+it.each([
+  [503, "false", "overloaded_error", false],
+  [503, "true", "overloaded_error", true],
+  [429, "true", "insufficient_quota", false],
+  [401, "true", "authentication_error", false],
+] as const)("preserves provider retry guidance for status %s, guidance %s and type %s", async (status, guidance, type, retryable) => {
+  const origin = await listen(http.createServer((_req, res) => {
+    res.writeHead(status, { "x-should-retry": guidance, "content-type": "application/json" })
+    res.end(JSON.stringify({ error: { type, message: "Synthetic local failure" } }))
+  }))
+  const gate = await budget(origin)
+  await wireResponse(`${gate.url}/messages`)
+  const error = (() => { try { gate.check() } catch (error) { return error } })()
+  expect(classifyLLMError(error)).toMatchObject({ retryable, statusCode: status })
+})
 it("reserves the single upstream slot before concurrent requests can reach transport", async () => {
   let calls = 0
   const origin = await listen(
