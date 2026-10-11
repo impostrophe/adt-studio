@@ -14,7 +14,7 @@ repair, tool turns and token continuations cannot acquire another slot. Each
 facade retry opens a new bounded slot. This does not depend on observing stdout
 or killing the process before its next request.
 
-All21 executable cases passed after review fixes: transient/invalid/truncated
+All 21 executable cases passed after review fixes: transient/invalid/truncated
 rounds use at most3 requests for maxRetries2; auth and structured quota failures
 use1; Codex unexpected tool output uses1 with maxRetries0; valid output uses1;
 external cancellation sends no follow-up. Actual forwarding callbacks distinguish
@@ -55,6 +55,10 @@ pnpm exec vitest run packages/llm/src/__tests__/claude-wire-budget.test.ts \
   packages/llm/src/__tests__/cli-request-budget.test.ts \
   packages/llm/src/__tests__/cli-request-budget-mtls.test.ts
 ```
+
+The final combined command passed **37 tests**: 21 actual-executable cases and
+16 gate/proxy/mTLS cases (`wire-final.log`). This rerun includes the final typed
+HTTP error and bounded Retry-After handling.
 
 Detailed local logs: `tmp/spec0013-oct12/wire-baseline.log`,
 `wire-review-fixes.log` and `review/{quota,quota-recheck,bedrock,bedrock-recheck,mtls-recheck}.log`.

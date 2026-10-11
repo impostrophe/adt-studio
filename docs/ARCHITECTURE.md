@@ -293,7 +293,13 @@ disabled. Parse repair and semantic validation feed back through that same
 budget. Valid cache entries are schema-validated and are recorded separately
 from provider calls; invalid output is never published as a successful cache
 entry. Terminal errors expose bounded classifications, not raw provider bodies.
-External Codex/Claude CLI internals are outside the verified HTTP request count.
+Codex and Claude structured-output attempts use an ephemeral loopback forwarding
+gate. It reserves one provider request before upstream egress, so executable tool,
+token or transport continuations cannot multiply the facade budget. Authentication
+headers remain owned by the executable; the gate preserves configured upstream
+routing, proxy and Claude mTLS. Unsupported alternate Claude backend selectors
+fail before spawn. Real installed-executable probes are opt-in and must be run
+separately from the default suite; see [provider evidence](verification/spec-0013-provider-wire.md).
 
 The page-error broker binds each pending decision and bulk policy to a live
 book/run. The decision route validates ownership and resolves at most once;
@@ -302,11 +308,21 @@ listeners stop unresolved decisions after a 30-second grace period. A connected
 but unanswered decision stops after ten minutes. No decision database or
 restart auto-resume is added.
 
-SPEC-0013 is partially implemented. Interactive page Retry remains unavailable:
-shared safe admission, input/output protection and freshness prerequisites are
-not implemented together. Existing Skip/Stop behavior is not evidence that
-protected reruns or skipped-result readiness satisfy the complete spec. See the
-[acceptance evidence](specs/SPEC-0013-implementation-evidence.md).
+Interactive Retry is restricted to Image Meaningfulness. One accepted decision
+grants one bounded round for its captured page inputs; re-exhaustion creates a new
+decision. Shared writer admission, captured prompt/input/protection evidence and
+generation staging guard Retry preflight and page publication. Successful sibling
+pages stay committed and are reused, including their segmentation/cropping proof.
+Protected filtering is retained rather than recertified as generated output.
+
+Skip retains source identities and committed filtering/history/media. Durable
+step/page recovery records qualify generation and output catalog readiness; only
+a successful committed recovery clears the corresponding warning. Missing or
+invalid filtering blocks new dependent work. Stop/cancel cannot publish staged
+work or admit dependent paid passes. Headless callers fail without a dialog;
+process restart retains committed data and reports interruption without automatic
+paid work. See the current [acceptance evidence](verification/spec-0013-full-continuation.md).
+Human specification approval remains pending.
 
 ## Key File Reference
 

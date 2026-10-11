@@ -1,5 +1,10 @@
 # SPEC-0013 implementation review — 2026-09-25
 
+> Historical September checkpoint. The implementation and dependency gaps below
+> are superseded by the [October continuation evidence](../verification/spec-0013-full-continuation.md)
+> and [independent review](../verification/spec-0013-independent-review.md).
+> The original findings and executed results are preserved unchanged below.
+
 The review started at local `75de501c` on `spec/685-page-failure-recovery`,
 against develop `737d331418d13f930955504e8288ee26ec1b20ba`. It independently
 re-evaluates the implementation against the published specification, issue #685,

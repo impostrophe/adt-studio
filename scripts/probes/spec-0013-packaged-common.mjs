@@ -26,5 +26,5 @@ export async function exercisePackagedRecovery({ request, books, restart }) {
   assert.deepEqual(await check(), initial)
   assert.deepEqual(await request("/books/momograde1/pages/pg005"), before)
   assert.deepEqual(assets(), beforeAssets)
-  return { ...initial, durableSkip: true, captionWarning: true, interrupted: true, restartWithoutWork: true, unchangedPageHistory: true, unchangedAssetCount: Object.keys(beforeAssets).length }
+  return { ...initial, durableSkip: true, captionWarning: true, interrupted: true, restartWithoutWork: true, unchangedPageDataAndVersions: true, unchangedAssetCount: Object.keys(beforeAssets).length }
 }

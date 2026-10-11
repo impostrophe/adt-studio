@@ -1,5 +1,10 @@
 # SPEC-0013 implementation evidence
 
+> Historical September checkpoint. The implementation and dependency gaps below
+> are superseded by the [October continuation evidence](../verification/spec-0013-full-continuation.md)
+> and [independent review](../verification/spec-0013-independent-review.md).
+> The original findings and executed results are preserved unchanged below.
+
 Implementation before human approval was explicitly authorized on 2026-09-25. The spec remains in-review, with no approvers. No release verification is claimed.
 
 ## Baseline and dependency decisions (before implementation)

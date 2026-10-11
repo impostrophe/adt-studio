@@ -8,24 +8,23 @@ issues: ["#685"]
 prs: ["#889"]
 adr: ""
 created: 2026-09-22
-updated: 2026-09-26
+updated: 2026-10-12
 ---
 
-## Implementation status (2026-09-26)
+## Implementation status (2026-10-12)
 
-Implementation before approval was explicitly authorized for this PR. Human
-review remains pending; status and approvers are unchanged. The local branch
-contains the bounded HTTP retry/classification, cache/cancellation, diagnostic
-and run-owned decision-handling slice, including persistent Skip diagnostics.
-Actual external CLI tests still expose a request-budget failure.
-**The full spec is not implemented.**
-Interactive Meaningfulness Retry, safe replacement and qualified skipped-result
-readiness remain blocked on shared admission/protection/freshness mechanisms.
-Retry is rejected without consuming the pending decision; no alternate
-preservation subsystem is introduced. See the complete
-[AC-to-evidence matrix](SPEC-0013-implementation-evidence.md) for executed checks,
-dependency evidence and remaining limits. These local commits have not been
-pushed or release-verified.
+Implementation before approval was explicitly authorized. The complete functional
+contract is now implemented on published SPEC-0012, including interactive
+Meaningfulness-only Retry, guarded page checkpoints, durable qualified Skip and
+pre-egress provider request budgets. Human review remains pending; status,
+approvers and acceptance checkboxes are unchanged.
+
+See the current [18-criterion evidence matrix](../verification/spec-0013-full-continuation.md),
+[separate adversarial review](../verification/spec-0013-independent-review.md) and
+[actual executable request evidence](../verification/spec-0013-provider-wire.md).
+The September partial-delivery reports are retained as historical evidence;
+their missing-dependency and escaped-request findings have been addressed.
+Local/hosted checks are not release certification or human acceptance.
 
 ## Decision under review
 
@@ -35,7 +34,7 @@ Known transient provider/transport failures and invalid model output use the con
 
 ### Coordination with existing specs
 
-[PR #879 / SPEC-0001](https://github.com/unicef/adt-studio/pull/879) and [PR #880 / SPEC-0002](https://github.com/unicef/adt-studio/pull/880) are still proposals. References below describe required interfaces and safety properties, not approval or implementation of those PRs. This spec does not publish or depend on unpublished local revisions of them.
+Published implementations of SPEC-0001 (#879), SPEC-0002 (#880), SPEC-0003 (#884), SPEC-0010 (#886), SPEC-0011 (#887) and SPEC-0012 (#888) supply the shared admission, freshness, preservation, captured-prompt and synchronization mechanisms. PR #889 is stacked on SPEC-0012 `d9dac25357dd971e4c970ebf19edc778468fb976`. Their human approval remains pending. No unpublished dependency revision or SPEC-0009 dependency is introduced.
 
 Retained-result recovery requires non-destructive run admission and protection of existing filtering/output state. Those are integration requirements, not a claim that the current freshness/preservation PRs cover every retryable stage or CLI path. Unsupported replacement cases must retain data and stop.
 
