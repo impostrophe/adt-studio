@@ -30,8 +30,8 @@ This is **not** a signed/notarized installer, full Desktop UI, or release test.
 
 Docker: rebuilt the actual `app` target, exercised nginx/API and recreated the
 container with the same disposable books volume. SPA `/` and its referenced
-`/assets/index-B_OtGScT.js` returned 200. Read-only prompt/template mounts rejected
-writes and preserved their hashes. Image ID:
+`/assets/index-B_OtGScT.js` returned 200. Read-only prompt/template mounts preserved their hashes; an attempted prompt
+write was rejected. Image ID:
 `sha256:4edb06fb0d61cb45596296dcd6d7a717f2f1c2b71fd23aacdb7fca8b26731fc2`.
 The smoke checks do not make an external model request or certify provider,
 signing, updater, installer, or other operating-system behavior.

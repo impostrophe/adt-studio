@@ -1,5 +1,8 @@
 # SPEC-0012 continuation: force-fresh prerequisite — 26 September 2026
 
+> Historical snapshot. The [12 October full continuation](../verification/spec-0012-full-continuation.md)
+> supersedes its completion estimates and missing-dependency statements.
+
 The previous 35% estimate described the delivered read-only synchronization
 slice. It was not a hard implementation ceiling. Rechecking the remaining work
 identified an independently implementable prerequisite: issue #731's cache-read

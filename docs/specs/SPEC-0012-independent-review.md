@@ -1,5 +1,8 @@
 # SPEC-0012 implementation review — 25 September 2026
 
+> Historical snapshot. The [12 October full continuation](../verification/spec-0012-full-continuation.md)
+> supersedes its completion estimates and missing-dependency statements.
+
 This is the 25 September review snapshot. The subsequent
 [26 September continuation](SPEC-0012-force-fresh-evidence.md) implements the
 force-fresh prerequisite and updates completion/dependency evidence.

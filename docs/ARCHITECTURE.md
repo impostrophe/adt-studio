@@ -239,14 +239,20 @@ Zod contracts in `packages/types/src/sectioning-sync.ts`, and its read adapter i
 `apps/api/src/services/sectioning-sync.ts`. Studio shows persistent notices in the
 Sectioning and Storyboard editors, including the fixed-layout semantic boundary.
 
-This is the first SPEC-0012 rollout slice. Legacy renderings have no trusted source
-and protection provenance and remain unverified even when their text matches. GET
-never patches them. The classifier can produce a narrow text candidate from an
-explicit trusted proof, but no production writer supplies that proof yet. Save
-propagation and targeted repair must integrate shared writer admission, protection,
-scoped freshness, mode preflight and force-fresh rendering before activation. The
-existing atomic Storyboard save remains in place; its downstream deletion behavior
-is still an unresolved dependency, not a preservation guarantee.
+Both Sectioning-only and paired Storyboard saves use the server-owned
+`apps/api/src/services/storyboard-save.ts` transaction under shared book writer
+admission. They validate expected source/render versions, classify trusted
+historical per-section generation evidence, preserve unpatchable/manual/unknown
+renderings, and return committed versions with synchronization results. Catalog
+reconciliation uses the shared freshness model without rewriting unaffected HTML
+or deleting downstream history/media. Matching text alone never proves authorship.
+
+Targeted repair reuses task service, mode preflight, captured prompt inputs and
+staged publication. Stable section IDs select the output; cancellation, stale
+versions and rejected correspondence retain prior output. Custom/protected cases
+use retention review and supported editing. GET is read-only; fixed positioned
+pages retain the explicit semantic editing limitation. See
+[full implementation evidence](verification/spec-0012-full-continuation.md).
 
 ---
 
@@ -259,8 +265,8 @@ fresh output writes through; validation retries also update the original request
 key for ordinary identical-input reuse. Provider failure, cancellation and
 rejected fresh output retain prior cache entries. Ordinary pipeline calls retain
 their existing caching behavior. This policy does not establish content provenance
-or authorize replacing protected output; SPEC-0012's targeted repair integration
-still requires shared protection, admission and scoped invalidation.
+or authorize replacing protected output; SPEC-0012 targeted repair separately
+enforces shared protection, admission and scoped invalidation.
 
 ## Real-Time Progress: SSE
 

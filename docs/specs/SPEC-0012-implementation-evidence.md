@@ -1,5 +1,8 @@
 # SPEC-0012 implementation evidence
 
+> Historical snapshot. The [12 October full continuation](../verification/spec-0012-full-continuation.md)
+> supersedes its completion estimates and missing-dependency statements.
+
 This is the first, read-only rollout slice of SPEC-0012, not the full implementation.
 The specification remains in review, with no approvers. Implementation before
 approval was explicitly authorized on 2026-09-25. No release verification is claimed.

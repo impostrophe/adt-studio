@@ -8,7 +8,7 @@ issues: ["#515", "#580"]
 prs: ["#888"]
 adr: ""
 created: 2026-09-22
-updated: 2026-09-25
+updated: 2026-10-12
 ---
 
 ## Decision under review
@@ -162,12 +162,15 @@ PR #581 explicitly reports no real-book verification. Its synthetic tests are us
 ## Rollout
 
 Implementation began before approval under explicit task authorization on 2026-09-25.
-The first slice implements the pure classifier, read-only correspondence projection and
-Studio notices. Automatic save propagation, transactional version/protection integration
-and targeted repair remain blocked on the shared dependencies. Existing saves still
-have the downstream-clearing limitation. See [implementation evidence](SPEC-0012-implementation-evidence.md)
-for the complete AC matrix and verification limits. This is not full implementation,
-spec approval, release verification, or completion of #515/#580.
+The full continuation on 2026-10-12 integrates the recovered classifier/read/notice
+work with the published SPEC-0001/0002/0003/0010/0011 implementation stack. The
+shared atomic Save, deterministic propagation, protected targeted repair and scoped
+invalidation are implemented. See [full continuation evidence](../verification/spec-0012-full-continuation.md),
+[independent review](../verification/spec-0012-independent-full-review.md) and
+[platform checks](../verification/spec-0012-platform-acceptance.md). Earlier evidence
+files are historical snapshots. Approval remains pending; the checklist above is
+not self-approved. The fixed-layout product decision and issue/release acceptance
+remain distinct from implementation and development verification.
 
 Land the pure classifier and authoritative read projection, then integrate the current save transaction and UI. Enable deterministic propagation only for proven compatible/protected-safe inputs; leave ambiguous cases visible for review. Integrate scoped downstream invalidation before claiming #580 fully addressed. A rollback can disable patching and retain drift notices; it cannot erase semantic edits, historical render versions or provenance.
 
