@@ -78,7 +78,7 @@ export function SectioningSettings({ bookLabel, tab = "section-types" }: { bookL
   const { data: bookConfigData } = useBookConfig(bookLabel)
   const { data: activeConfigData } = useActiveConfig(bookLabel)
   const updateConfig = useUpdateBookConfig()
-  const modeConfirmation = useSectioningModeConfirmation(bookLabel, updateConfig.isPending)
+  const modeConfirmation = useSectioningModeConfirmation(bookLabel, updateConfig.isPending || !bookConfigData || !activeConfigData)
   const queryClient = useQueryClient()
 
   // Section Types state

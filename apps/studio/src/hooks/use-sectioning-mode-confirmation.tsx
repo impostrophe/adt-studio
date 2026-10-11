@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Trans, useLingui } from "@lingui/react/macro"
 import type { SectioningMode } from "@adt/types"
@@ -17,8 +17,8 @@ export function useSectioningModeConfirmation(label: string, saving: boolean) {
     queryKey: ["books", label, "sectioning-mode-state"],
     queryFn: () => api.getSectioningModeState(label),
   })
-  const [open, setOpen] = useState(false)
-  const action = useRef<(() => void) | null>(null)
+  const [action, setAction] = useState<{ label: string; apply: () => void } | null>(null)
+  useEffect(() => { setAction(null) }, [label])
   const busy = saving || configSaving || isRunning || runningCount > 0 || !state.data || state.isError || state.isFetching
   return {
     busy,
@@ -27,13 +27,12 @@ export function useSectioningModeConfirmation(label: string, saving: boolean) {
       if (busy) return
       if (mode === state.data?.effectiveMode) { apply(); return }
       if (state.data?.hasOutput) {
-        action.current = apply
-        setOpen(true)
+        setAction({ label, apply })
       } else apply()
     },
     dialog: <CascadeResetDialog
-      open={open}
-      onOpenChange={(next) => { setOpen(next); if (!next) action.current = null }}
+      open={action?.label === label}
+      onOpenChange={(next) => { if (!next) setAction(null) }}
       affectedStages={[]}
       headerStageSlug="sectioning"
       title={<Trans>Change Sectioning mode?</Trans>}
@@ -42,11 +41,10 @@ export function useSectioningModeConfirmation(label: string, saving: boolean) {
       confirmColorClass="bg-sky-600 hover:bg-sky-700"
       confirmDisabledReason={busy ? t`Wait for the current operation to finish.` : undefined}
       onConfirm={() => {
-        if (busy) return
-        const apply = action.current
-        action.current = null
-        setOpen(false)
-        apply?.()
+        if (busy || action?.label !== label) return
+        const apply = action.apply
+        setAction(null)
+        apply()
       }}
     />,
   }
