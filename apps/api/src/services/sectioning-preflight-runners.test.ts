@@ -129,9 +129,9 @@ describe("production preflight boundaries", () => {
 
   it("blocks the unsafe existing-book CLI/DAG fallback before source replacement", async () => {
     fs.writeFileSync(path.join(dir, `${label}.pdf`), "original PDF")
-    const incoming = path.join(root, "incoming.pdf"); fs.writeFileSync(incoming, "replacement")
+    const incoming = path.join(root, "incoming.pdf"); fs.copyFileSync(path.resolve("tests/fixtures/raven.pdf"), incoming)
     const before = history()
-    await expect(runFullPipeline({ label, booksRoot: root, pdfPath: incoming, promptsDir: root, templatesDir: root, configPath })).rejects.toThrow(/manual or unknown-origin/)
+    await expect(runFullPipeline({ label, booksRoot: root, pdfPath: incoming, promptsDir: root, templatesDir: root, configPath })).rejects.toThrow(/EXTRACTION_LEGACY/)
     expect(fs.readFileSync(path.join(dir, `${label}.pdf`), "utf8")).toBe("original PDF")
     expect(history()).toEqual(before)
   })

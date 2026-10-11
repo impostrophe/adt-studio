@@ -58,18 +58,12 @@ function acquire(dir: string): Lease {
       fd = fs.openSync(recovery, "wx", 0o600)
       if (!deadOwner(lock)) throw new BookBusyError()
       const databaseLock = path.join(dir, `${path.basename(dir)}.db.lock`)
-      const hasTransition = fs.existsSync(path.join(dir, ".sectioning-transition.json"))
-      // Outside a transition, readers were not excluded. The WASM mutex has
-      // no owner identity, so it cannot safely be attributed to the dead writer.
-      // Retain its ownership evidence and SQLite recovery files for inspection.
-      if (!hasTransition && fs.existsSync(databaseLock)) {
+      // The journal blocks newly opened readers, but cannot exclude a reader
+      // whose connection predates it. This anonymous mutex has no identity we
+      // can safely attribute to the dead writer, even during mode recovery.
+      // Preserve the lock and journal; never reclaim by elapsed time.
+      if (fs.existsSync(databaseLock)) {
         throw new BookBusyError("An interrupted book write left a database lock. Stop other ADT processes and have the book's recovery state inspected before retrying; saved recovery files have been retained.")
-      }
-      // Journal-aware readers refuse DB access during this transition. Once
-      // its owning process is confirmed dead, only its WASM mutex is stale.
-      // Keep SQLite rollback/WAL files: SQLite, not ADT, recovers transactions.
-      if (hasTransition) {
-        fs.rmSync(databaseLock, { recursive: true, force: true })
       }
       fs.unlinkSync(lock)
       create()

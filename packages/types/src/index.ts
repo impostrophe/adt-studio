@@ -561,3 +561,5 @@ export { OutputSkipRequest } from "./output-freshness.js"
 
 export { OutputDisclosureOptions } from "./output-freshness.js"
 export * from "./sectioning-lifecycle.js"
+
+export * from "./extraction.js"

@@ -1,13 +1,14 @@
 import { retainedTranslation, isProtectedContent, createSectionIdFactory, retireSectionIds } from "@adt/pipeline"
 import { assertEditVersion } from "./catalog-output-service.js"
-import { replacementConfirmed } from "./authored-output-service.js"
+import { assertAuthoredReplacement, replacementConfirmed } from "./authored-output-service.js"
 import { captureOutputReferences } from "@adt/pipeline"
 import { outputSkipped } from "@adt/pipeline"
 import { retainedCoreTts, retainedEasyRead } from "@adt/pipeline"
 import { outputIdentityKey } from "@adt/pipeline"
 import { createHash } from "node:crypto"
 import { speechPageId, reconcileSpeechInputs, translateCatalog, inputSignature, reconcileTextCatalog, readOutputCatalog, buildImageInventory, selectedForGeneration, outputEvidence, assertOutputPublication, timestampInputSignature, deriveOutputStatus } from "@adt/pipeline"
-import { prepareSectioningRun, completeSectioning, createStoryboardPublication } from "@adt/pipeline"
+import { prepareSectioningRun, completeSectioning, createStoryboardPublication, activeSectioningPages } from "@adt/pipeline"
+import { preflightSectioning, effectiveSectioningMode, SectioningPreflightError, SectioningSafetyError } from "@adt/pipeline"
 import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
@@ -927,9 +928,11 @@ export function createStageRunner(): StageRunner {
   const runner = createAdmittedStageRunner()
   return {
     run(label, options, progress) {
-      const bookDir = path.join(path.resolve(options.booksDir), label)
+      const { bookDir } = resolveBookPaths(label, options.booksDir)
       return withBookWriter(bookDir, async () => {
         prepareSectioningRun(label, options.booksDir, options.fromStage as StageName, options.toStage as StageName, options.configPath)
+        const storage = createBookStorage(label, options.booksDir)
+        try { assertAuthoredReplacement(storage, options) } finally { storage.close() }
         return runner.run(label, options, progress)
       })
     },
@@ -1378,18 +1381,25 @@ async function runSectioningStep(
   const storage = createBookStorage(label, booksDir)
 
   try {
-    const allPages = storage.getPages()
+    const config = loadBookConfig(label, booksDir, configPath)
+    const allPages = activeSectioningPages(storage, config, path.join(path.resolve(booksDir), label))
     const previous = new Map(allPages.map((page) => [page.pageId, storage.getLatestNodeData("page-sectioning", page.pageId)]))
     const pages = allPages.filter((page) => {
       const row = previous.get(page.pageId)
       return !row || !isProtectedContent(row.data as { source?: "ai" | "manual" }) || replacementConfirmed(options, "page-sectioning", page.pageId, row.version)
     })
+    const selected = new Set(pages.map((page) => page.pageId))
+    const retained = allPages.filter((page) => !selected.has(page.pageId))
+    const protectedPreflight = preflightSectioning(effectiveSectioningMode(config), retained,
+      new Map(retained.map((page) => [page.pageId, previous.get(page.pageId)?.data])))
+    if (protectedPreflight.total) throw new SectioningPreflightError(protectedPreflight)
     if (!pages.length) {
+      options.signal?.throwIfAborted()
+      completeSectioning(label, booksDir, config, configPath)
       progress.emit({ type: "step-skip", step: "page-sectioning" })
       progress.emit({ type: "step-skip", step: "translation" })
       return
     }
-    const config = loadBookConfig(label, booksDir, configPath)
     const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
     const promptEngine = createPromptEngine([bookPromptsDir, promptsDir], { basePromptModelId: config.base_prompt_model })
@@ -1561,6 +1571,10 @@ async function runSectioningStep(
           }
           options.signal?.throwIfAborted()
           const tocRetirement = storage.transaction(() => {
+            if (JSON.stringify(loadBookConfig(label, booksDir, configPath)) !== JSON.stringify(config)
+              || JSON.stringify(activeSectioningPages(storage, config, path.join(path.resolve(booksDir), label))) !== JSON.stringify(allPages)) {
+              throw new SectioningSafetyError("STORYBOARD_INPUT_CHANGED", "Configuration or source pages changed during Sectioning. Previous page output is kept; retry against current inputs.")
+            }
             const before = previous.get(page.pageId)
             assertEditVersion(storage.getLatestNodeData("page-sectioning", page.pageId)?.version, before?.version ?? 0)
             const mint = createSectionIdFactory(storage, page.pageId)
@@ -1597,7 +1611,8 @@ async function runSectioningStep(
     } else {
       progress.emit({ type: "step-skip", step: "translation" })
     }
-    if (skippedByStep.size === 0) completeSectioning(label, booksDir, config, configPath)
+    options.signal?.throwIfAborted()
+    if (failedPages.length === 0 && skippedByStep.size === 0) completeSectioning(label, booksDir, config, configPath)
   } finally {
     storage.close()
   }

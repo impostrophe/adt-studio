@@ -9671,8 +9671,11 @@ msgstr "Armazenado localmente neste computador"
 msgid "Storyboard"
 msgstr "Storyboard"
 
-msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Affected pages: {pages}."
-msgstr "O storyboard não pode ser executado no modo Por página: {total} páginas não contêm exatamente uma seção válida. Execute novamente a divisão em seções e tente de novo. Páginas afetadas: {pages}."
+#~ msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Affected pages: {pages}."
+#~ msgstr "O storyboard não pode ser executado no modo Por página: {total} páginas não contêm exatamente uma seção válida. Execute novamente a divisão em seções e tente de novo. Páginas afetadas: {pages}."
+
+msgid "Storyboard cannot run in By Page mode: {total} pages do not contain exactly one valid section. Re-run Sectioning, then try again. Incompatible manual or unknown-origin pages require explicit replacement confirmation. Affected pages: {pages}."
+msgstr "O Storyboard não pode ser executado no modo Por página: {total} páginas não contêm exatamente uma seção válida. Execute Sectioning novamente e tente de novo. Páginas incompatíveis manuais ou de origem desconhecida exigem confirmação explícita de substituição. Páginas afetadas: {pages}."
 
 msgid "Storyboard has already been run. Changes made here will not take effect until storyboard is re-run."
 msgstr "O Storyboard já foi executado. As alterações feitas aqui só terão efeito quando o Storyboard for reexecutado."

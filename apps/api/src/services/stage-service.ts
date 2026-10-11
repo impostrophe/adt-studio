@@ -294,14 +294,13 @@ export function createStageService(
         controller: new AbortController(),
         outputScope: structuredClone(options.outputScope ?? {}),
       }
-      // Admission and preparation precede the success response. Retain that
+      // Admission precedes the success response. Retain that
       // same lease across deferred execution; no competing writer can enter
       // between preparation and the runner's first instruction.
       const work = withBookWriter(resolveBookPaths(label, options.booksDir).bookDir, () => {
-        options.beforeRun?.()
         state.active = job
         return new Promise<void>((resolve) => setImmediate(() => {
-          executeJob(label, job, { ...options, beforeRun: undefined }).finally(resolve)
+          executeJob(label, job, options).finally(resolve)
         }))
       })
       void work.catch(() => {}) // executeJob records the task result.

@@ -234,7 +234,7 @@ describe("Storyboard layout publication", () => {
     const source = path.join(root, label, `${label}.pdf`)
     const incoming = path.join(root, "incoming.pdf")
     fs.writeFileSync(source, "retained source bytes")
-    fs.writeFileSync(incoming, "different incoming bytes")
+    fs.copyFileSync(path.resolve("tests/fixtures/raven.pdf"), incoming)
     const before = store()
     const history = before.getAllNodeVersions("page-sectioning", "p2")
     before.close()
@@ -242,7 +242,7 @@ describe("Storyboard layout publication", () => {
       encoding: "utf8", timeout: 15000, env: { PATH: process.env.PATH },
     })
     expect(child.status, child.stderr).toBe(1)
-    expect(child.stderr).toContain("manual or unknown-origin")
+    expect(child.stderr).toContain("EXTRACTION_LEGACY")
     expect(fs.readFileSync(source, "utf8")).toBe("retained source bytes")
     const after = store()
     try { expect(after.getAllNodeVersions("page-sectioning", "p2")).toEqual(history) }

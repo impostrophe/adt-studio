@@ -158,7 +158,11 @@ export function makeBeforeRun(label: string, fromStage: StageName, toStage: Stag
         // clearExtractedData also clears step_runs
         storage.clearExtractedData()
       } else {
-        const nodes = getStageRerunClearNodes(fromStage, toStage)
+        // Sectioning/Storyboard publish replacements only after successful
+        // generation. Keep paired HTML/positioned trees and downstream work
+        // available throughout failure, cancellation and mode changes.
+        const nodes = fromStage === "sectioning" || fromStage === "storyboard"
+          ? [] : getStageRerunClearNodes(fromStage, toStage)
         if (nodes.length > 0) {
           storage.clearNodesByType(nodes)
         }
@@ -232,7 +236,12 @@ export function createStageRoutes(
     )
 
     if (!stageService.getStatus(label).active) {
-      withBookWriter(path.join(path.resolve(booksDir), parseBookLabel(label)), () => prepareSectioningRun(label, booksDir, fromStage, toStage, configPath))
+      withBookWriter(path.join(path.resolve(booksDir), parseBookLabel(label)), () => {
+        prepareSectioningRun(label, booksDir, fromStage, toStage, configPath)
+        const storage = createBookStorage(label, booksDir)
+        try { assertAuthoredReplacement(storage, { fromStage, toStage, replaceManual, protectedReplacements }) }
+        finally { storage.close() }
+      })
     }
     const prepare = makeBeforeRun(label, fromStage, toStage, booksDir, configPath)
     const clearData = () => {

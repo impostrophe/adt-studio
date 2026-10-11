@@ -1,5 +1,5 @@
 import { catalogOutputs } from "../services/catalog-output-service.js"
-import { reconcileSpeechInputs, loadCoreTtsProfiles, scopeLegacyActivityIds, retainedEasyRead, buildEasyReadSourceBlocks } from "@adt/pipeline"
+import { reconcileSpeechInputs, loadCoreTtsProfiles, scopeLegacyActivityIds, retainedEasyRead, buildEasyReadSourceBlocks, prepareSectioningRun } from "@adt/pipeline"
 import fs from "node:fs"
 import path from "node:path"
 import { createHash } from "node:crypto"
@@ -492,6 +492,14 @@ export function createAdtPreviewRoutes(
   promptsDir = path.resolve("prompts"),
 ): Hono {
   const app = new Hono()
+  app.use("/books/:label/adt-preview/*", async (c, next) => {
+    const label = parseBookLabel(c.req.param("label"))
+    if (!fs.existsSync(path.join(path.resolve(booksDir), label))) throw new HTTPException(404, { message: "Book not found" })
+    // A mode-incompatible retained Storyboard is different from the usable
+    // stale captions/translation/speech warnings supplied by SPEC-0001.
+    prepareSectioningRun(label, booksDir, "package", "package", configPath)
+    await next()
+  })
 
   // Allow browser caching — the iframe URL includes a cache-busting version
   // parameter (v-{timestamp}) that changes on repackage, so stale content

@@ -11,6 +11,8 @@ import { openBookDb } from "./db.js"
 import { readCurrentNodeRow } from "./node-current.js"
 import { invalidateSectioningLifecycle } from "./sectioning-transition.js"
 
+const storageDirectories = new WeakMap<Storage, string>()
+
 export interface BookPaths {
   bookDir: string
   dbPath: string
@@ -66,7 +68,7 @@ export function createBookStorage(label: string, booksRoot: string): Storage {
     }
   }
 
-  return {
+  const storage: Storage = {
     bookDir: paths.bookDir,
     transaction,
 
@@ -629,6 +631,8 @@ export function createBookStorage(label: string, booksRoot: string): Storage {
       db.close()
     },
   }
+  storageDirectories.set(storage, paths.bookDir)
+  return storage
 }
 
 function clearImageFiles(imagesDir: string): void {
@@ -730,4 +734,10 @@ function ensureWithinRoot(target: string, root: string): void {
   if (target !== root && !target.startsWith(root + path.sep)) {
     throw new Error("Resolved path escapes books root")
   }
+}
+
+export function getStorageBookDir(storage: Storage): string {
+  const directory = storageDirectories.get(storage)
+  if (!directory) throw new Error("Extraction requires book-backed storage")
+  return directory
 }

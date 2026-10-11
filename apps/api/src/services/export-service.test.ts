@@ -141,7 +141,7 @@ describe("exportProject", () => {
       expect(files[".book-writer.json"]).toBeUndefined()
       expect(files[".book-writer.json.recovery"]).toBeUndefined()
       expect(JSON.parse(new TextDecoder().decode(files[".sectioning-lifecycle.json"])))
-        .toEqual({ version: 1, mode: "page", sectioningReady: false })
+        .toEqual({ version: 1, mode: "page", sectioningReady: false, storyboardPending: true })
     })
   })
 

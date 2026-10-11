@@ -37,7 +37,7 @@ export class SectioningPreflightError extends Error {
   readonly code = "SECTIONING_PREFLIGHT_FAILED"
   constructor(readonly details: SectioningPreflightResult) {
     const pages = details.displayedPages.map((p) => `${p.pageNumber} (${p.pageId})`).join(", ")
-    super(`Storyboard cannot run in By Page mode: ${details.total} page(s) do not contain exactly one valid section. Re-run Sectioning, then try Storyboard again. Affected pages: ${pages}${details.total > 20 ? ", …" : ""}.`)
+    super(`Storyboard cannot run in By Page mode: ${details.total} page(s) do not contain exactly one valid section. Re-run Sectioning, then try Storyboard again. Incompatible manual or unknown-origin pages require explicit replacement confirmation. Affected pages: ${pages}${details.total > 20 ? ", …" : ""}.`)
     this.name = "SectioningPreflightError"
   }
 }

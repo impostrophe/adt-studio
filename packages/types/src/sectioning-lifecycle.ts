@@ -3,6 +3,10 @@ import { z } from "zod"
 export const SectioningMode = z.enum(["dynamic", "page"])
 export type SectioningMode = z.infer<typeof SectioningMode>
 
+/** B1 exposes only the downstream subgraph whose preservation is implemented. */
+export const SectioningResumeStage = z.enum(["sectioning", "storyboard"])
+export type SectioningResumeStage = z.infer<typeof SectioningResumeStage>
+
 export const SectioningSourcePage = z.object({
   pageId: z.string(),
   pageNumber: z.number().int(),
@@ -23,6 +27,7 @@ export type SectioningPreflightResult = z.infer<typeof SectioningPreflightResult
 
 export const SectioningLifecycle = z.object({
   version: z.literal(1), mode: SectioningMode, sectioningReady: z.boolean(),
+  storyboardPending: z.boolean().optional(),
 })
 export type SectioningLifecycle = z.infer<typeof SectioningLifecycle>
 export const SectioningTransition = z.object({

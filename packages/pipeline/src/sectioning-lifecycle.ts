@@ -7,6 +7,7 @@ import {
 import {
   createBookStorage, withBookWriter, recoverSectioningTransition,
   readSectioningLifecycle, writeSectioningLifecycle, configHash,
+  assertExtractionReadable, resolveBookPaths,
   type Storage,
 } from "@adt/storage"
 import { loadBookConfig } from "./config.js"
@@ -54,26 +55,28 @@ export function assertSectioningCurrent(storage: Storage, config: AppConfig, boo
   assertPersistedSectioning(storage, config, bookDir)
   const lifecycle = readSectioningLifecycle(bookDir)
   if (!lifecycle?.sectioningReady || lifecycle.mode !== effectiveSectioningMode(config)) {
-    throw new SectioningSafetyError("SECTIONING_STALE", "Sectioning has not completed under the current mode, or its mode provenance is unknown. Existing content is kept. Re-run Sectioning when preservation-safe regeneration is available.")
+    throw new SectioningSafetyError("SECTIONING_STALE", "Sectioning has not completed under the current mode, or its mode provenance is unknown. Existing content is kept. Re-run Sectioning; incompatible protected pages require explicit replacement confirmation.")
   }
 }
 
-/** Safe rollout fallback while SPEC-0002's protection is unavailable. */
+/** Full extraction still lacks safe downstream resume (SPEC-0010). Sectioning
+ * reruns instead use SPEC-0002's version-bound protected replacement path. */
 export function assertSectioningReplacementSafe(storage: Storage): void {
   if (storage.getNodeItemIds("page-sectioning").length > 0) {
-    throw new SectioningSafetyError("SECTIONING_REGENERATION_BLOCKED", "Sectioning regeneration is blocked because existing manual or unknown-origin content cannot yet be protected. Saved versions are kept; mode changes do not authorize replacement.")
+    throw new SectioningSafetyError("SECTIONING_REGENERATION_BLOCKED", "Full extraction reruns cannot safely reconcile existing Sectioning. Saved manual or unknown-origin pages are kept. Run Sectioning directly, or use the verified CLI Sectioning–Storyboard range with explicit replacement confirmation.")
   }
 }
 
 export function prepareSectioningRun(label: string, booksRoot: string, from: StageName, to: StageName, configPath?: string): void {
-  const bookDir = path.join(path.resolve(booksRoot), label)
+  const { bookDir } = resolveBookPaths(label, booksRoot)
   withBookWriter(bookDir, () => {
     recoverSectioningTransition(bookDir)
+    assertExtractionReadable(bookDir)
     const config = loadBookConfig(label, booksRoot, configPath)
     const storage = createBookStorage(label, booksRoot)
     try {
       const stages = STAGE_ORDER.slice(STAGE_ORDER.indexOf(from), STAGE_ORDER.indexOf(to) + 1)
-      if (stages.includes("sectioning") || from === "extract") assertSectioningReplacementSafe(storage)
+      if (from === "extract") assertSectioningReplacementSafe(storage)
       if (from === "extract" && storage.getPages().length) {
         throw new SectioningSafetyError("SECTIONING_REGENERATION_BLOCKED", "Re-extraction of an existing book requires preservation-safe CLI/Extract admission. Existing pages and assets are kept.")
       }
@@ -81,6 +84,9 @@ export function prepareSectioningRun(label: string, booksRoot: string, from: Sta
       const lifecycle = readSectioningLifecycle(bookDir)
       if (getStageDependents("storyboard").includes(from) && lifecycle && (!lifecycle.sectioningReady || lifecycle.mode !== effectiveSectioningMode(config))) {
         throw new SectioningSafetyError("SECTIONING_STALE", "Sectioning is stale after a mode change. Downstream generation is blocked; saved output remains inspectable.")
+      }
+      if (getStageDependents("storyboard").includes(from) && lifecycle?.storyboardPending) {
+        throw new SectioningSafetyError("SECTIONING_STALE", "Storyboard still contains retained output from before Sectioning changed. Run Storyboard for the active book before generating downstream output or exporting it.")
       }
     } finally { storage.close() }
   })
@@ -91,14 +97,23 @@ export function completeSectioning(label: string, booksRoot: string, config: App
   if (JSON.stringify(current) !== JSON.stringify(config)) {
     throw new SectioningSafetyError("STORYBOARD_INPUT_CHANGED", "Configuration changed during Sectioning. The run cannot establish current output.")
   }
-  writeSectioningLifecycle(path.join(path.resolve(booksRoot), label), effectiveSectioningMode(config), true)
+  const { bookDir } = resolveBookPaths(label, booksRoot)
+  const storage = createBookStorage(label, booksRoot)
+  try {
+    // Skipping protected work is not proof of compatibility. Validate the
+    // complete persisted active window, including every retained page.
+    assertPersistedSectioning(storage, config, bookDir)
+    writeSectioningLifecycle(bookDir, effectiveSectioningMode(config), true)
+  } finally { storage.close() }
 }
 
 /** Stage rendering versions in memory, then publish together in the existing
  * SQLite transaction. Provider failures/cancellation/conflicts keep the prior
  * active versions. Debug logs/screenshots are attempt evidence, not output. */
 export function createStoryboardPublication(storage: Storage, label: string, booksRoot: string, configPath?: string) {
-  const bookDir = path.join(path.resolve(booksRoot), label)
+  const { bookDir } = resolveBookPaths(label, booksRoot)
+  recoverSectioningTransition(bookDir)
+  assertExtractionReadable(bookDir)
   const config = loadBookConfig(label, booksRoot, configPath)
   assertSectioningCurrent(storage, config, bookDir)
   const pages = activeSectioningPages(storage, config, bookDir)
@@ -149,6 +164,13 @@ export function createStoryboardPublication(storage: Storage, label: string, boo
         const downstream = getStageDependents("storyboard")
         storage.clearStepRuns(PIPELINE.filter((stage) => downstream.includes(stage.name)).flatMap((stage) => stage.steps.map((step) => step.name)))
       })
+      // Clear the conservative mode-change barrier only after the entire active
+      // rendering set commits. A crash or metadata-write failure leaves it
+      // blocked, never marks an incomplete/rolled-back layout as usable.
+      const rendered = new Set(pending.filter((row) => row.node === "web-rendering" && row.data != null).map((row) => row.itemId))
+      if (pages.every((page) => rendered.has(page.pageId))) {
+        writeSectioningLifecycle(bookDir, effectiveSectioningMode(config), true, false)
+      }
     },
   }
 }
