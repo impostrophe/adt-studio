@@ -3,7 +3,7 @@ import { msg } from "@lingui/core/macro"
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) { super(message) }
 }
-import type { OutputSkipRequest } from "@adt/types"
+import type { OutputSkipRequest, PackagingStatus } from "@adt/types"
 import type { OutputStatus, OutputSummary, OutputRunScope, OutputReviewRequest, OutputDisclosureOptions, OutputReplacement } from "@adt/types"
 
 import { sectioningErrorMessage } from "@/lib/sectioning-error"
@@ -2051,7 +2051,7 @@ export const api = {
     request<{ tasks: TaskInfoResponse[] }>(`/books/${label}/tasks`),
 
   getPackageAdtStatus: (label: string) =>
-    request<{ label: string; hasAdt: boolean; version?: string }>(
+    request<PackagingStatus>(
       `/books/${label}/package-adt/status`
     ),
 

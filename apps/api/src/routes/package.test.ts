@@ -379,6 +379,32 @@ describe("Package routes", () => {
   })
 
   describe("GET /api/books/:label/package-adt/status", () => {
+    it.each([
+      { mode: "dynamic" as const, ready: false, pending: true },
+      { mode: "dynamic" as const, ready: true, pending: true },
+      { mode: "page" as const, ready: true, pending: false },
+    ])("reports retained mode-incompatible packages without deleting them: %j", async ({ mode, ready, pending }) => {
+      createRenderedBook("retained")
+      const dir = path.join(tmpDir, "retained")
+      const pagesPath = path.join(dir, "adt", "content", "pages.json")
+      fs.mkdirSync(path.dirname(pagesPath), { recursive: true })
+      const pages = JSON.stringify([{ section_id: "pg001", href: "pg001.html" }])
+      fs.writeFileSync(pagesPath, pages)
+      writeSectioningLifecycle(dir, mode, ready, pending)
+      const response = await app.request("/api/books/retained/package-adt/status")
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ hasAdt: true, modeCompatible: false })
+      expect(fs.readFileSync(pagesPath, "utf8")).toBe(pages)
+
+      // Compatible warning-bearing output remains available under SPEC-0001.
+      writeSectioningLifecycle(dir, "dynamic", true, false)
+      fs.writeFileSync(path.join(dir, "adt", ".build-warnings"), JSON.stringify([{ kind: "orphaned-rendering", pageId: "pg001", sectionIndex: 2 }]))
+      const usable = await app.request("/api/books/retained/package-adt/status")
+      const usableStatus = await usable.json()
+      expect(usableStatus).toMatchObject({ hasAdt: true })
+      expect(usableStatus.modeCompatible).not.toBe(false)
+    })
+
     it("returns hasAdt=false when pages.json is missing", async () => {
       createTestBook("book2")
 

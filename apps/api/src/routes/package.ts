@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
-import { parseBookLabel, PackagingWarning } from "@adt/types"
+import { parseBookLabel, PackagingWarning, type PackagingStatus } from "@adt/types"
 import { createBookStorage } from "@adt/storage"
 import {
   packageAdtWeb,
@@ -14,6 +14,7 @@ import {
   mergeAccessibilityResults,
   isFixedLayoutBook,
   prepareSectioningRun,
+  SectioningSafetyError,
 } from "@adt/pipeline"
 import type { Storage } from "@adt/storage"
 import type { TaskService } from "../services/task-service.js"
@@ -23,12 +24,6 @@ const PACKAGE_VERSION_LENGTH = 16
 interface PackagingCacheState {
   cached: boolean
   version: string
-}
-
-interface PackagingStatus {
-  label: string
-  hasAdt: boolean
-  version?: string
 }
 
 interface PackagingResult {
@@ -282,6 +277,16 @@ export function createPackageRoutes(
 
     const status: PackagingStatus = { label: safeLabel, hasAdt }
     if (version) status.version = version
+    if (fs.existsSync(path.join(bookDir, `${safeLabel}.db`))) {
+      try {
+        // Use the same admission rule as preview/export. File existence says
+        // the package is retained, not that it is compatible with this mode.
+        prepareSectioningRun(safeLabel, booksDir, "package", "package", configPath)
+      } catch (error) {
+        if (!(error instanceof SectioningSafetyError) || error.code !== "SECTIONING_STALE") throw error
+        status.modeCompatible = false
+      }
+    }
     return c.json(status)
   })
 

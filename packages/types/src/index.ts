@@ -246,6 +246,7 @@ export {
 
 export { ExtractionWarning } from "./extraction-warning.js"
 export { PackagingWarning } from "./packaging-warning.js"
+export { PackagingStatus } from "./packaging-status.js"
 
 export {
   FIXED_LAYOUT_MAX_SCALE,
