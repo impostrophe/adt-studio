@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { blockName, blockOnMove, currentBlock, type Block } from './blocks'
+import { blockName, blockOnMove, currentBlock, type Block } from './blocks.ts'
 
 // Blocks as they are on the Projects, September to October 2026.
 const blocks: Block[] = [

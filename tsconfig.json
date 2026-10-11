@@ -7,6 +7,9 @@
     "lib": ["ES2022", "DOM"],
     "strict": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
+    // Node runs scripts/*.ts against src/ by stripping types: no TS-only syntax.
+    "erasableSyntaxOnly": true,
     "skipLibCheck": true,
     "types": []
   },

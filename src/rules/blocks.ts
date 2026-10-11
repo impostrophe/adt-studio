@@ -1,4 +1,4 @@
-import { COLUMN_BY_ID, columnIndex } from './flow'
+import { COLUMN_BY_ID, columnIndex } from './flow.ts'
 
 // Blocks (sprints) are the iterations of the Project's "Block" field. A card's
 // block says when its work is planned, and it lives on the Project only (the

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { creditsFromComments, handoff, type Credit } from './handoff'
+import { creditsFromComments, handoff, type Credit } from './handoff.ts'
 
 const at = 0
 const credit = (stage: Credit['stage'], ...logins: string[]): Credit => ({ stage, logins, at })

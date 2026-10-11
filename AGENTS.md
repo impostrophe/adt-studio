@@ -74,6 +74,15 @@ Until the token is there, the deploy job skips with a notice. The Worker's own s
 - `pnpm check`, then a PR to `backlog-wizard`. On merge, the workflow deploys. **No change to the GitHub App is needed.**
 - The App itself only changes for: a new permission or event, another repo, a new webhook URL, a new name or logo. That needs an org owner or an App manager; a new permission must also be accepted on the installation by an owner.
 
+## The Project's fields
+
+The bot uses three fields of the Kanban Project, by name: **Status** (the columns, must match `src/rules/flow.ts`), **Block** (iteration) and **Worked on** (text). A missing Block or Worked on field is skipped, not an error. To fill "Worked on" over a longer period than the hourly three days (for example after creating the field):
+
+```sh
+GITHUB_TOKEN=$(gh auth token) node scripts/backfill-worked-on.ts 2026-01-01 --dry-run   # preview
+GITHUB_TOKEN=$(gh auth token) node scripts/backfill-worked-on.ts 2026-01-01             # write (Project only)
+```
+
 ## Checking a deployment
 
 ```sh

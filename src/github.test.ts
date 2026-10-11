@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { api, postComment, RETRY_DELAYS_MS } from './github'
+import { api, postComment, RETRY_DELAYS_MS } from './github.ts'
 
 // A fake GitHub: answers each request with the next response in the list.
 function github(...responses: (number | Error | { status: number; body: unknown })[]) {
