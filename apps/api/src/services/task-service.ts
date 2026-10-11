@@ -1,6 +1,7 @@
+import { recoverSectioningTransition } from "@adt/storage"
 import type { TaskKind, TaskInfo, TaskStatus } from "@adt/types"
-import { resolveBookPaths, withBookWriter, assertExtractionReadable } from "@adt/storage"
 import type { BookEventBus } from "./book-event-bus.js"
+import { resolveBookPaths, withBookWriter } from "@adt/storage"
 
 /** Callback to emit progress messages during task execution. */
 export type TaskProgressEmitter = (message: string, percent?: number) => void
@@ -26,7 +27,7 @@ export interface TaskService {
 
 let nextTaskId = 1
 
-export function createTaskService(eventBus: BookEventBus, booksDir: string): TaskService {
+export function createTaskService(eventBus: BookEventBus, booksDir?: string): TaskService {
   const books = new Map<string, BookTaskState>()
 
   function getOrCreate(label: string): BookTaskState {
@@ -68,26 +69,28 @@ export function createTaskService(eventBus: BookEventBus, booksDir: string): Tas
         startedAt: Date.now(),
       }
 
-      const state = getOrCreate(label)
-      state.tasks.set(taskId, info)
+      const execute = () => {
+        const state = getOrCreate(label)
+        state.tasks.set(taskId, info)
 
-      // Emit start event
-      eventBus.emit(label, {
-        type: "task",
-        data: { type: "task-start", taskId, kind, label, description, pageId: options?.pageId, url: options?.url },
-      })
+        // Emit start only after acquiring book writer admission.
+        eventBus.emit(label, {
+          type: "task",
+          data: { type: "task-start", taskId, kind, label, description, pageId: options?.pageId, url: options?.url },
+        })
 
-      // Start inside a promise so admission failures use the normal task-error
-      // path, and hold the shared lease until the background executor settles.
-      Promise.resolve().then(() => withBookWriter(resolveBookPaths(label, booksDir).bookDir, () => {
-        assertExtractionReadable(resolveBookPaths(label, booksDir).bookDir)
-        return executor((message, percent) => {
+        return Promise.resolve().then(() => executor((message, percent) => {
           eventBus.emit(label, {
             type: "task",
             data: { type: "task-progress", taskId, message, percent },
           })
-        })
-      }))
+        }))
+      }
+      const work = booksDir ? withBookWriter(resolveBookPaths(label, booksDir).bookDir, () => {
+        recoverSectioningTransition(resolveBookPaths(label, booksDir).bookDir)
+        return execute()
+      }) : execute()
+      work
         .then((result) => {
           info.status = "completed"
           info.result = result

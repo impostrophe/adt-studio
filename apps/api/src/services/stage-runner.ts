@@ -1,8 +1,19 @@
+import { assertSafeExtractionRun } from "@adt/pipeline"
+import { retainedTranslation, isProtectedContent, createSectionIdFactory, retireSectionIds } from "@adt/pipeline"
+import { assertEditVersion } from "./catalog-output-service.js"
+import { assertAuthoredReplacement, replacementConfirmed } from "./authored-output-service.js"
+import { captureOutputReferences } from "@adt/pipeline"
+import { outputSkipped } from "@adt/pipeline"
+import { retainedCoreTts, retainedEasyRead } from "@adt/pipeline"
+import { outputIdentityKey } from "@adt/pipeline"
+import { createHash } from "node:crypto"
+import { speechPageId, reconcileSpeechInputs, translateCatalog, inputSignature, reconcileTextCatalog, readOutputCatalog, buildImageInventory, selectedForGeneration, outputEvidence, assertOutputPublication, timestampInputSignature } from "@adt/pipeline"
+import { prepareSectioningRun, completeSectioning, createStoryboardPublication, activeSectioningPages } from "@adt/pipeline"
+import { preflightSectioning, effectiveSectioningMode, SectioningPreflightError, SectioningSafetyError } from "@adt/pipeline"
 import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
-import { createBookStorage, resolveBookPaths, withBookWriter, assertExtractionReadable } from "@adt/storage"
-import { assertSafeExtractionRun } from "@adt/pipeline"
+import { publishSpeechOutput, assertExtractionReadable, createBookStorage, withBookWriter, ownsBookWriter, resolveBookPaths } from "@adt/storage"
 import type { Storage } from "@adt/storage"
 import {
   AiProviderError,
@@ -636,24 +647,6 @@ function getExistingSpeechEntries(
   return new Map(entries.map((entry) => [voiceSlotEntryId(entry.textId, entry.voiceSlot), entry]))
 }
 
-/**
- * Page id a text-catalog entry belongs to (`pg001`, spread `pg001002`), or null
- * for book-level ids (glossary/quiz) that carry no page prefix. Matches the id
- * convention `pg<NNN>[_sec…]` with an optional `_easy_read` suffix. Used to
- * group entries for page-batched TTS.
- */
-function batchPageKeyOf(textId: string): string | null {
-  const base = textId.replace(/_easy_read$/, "")
-  const m = /^(pg\d+)/.exec(base)
-  return m ? m[1] : null
-}
-
-/** Whether an entry participates in page-batched TTS: page-scoped and not an
- *  easy-read alternate (easy-read tracks stay per-entry). */
-function isBatchableSpeechEntry(textId: string): boolean {
-  return !textId.endsWith("_easy_read") && batchPageKeyOf(textId) !== null
-}
-
 function canReuseSpeechEntry(
   entry: SpeechFileEntry | undefined,
   options: {
@@ -665,6 +658,8 @@ function canReuseSpeechEntry(
     model: string
     voice: string
     instructions: string
+    sampleRate?: number
+    bitRate?: string
     format: string
     voiceSlot: VoiceSlot
     geminiTemperature?: number
@@ -680,7 +675,7 @@ function canReuseSpeechEntry(
   // primary/secondary mixup can never silently reuse the wrong voice's audio.
   if (resolveEntryVoiceSlot(entry) !== options.voiceSlot) return false
 
-  if (entry.provider === "manual") {
+  if (entry.provider === "manual" || entry.source !== "ai") {
     return resolveSpeechAudioPath(options.bookDir, options.language, entry.fileName) !== null
   }
 
@@ -694,6 +689,7 @@ function canReuseSpeechEntry(
 
   const sanitized = stripEmojis(options.text).trim()
   const cacheKey = computeSpeechCacheKey({
+    format: options.format, sampleRate: options.sampleRate, bitRate: options.bitRate,
     text: sanitized,
     voice: options.voice,
     model: options.model,
@@ -710,15 +706,12 @@ function canReuseSpeechEntry(
     elevenLabsUseSpeakerBoost: options.elevenLabsUseSpeakerBoost,
     elevenLabsSpeed: options.elevenLabsSpeed,
   })
-  const cachePath = resolveSpeechCachePath(options.cacheDir, cacheKey, options.format.toLowerCase())
-  if (!cachePath || !fs.existsSync(cachePath)) return false
-
-  const outputPath = resolveSpeechOutputPath(options.bookDir, options.language, entry.fileName)
+  const outputPath = resolveSpeechAudioPath(options.bookDir, options.language, entry.fileName)
   if (!outputPath) return false
-
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true })
-  fs.copyFileSync(cachePath, outputPath)
-  return true
+  if (entry.speechInputSignature) return entry.speechInputSignature === cacheKey
+  // Legacy output has no trustworthy input evidence. Preserve it without
+  // copying a cache result over files referenced by retained manifests.
+  return entry.source !== "ai"
 }
 
 /**
@@ -746,6 +739,9 @@ function appendWordTimestampsLog(
 }
 
 interface GenerateSpeechWordTimestampsOptions {
+  storage: Storage
+  scope?: import("@adt/types").OutputRunScope
+  statuses?: import("@adt/types").OutputStatus[]
   label: string
   bookDir: string
   cacheDir: string
@@ -787,7 +783,7 @@ async function generateSpeechWordTimestamps(
   const entriesByLanguage = new Map<string, Record<string, WordTimestampEntry>>()
   const failedByLanguage = new Map<string, SpeechFailedEntry[]>()
   for (const language of outputLanguages) {
-    entriesByLanguage.set(language, {})
+    entriesByLanguage.set(language, { ...((options.storage.getLatestNodeData("tts-timestamps", language)?.data as WordTimestampOutput | undefined)?.entries ?? {}) })
     failedByLanguage.set(language, [])
   }
 
@@ -797,7 +793,13 @@ async function generateSpeechWordTimestamps(
   }
 
   const workItems = outputLanguages.flatMap((language) =>
-    (ttsResultsByLang.get(language) ?? []).map((entry) => ({
+    (ttsResultsByLang.get(language) ?? []).filter((entry) => textByLanguage.get(language)?.has(entry.textId)).filter((entry) => {
+      const status = options.statuses?.find((output) => output.identity.kind === "timestamps" && output.identity.id === entry.textId && output.identity.language === language && output.identity.voiceSlot === (entry.voiceSlot ?? "primary"))
+      const prior = entriesByLanguage.get(language)?.[voiceSlotEntryId(entry.textId, entry.voiceSlot)]
+      if (!status) return true
+      const effective = { ...status, signature: timestampInputSignature(entry.audioHash ?? entry.fileName, language, textByLanguage.get(language)?.get(entry.textId) ?? "") }
+      return selectedForGeneration(effective, prior, options.scope)
+    }).map((entry) => ({
       language,
       entry,
       prompt: textByLanguage.get(language)?.get(entry.textId),
@@ -858,14 +860,19 @@ async function generateSpeechWordTimestamps(
         }
 
         const slot = resolveEntryVoiceSlot(entry)
+        if (outputSkipped(options.scope, { kind: "timestamps", id: entry.textId, language, voiceSlot: slot })) return
         entriesByLanguage.get(language)![voiceSlotEntryId(entry.textId, slot)] = {
           textId: entry.textId,
           language,
           words: result.words,
           duration: result.duration,
+          audioHash: crypto.createHash("sha256").update(audioBuffer).digest("hex"),
+          source: "ai",
+          input: outputEvidence(timestampInputSignature(crypto.createHash("sha256").update(audioBuffer).digest("hex"), language, prompt ?? ""), { words: result.words, duration: result.duration }, captureOutputReferences(options.storage, "timestamps", language)),
           voiceSlot: slot,
         }
       } catch (err) {
+        if (signal?.aborted || outputSkipped(options.scope, { kind: "timestamps", id: entry.textId, language, voiceSlot: resolveEntryVoiceSlot(entry) })) return
         const message = toErrorMessage(err)
         failedByLanguage.get(language)!.push({
           textId: entry.textId,
@@ -909,97 +916,112 @@ const STAGE_RUNNERS: Record<StageName, RunFn> = {
  * Stage ordering comes from the shared PIPELINE definition.
  */
 export function createStageRunner(): StageRunner {
+  const runner = createAdmittedStageRunner()
+  return {
+    run(label, options, progress) {
+      const { bookDir } = resolveBookPaths(label, options.booksDir)
+      return withBookWriter(bookDir, async () => {
+        if (options.fromStage === "extract") assertSafeExtractionRun(label, options.booksDir, options.configPath)
+        else assertExtractionReadable(resolveBookPaths(label, options.booksDir).bookDir)
+        prepareSectioningRun(label, options.booksDir, options.fromStage as StageName, options.toStage as StageName, options.configPath)
+        const storage = createBookStorage(label, options.booksDir)
+        try { assertAuthoredReplacement(storage, options) } finally { storage.close() }
+        return runner.run(label, options, progress)
+      })
+    },
+  }
+}
+
+function createAdmittedStageRunner(): StageRunner {
   return {
     async run(
       label: string,
       options: StageRunOptions,
       progress: StageRunProgress
     ): Promise<void> {
-      return withBookWriter(resolveBookPaths(label, options.booksDir).bookDir, async () => {
-        const { fromStage, toStage, booksDir } = options
-        if (fromStage === "extract") assertSafeExtractionRun(label, booksDir, options.configPath)
-        else assertExtractionReadable(resolveBookPaths(label, booksDir).bookDir)
-        console.log(`[stage-run] ${label}: starting ${fromStage}→${toStage}`)
+      const bookDir = resolveBookPaths(label, options.booksDir).bookDir
+      if (!ownsBookWriter(bookDir)) return withBookWriter(bookDir, () => createStageRunner().run(label, options, progress))
+      const { fromStage, toStage, booksDir } = options
+      console.log(`[stage-run] ${label}: starting ${fromStage}→${toStage}`)
 
-        const fromIndex = STAGE_ORDER.indexOf(fromStage as StageName)
-        const toIndex = STAGE_ORDER.indexOf(toStage as StageName)
+      const fromIndex = STAGE_ORDER.indexOf(fromStage as StageName)
+      const toIndex = STAGE_ORDER.indexOf(toStage as StageName)
 
-        if (fromIndex === -1 || toIndex === -1 || fromIndex > toIndex) {
-          throw new Error(`Invalid stage range "${fromStage}" to "${toStage}"`)
+      if (fromIndex === -1 || toIndex === -1 || fromIndex > toIndex) {
+        throw new Error(`Invalid stage range "${fromStage}" to "${toStage}"`)
+      }
+
+      // Wrap progress to persist step lifecycle to the DB.
+      // This is the single place where step state transitions are recorded,
+      // so the step-status endpoint can read from step_runs.
+      const completionStorage = createBookStorage(label, booksDir)
+      const runningSteps = new Set<StepName>()
+      try {
+        const trackingProgress: StageRunProgress = {
+          emit(event) {
+            if (event.type === "step-start") {
+              // Cancellation checkpoint before every step: a cancel that lands
+              // between steps stops the run here, before the step is recorded.
+              if (options.signal?.aborted) throw new RunCancelledError()
+              runningSteps.add(event.step)
+              completionStorage.markStepStarted(event.step)
+            } else if (event.type === "step-complete") {
+              runningSteps.delete(event.step)
+              completionStorage.markStepCompleted(event.step, event.message)
+            } else if (event.type === "step-skip") {
+              runningSteps.delete(event.step)
+              completionStorage.markStepSkipped(event.step)
+            } else if (event.type === "step-error") {
+              runningSteps.delete(event.step)
+              completionStorage.recordStepError(event.step, event.error)
+            } else if (event.type === "step-progress" && event.message) {
+              completionStorage.updateStepMessage(event.step, event.message)
+            }
+            progress.emit(event)
+          },
         }
 
-        // Wrap progress to persist step lifecycle to the DB.
-        // This is the single place where step state transitions are recorded,
-        // so the step-status endpoint can read from step_runs.
-        const completionStorage = createBookStorage(label, booksDir)
-        const runningSteps = new Set<StepName>()
-        try {
-          const trackingProgress: StageRunProgress = {
-            emit(event) {
-              if (event.type === "step-start") {
-                // Cancellation checkpoint before every step: a cancel that lands
-                // between steps stops the run here, before the step is recorded.
-                if (options.signal?.aborted) throw new RunCancelledError()
-                runningSteps.add(event.step)
-                completionStorage.markStepStarted(event.step)
-              } else if (event.type === "step-complete") {
-                runningSteps.delete(event.step)
-                completionStorage.markStepCompleted(event.step, event.message)
-              } else if (event.type === "step-skip") {
-                runningSteps.delete(event.step)
-                completionStorage.markStepSkipped(event.step)
-              } else if (event.type === "step-error") {
-                runningSteps.delete(event.step)
-                completionStorage.recordStepError(event.step, event.error)
-              } else if (event.type === "step-progress" && event.message) {
-                completionStorage.updateStepMessage(event.step, event.message)
-              }
-              progress.emit(event)
-            },
-          }
-
-          for (let i = fromIndex; i <= toIndex; i++) {
-            if (options.signal?.aborted) throw new RunCancelledError()
-            const stage = STAGE_ORDER[i]
-            try {
-              await STAGE_RUNNERS[stage](label, options, trackingProgress)
-              progress.emit({ type: "stage-complete", stage })
-            } catch (err) {
-              // A cancel is a deliberate action, not a failure: don't record step
-              // errors or emit step-error/stage-error (that would paint the
-              // sidebar red and, with the error toast/sound, beep on cancel).
-              // Just re-throw — executeJob's abort branch handles persistence cleanup.
-              if (isCancellation(err, [options.signal])) {
-                throw err
-              }
-              const message = toErrorMessage(err)
-              for (const step of runningSteps) {
-                completionStorage.recordStepError(step, message)
-                progress.emit({ type: "step-error", step, error: message })
-              }
-              runningSteps.clear()
-              progress.emit({ type: "stage-error", stage, error: message })
-              throw err
+        for (let i = fromIndex; i <= toIndex; i++) {
+          if (options.signal?.aborted) throw new RunCancelledError()
+          const stage = STAGE_ORDER[i]
+          try {
+            await STAGE_RUNNERS[stage](label, options, trackingProgress)
+            progress.emit({ type: "stage-complete", stage })
+          } catch (err) {
+            // A cancel is a deliberate action, not a failure: don't record step
+            // errors or emit step-error/stage-error (that would paint the
+            // sidebar red and, with the error toast/sound, beep on cancel).
+            // Just re-throw — executeJob's abort branch handles persistence cleanup.
+            if (isCancellation(err, [options.signal])) {
+              throw new RunCancelledError()
             }
-          }
-        } catch (err) {
-          // Fallback for unexpected throws outside the per-stage loop. Stage
-          // failures are already recorded/emitted by the inner catch above.
-          if (isCancellation(err, [options.signal])) {
+            const message = toErrorMessage(err)
+            for (const step of runningSteps) {
+              completionStorage.recordStepError(step, message)
+              progress.emit({ type: "step-error", step, error: message })
+            }
+            runningSteps.clear()
+            progress.emit({ type: "stage-error", stage, error: message })
             throw err
           }
-          const message = toErrorMessage(err)
-          for (const step of runningSteps) {
-            completionStorage.recordStepError(step, message)
-            progress.emit({ type: "step-error", step, error: message })
-          }
-          throw err
-        } finally {
-          completionStorage.close()
         }
+      } catch (err) {
+        // Fallback for unexpected throws outside the per-stage loop. Stage
+        // failures are already recorded/emitted by the inner catch above.
+        if (isCancellation(err, [options.signal])) {
+          throw err
+        }
+        const message = toErrorMessage(err)
+        for (const step of runningSteps) {
+          completionStorage.recordStepError(step, message)
+          progress.emit({ type: "step-error", step, error: message })
+        }
+        throw err
+      } finally {
+        completionStorage.close()
+      }
 
-        console.log(`[stage-run] ${label}: completed ${fromStage}→${toStage}`)
-      })
+      console.log(`[stage-run] ${label}: completed ${fromStage}→${toStage}`)
     },
   }
 }
@@ -1107,7 +1129,6 @@ async function runExtractStep(
         removeWatermarks: config.remove_watermarks === true,
         fixedLayout: isFixedLayoutBook(config),
         fontsCacheDir: resolveFontsCacheDir(booksDir),
-        signal: options.signal,
       },
       storage,
       progress
@@ -1351,6 +1372,24 @@ async function runSectioningStep(
 
   try {
     const config = loadBookConfig(label, booksDir, configPath)
+    const allPages = activeSectioningPages(storage, config, path.join(path.resolve(booksDir), label))
+    const previous = new Map(allPages.map((page) => [page.pageId, storage.getLatestNodeData("page-sectioning", page.pageId)]))
+    const pages = allPages.filter((page) => {
+      const row = previous.get(page.pageId)
+      return !row || !isProtectedContent(row.data as { source?: "ai" | "manual" }) || replacementConfirmed(options, "page-sectioning", page.pageId, row.version)
+    })
+    const selected = new Set(pages.map((page) => page.pageId))
+    const retained = allPages.filter((page) => !selected.has(page.pageId))
+    const protectedPreflight = preflightSectioning(effectiveSectioningMode(config), retained,
+      new Map(retained.map((page) => [page.pageId, previous.get(page.pageId)?.data])))
+    if (protectedPreflight.total) throw new SectioningPreflightError(protectedPreflight)
+    if (!pages.length) {
+      options.signal?.throwIfAborted()
+      completeSectioning(label, booksDir, config, configPath)
+      progress.emit({ type: "step-skip", step: "page-sectioning" })
+      progress.emit({ type: "step-skip", step: "translation" })
+      return
+    }
     const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
     const promptEngine = createPromptEngine([bookPromptsDir, promptsDir], { basePromptModelId: config.base_prompt_model })
@@ -1405,7 +1444,6 @@ async function runSectioningStep(
         })
       : null
 
-    const pages = storage.getPages()
     const stepStatus = new Map(storage.getStepRuns().map((run) => [run.step, run.status]))
     const outlineStepStatus = stepStatus.get("book-outline")
     const outlineStepComplete = outlineStepStatus === "done" || outlineStepStatus === "skipped"
@@ -1440,7 +1478,7 @@ async function runSectioningStep(
       })
       bookOutline = await generateAndStoreBookOutline(
         label,
-        pages,
+        allPages,
         storage,
         outlineConfig,
         outlineModel,
@@ -1494,7 +1532,7 @@ async function runSectioningStep(
             pageSectioningConfig,
             structuringModel,
           )
-          storage.putNodeData("page-sectioning", page.pageId, structuringResult)
+          let result = structuringResult
           completedStructuring++
           progress.emit({
             type: "step-progress",
@@ -1511,7 +1549,7 @@ async function runSectioningStep(
               translationConfig,
               translationModel,
             )
-            storage.putNodeData("page-sectioning", page.pageId, translated)
+            result = translated
             completedTranslation++
             progress.emit({
               type: "step-progress",
@@ -1521,6 +1559,21 @@ async function runSectioningStep(
               totalPages,
             })
           }
+          options.signal?.throwIfAborted()
+          storage.transaction(() => {
+            if (JSON.stringify(loadBookConfig(label, booksDir, configPath)) !== JSON.stringify(config)
+              || JSON.stringify(activeSectioningPages(storage, config, path.join(path.resolve(booksDir), label))) !== JSON.stringify(allPages)) {
+              throw new SectioningSafetyError("STORYBOARD_INPUT_CHANGED", "Configuration or source pages changed during Sectioning. Previous page output is kept; retry against current inputs.")
+            }
+            const before = previous.get(page.pageId)
+            assertEditVersion(storage.getLatestNodeData("page-sectioning", page.pageId)?.version, before?.version ?? 0)
+            const mint = createSectionIdFactory(storage, page.pageId)
+            const sections = result.sections.map((section) => ({ ...section, sectionId: mint() }))
+            const old = before?.data as PageSectioningOutput | undefined
+            retireSectionIds(storage, (old?.sections ?? []).flatMap((section) => section.sectionId ? [section.sectionId] : []))
+            storage.putNodeData("page-sectioning", page.pageId, { ...result, sections, source: "ai" })
+            reconcileTextCatalog(storage)
+          })
         } catch (err) {
           const step = err instanceof StepError ? err.step : "page-sectioning"
           console.error(`[stage-run] ${label}: ${page.pageId} failed at ${step}: ${toErrorMessage(err)}`)
@@ -1540,6 +1593,8 @@ async function runSectioningStep(
     } else {
       progress.emit({ type: "step-skip", step: "translation" })
     }
+    options.signal?.throwIfAborted()
+    if (failedPages.length === 0 && skippedByStep.size === 0) completeSectioning(label, booksDir, config, configPath)
   } finally {
     storage.close()
   }
@@ -1552,11 +1607,36 @@ async function runStoryboardStep(
 ): Promise<void> {
   const { booksDir, promptsDir, webAssetsDir, configPath } = options
 
-  const storage = createBookStorage(label, booksDir)
+  const baseStorage = createBookStorage(label, booksDir)
+  let publication: ReturnType<typeof createStoryboardPublication>
+  try { publication = createStoryboardPublication(baseStorage, label, booksDir, configPath) } catch (err) { baseStorage.close(); throw err }
+  const storage = publication.storage
   let visualRefinement: VisualRefinementDeps | undefined
 
   try {
     const config = loadBookConfig(label, booksDir, configPath)
+
+    if (isFixedLayoutBook(config)) {
+      const pages = storage.getPages()
+      const totalPages = pages.length
+      // Fixed-layout: build the positioned tree (into `fixed-layout-sectioning`)
+      // and render from it, driven off the positioned-text + image-filtering
+      // data the extract step already wrote. No LLM call. This is the
+      // web-rendering step only — the semantic `page-sectioning` is owned and
+      // already produced by the sectioning stage, so we don't re-emit its
+      // progress here (that would wrongly re-mark the sectioning stage running).
+      console.log(`[stage-run] ${label}: fixed-layout rendering for ${totalPages} pages`)
+      progress.emit({ type: "step-start", step: "web-rendering" })
+      const { processFixedLayoutPages } = await import("@adt/pipeline")
+      if (options.signal?.aborted) throw new RunCancelledError()
+      const imageUrlPrefix = `/api/books/${label}/images`
+      processFixedLayoutPages(storage, imageUrlPrefix)
+      if (options.signal?.aborted) throw new RunCancelledError()
+      publication.publish(pages.map((page) => page.pageId))
+      progress.emit({ type: "step-complete", step: "web-rendering" })
+      console.log(`[stage-run] ${label}: fixed-layout rendering complete`)
+      return
+    }
 
     const styleguideContent = loadStyleguideContent(
       config.styleguide,
@@ -1643,23 +1723,6 @@ async function runStoryboardStep(
     const effectiveConcurrency = config.concurrency ?? 32
     // Book typography (editable size-per-role map) — resolve once, share with all pages.
     const typography = readTypography(storage)
-
-    if (isFixedLayoutBook(config)) {
-      // Fixed-layout: build the positioned tree (into `fixed-layout-sectioning`)
-      // and render from it, driven off the positioned-text + image-filtering
-      // data the extract step already wrote. No LLM call. This is the
-      // web-rendering step only — the semantic `page-sectioning` is owned and
-      // already produced by the sectioning stage, so we don't re-emit its
-      // progress here (that would wrongly re-mark the sectioning stage running).
-      console.log(`[stage-run] ${label}: fixed-layout rendering for ${totalPages} pages`)
-      progress.emit({ type: "step-start", step: "web-rendering" })
-      const { processFixedLayoutPages } = await import("@adt/pipeline")
-      const imageUrlPrefix = `/api/books/${label}/images`
-      processFixedLayoutPages(storage, imageUrlPrefix)
-      progress.emit({ type: "step-complete", step: "web-rendering" })
-      console.log(`[stage-run] ${label}: fixed-layout rendering complete`)
-      return
-    }
 
     console.log(
       `[stage-run] ${label}: rendering storyboard for ${totalPages} pages (concurrency=${effectiveConcurrency})`
@@ -1796,6 +1859,12 @@ async function runStoryboardStep(
       throw new StepError("web-rendering", "Stopped by a page-error decision")
     }
 
+    // A skipped/failed/cancelled page cannot publish a partial replacement.
+    if (failedPages.length || (skippedByStep.get("web-rendering")?.size ?? 0) > 0) {
+      throw new StepError("web-rendering", "Storyboard was not published because one or more pages did not finish. Previous output is kept.")
+    }
+    if (options.signal?.aborted) throw new RunCancelledError()
+    publication.publish(pages.map((page) => page.pageId))
     finishPageStep(progress, "web-rendering", pageFailureDeps)
     console.log(`[stage-run] ${label}: storyboard complete`)
   } finally {
@@ -1820,6 +1889,12 @@ async function runQuizzesStep(
   const storage = createBookStorage(label, booksDir)
 
   try {
+    const previousVersion = storage.getLatestNodeData("quiz-generation", "book")?.version ?? 0
+    const publish = (output: Parameters<typeof saveQuizOutput>[1]) => storage.transaction(() => {
+      options.signal?.throwIfAborted()
+      assertEditVersion(storage.getLatestNodeData("quiz-generation", "book")?.version, previousVersion)
+      return saveQuizOutput(storage, output, "replace")
+    })
     const config = loadBookConfig(label, booksDir, configPath)
     const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
@@ -1921,7 +1996,7 @@ async function runQuizzesStep(
         },
       })
       options.signal?.throwIfAborted()
-      saveQuizOutput(storage, quizResult, "replace")
+      publish(quizResult)
       console.log(
         `[stage-run] ${label}: generated ${quizResult.quizzes.length} quiz(zes) from ${quizPages.length} page(s)`
       )
@@ -1931,13 +2006,13 @@ async function runQuizzesStep(
         message: `${quizResult.quizzes.length} quizzes from ${quizPages.length} pages`,
       })
     } else {
-      // A successful empty rerun must not leave the preserved previous quizzes
-      // active. Keep their history, but publish the now-empty result.
+      // With no eligible pages, retire previous AI quizzes while the shared
+      // publisher retains protected quizzes and all prior versions.
       options.signal?.throwIfAborted()
-      saveQuizOutput(storage, {
+      publish({
         generatedAt: new Date().toISOString(), language: quizConfig.language,
         pagesPerQuiz: quizConfig.pagesPerQuiz, quizzes: [],
-      }, "replace")
+      })
       // Nothing to generate. This is the silent "finished instantly, no quizzes"
       // case — surface it loudly instead of completing green with no output.
       console.warn(
@@ -2026,6 +2101,11 @@ async function runCaptionsStep(
       signal: options.signal,
     })
 
+    const inventory = buildImageInventory(storage)
+    const readOutputs = () => readOutputCatalog({ storage, config: loadBookConfig(label, booksDir, configPath),
+      bookDir: path.join(path.resolve(booksDir), label), promptsDir,
+      configDir: configPath ? path.join(path.dirname(configPath), "config") : path.resolve("config") })
+    const captured = readOutputs()
     const pages = storage.getPages()
     const totalPages = pages.length
     const effectiveConcurrency = config.concurrency ?? 32
@@ -2057,43 +2137,15 @@ async function runCaptionsStep(
       effectiveConcurrency,
       async (page: PageData) => {
         try {
-          // Get rendered HTML for this page
-          const renderingRow = storage.getLatestNodeData("web-rendering", page.pageId)
-          if (!renderingRow) {
-            // No rendering — store empty result
-            storage.putNodeData("image-captioning", page.pageId, { captions: [] })
+          const previousRow = storage.getLatestNodeData("image-captioning", page.pageId)
+          const previous = previousRow?.data as ImageCaptioningOutput | undefined
+          const previousById = new Map((previous?.captions ?? []).map((entry) => [entry.imageId, entry]))
+          const imageIds = inventory.filter((image) => image.pageId === page.pageId && image.assetHash !== null).filter((image) => {
+            const status = captured.find((output) => output.identity.kind === "caption" && output.identity.id === image.id)
+            return status && selectedForGeneration(status, previousById.get(image.id), options.outputScope)
+          }).map((image) => image.id)
+          if (!imageIds.length) {
             completedCaptions++
-            progress.emit({
-              type: "step-progress",
-              step: "image-captioning",
-              message: `${completedCaptions}/${totalPages}`,
-              page: completedCaptions,
-              totalPages,
-            })
-            return
-          }
-
-          const rendering = renderingRow.data as WebRenderingOutput
-          // Filter out pruned sections before extracting image IDs
-          const sectioning = getRenderSectioning(storage, page.pageId)
-          const htmlSections = rendering.sections
-            .filter((s) => !sectioning?.sections[s.sectionIndex]?.isPruned)
-            .map((s) => s.html)
-          const imageIds = collectCaptionImageIds(
-            htmlSections,
-            glossaryImageIdsByPage.get(page.pageId),
-          )
-
-          if (imageIds.length === 0) {
-            storage.putNodeData("image-captioning", page.pageId, { captions: [] })
-            completedCaptions++
-            progress.emit({
-              type: "step-progress",
-              step: "image-captioning",
-              message: `${completedCaptions}/${totalPages}`,
-              page: completedCaptions,
-              totalPages,
-            })
             return
           }
 
@@ -2114,23 +2166,21 @@ async function runCaptionsStep(
             captionModel
           )
 
-          // Re-running captioning preserves the user's manual work. An entry the
-          // user edited (caption text or the decorative toggle) is marked
-          // source:"manual" and is kept wholesale across re-runs; everything
-          // else is freshly regenerated and stamped source:"ai". Images that no
-          // longer appear on the page simply fall out (their caption is moot).
-          const prev = storage.getLatestNodeData("image-captioning", page.pageId)
-            ?.data as ImageCaptioningOutput | undefined
-          const prevById = new Map(
-            (prev?.captions ?? []).map((c) => [c.imageId, c])
-          )
-          result.captions = result.captions.map((c) => {
-            const prior = prevById.get(c.imageId)
-            if (prior?.source === "manual") return prior
-            return { ...c, source: "ai" as const }
+          options.signal?.throwIfAborted()
+          const publishable = result.captions.filter((entry) => !outputSkipped(options.outputScope, { kind: "caption", id: entry.imageId }))
+          if (!publishable.length) return
+          storage.transaction(() => {
+            if (storage.getLatestNodeData("image-captioning", page.pageId)?.version !== previousRow?.version) throw new Error("Caption target changed during generation")
+            assertOutputPublication(captured, readOutputs(), publishable.map((entry) => ({ kind: "caption", id: entry.imageId })))
+            const merged = new Map(previousById)
+            for (const entry of publishable) {
+              if (!imageIds.includes(entry.imageId)) throw new Error("Caption response contains an unselected image")
+              const status = captured.find((output) => output.identity.kind === "caption" && output.identity.id === entry.imageId)!
+              merged.set(entry.imageId, { ...entry, source: "ai", input: outputEvidence(status.signature, { caption: entry.caption, decorative: entry.decorative === true }, captureOutputReferences(storage, "caption")) })
+            }
+            storage.putNodeData("image-captioning", page.pageId, { captions: [...merged.values()] })
+            reconcileTextCatalog(storage)
           })
-
-          storage.putNodeData("image-captioning", page.pageId, result)
 
           completedCaptions++
           progress.emit({
@@ -2265,6 +2315,11 @@ async function runTocStep(
   const storage = createBookStorage(label, booksDir)
 
   try {
+    const previous = storage.getLatestNodeData("toc-generation", "book")
+    if (previous && isProtectedContent(previous.data as { source?: "ai" | "manual" }) && !replacementConfirmed(options, "toc-generation", "book", previous.version)) {
+      progress.emit({ type: "step-skip", step: "toc-generation" })
+      return
+    }
     const config = loadBookConfig(label, booksDir, configPath)
     const cacheDir = path.join(path.resolve(booksDir), label, ".cache")
     const bookPromptsDir = path.join(path.resolve(booksDir), label, "prompts")
@@ -2318,7 +2373,11 @@ async function runTocStep(
       config: tocConfig,
       llmModel: tocModel,
     })
-    storage.putNodeData("toc-generation", "book", toc)
+    options.signal?.throwIfAborted()
+    storage.transaction(() => {
+      assertEditVersion(storage.getLatestNodeData("toc-generation", "book")?.version, previous?.version ?? 0)
+      storage.putNodeData("toc-generation", "book", { ...toc, source: "ai" })
+    })
 
     progress.emit({
       type: "step-progress",
@@ -2335,6 +2394,14 @@ async function runTocStep(
 // ---------------------------------------------------------------------------
 // Easy Read stage (text catalog + Easy Read)
 // ---------------------------------------------------------------------------
+
+function readRunOutputs(label: string, options: StageRunOptions, storage: Storage) {
+  const config = loadBookConfig(label, options.booksDir, options.configPath)
+  if (options.fromStage === "easy-read" && options.toStage === "easy-read") config.easy_read = { ...config.easy_read, enabled: true }
+  return readOutputCatalog({ storage, config,
+    bookDir: path.join(path.resolve(options.booksDir), label), promptsDir: options.promptsDir,
+    configDir: options.configPath ? path.join(path.dirname(options.configPath), "config") : path.resolve("config") })
+}
 
 async function runEasyReadStep(
   label: string,
@@ -2393,8 +2460,7 @@ async function runEasyReadStep(
 
     console.log(`[stage-run] ${label}: building text catalog from ${pages.length} pages`)
 
-    const catalog = await buildTextCatalog(storage, pages)
-    storage.putNodeData("text-catalog", "book", catalog)
+    const catalog = reconcileTextCatalog(storage)
 
     progress.emit({
       type: "step-progress",
@@ -2409,6 +2475,7 @@ async function runEasyReadStep(
       ...baseEasyReadConfig,
       enabled: explicitEasyReadRun || baseEasyReadConfig.enabled,
     }
+    easyReadConfig.promptSignature = promptEngine.fingerprint(easyReadConfig.promptName, { modelId: easyReadConfig.modelId })
     let easyReadEntries: TextCatalogEntry[] = []
 
     if (!easyReadConfig.enabled) {
@@ -2442,7 +2509,11 @@ async function runEasyReadStep(
           page: 0,
           totalPages: totalEntries,
         })
+        const previousEasyReadRow = storage.getLatestNodeData("easy-read", "book")
+        const previousEasyRead = retainedEasyRead(storage, blocks)
+        const captured = readRunOutputs(label, options, storage)
         const easyRead = await generateEasyRead(blocks, easyReadConfig, easyReadModel, {
+          previous: previousEasyRead, references: captureOutputReferences(storage, "easy-read", language), scope: options.outputScope, signal: options.signal,
           concurrency: effectiveConcurrency,
           onProgress: (completed, total) => {
             progress.emit({
@@ -2454,7 +2525,14 @@ async function runEasyReadStep(
             })
           },
         })
-        storage.putNodeData("easy-read", "book", easyRead)
+        options.signal?.throwIfAborted()
+        if (easyRead !== previousEasyRead) storage.transaction(() => {
+          if (storage.getLatestNodeData("easy-read", "book")?.version !== previousEasyReadRow?.version) throw new Error("Easy Read changed during generation")
+          const previousById = new Map((previousEasyRead?.blocks ?? []).flatMap((block) => block.entries.map((entry) => [entry.easyReadId, entry] as const)))
+          const changed = easyRead.blocks.flatMap((block) => block.entries.filter((entry) => inputSignature(entry) !== inputSignature(previousById.get(entry.easyReadId))))
+          assertOutputPublication(captured, readRunOutputs(label, options, storage), changed.map((entry) => ({ kind: "easy-read", id: entry.easyReadId, language })))
+          storage.putNodeData("easy-read", "book", easyRead)
+        })
         easyReadEntries = flattenEasyReadEntries(easyRead)
         progress.emit({
           type: "step-progress",
@@ -2547,15 +2625,28 @@ async function runTranslateStep(
       )
     }
     const easyReadRow = storage.getLatestNodeData("easy-read", "book")
-    const easyRead = easyReadRow?.data as EasyReadOutput | undefined
-    const easyReadEntries = easyRead ? flattenEasyReadEntries(easyRead) : []
+    const easyRead = retainedEasyRead(storage, buildEasyReadSourceBlocks(storage, storage.getPages()))
+    const easyReadEntries = config.easy_read?.enabled && easyRead ? flattenEasyReadEntries(easyRead) : []
     const translationEntries = [...catalog.entries, ...easyReadEntries]
 
     // ── Step 2: Translate catalog to target languages ────────────────
     const targetLanguages = getTargetLanguages(outputLanguages, language)
-    if (targetLanguages.length === 0 || translationEntries.length === 0) {
+    if (targetLanguages.length === 0) {
       progress.emit({ type: "step-skip", step: "catalog-translation" })
       console.log(`[stage-run] ${label}: catalog translation skipped`)
+    } else if (translationEntries.length === 0) {
+      // Retire membership without resolving a prompt/provider for an empty
+      // source. The prior document remains in version history.
+      options.signal?.throwIfAborted()
+      storage.transaction(() => {
+        for (const language of targetLanguages) {
+          const itemId = storage.getLatestNodeData("text-catalog-translation", language) ? language : language.replace("-", "_")
+          const row = storage.getLatestNodeData("text-catalog-translation", itemId)
+          const previous = row?.data as TextCatalogOutput | undefined
+          if (previous?.entries.length) storage.putNodeData("text-catalog-translation", itemId, { ...previous, entries: [], generatedAt: new Date().toISOString() })
+        }
+      })
+      progress.emit({ type: "step-skip", step: "catalog-translation" })
     } else {
       progress.emit({ type: "step-start", step: "catalog-translation" })
 
@@ -2570,74 +2661,23 @@ async function runTranslateStep(
         signal: options.signal,
       })
 
-      const batchSize = translationConfig.batchSize
-      interface TranslationWorkItem {
-        language: string
-        batchIndex: number
-        entries: TextCatalogEntry[]
-      }
-      const workItems: TranslationWorkItem[] = []
+      translationConfig.promptSignature = promptEngine.fingerprint(translationConfig.promptName, { modelId: translationConfig.modelId })
       for (const lang of targetLanguages) {
-        for (let i = 0; i < translationEntries.length; i += batchSize) {
-          workItems.push({
-            language: lang,
-            batchIndex: Math.floor(i / batchSize),
-            entries: translationEntries.slice(i, i + batchSize),
-          })
-        }
-      }
-
-      const totalBatches = workItems.length
-      let completedBatches = 0
-
-      const resultsByLang = new Map<string, TextCatalogEntry[]>()
-      for (const lang of targetLanguages) {
-        resultsByLang.set(lang, [])
-      }
-
-      progress.emit({
-        type: "step-progress",
-        step: "catalog-translation",
-        message: `0/${totalBatches} batches (${targetLanguages.length} languages)`,
-        page: 0,
-        totalPages: totalBatches,
-      })
-
-      console.log(`[stage-run] ${label}: translating ${translationEntries.length} entries to ${targetLanguages.length} languages (${totalBatches} batches)`)
-
-      await processWithConcurrency(
-        workItems,
-        effectiveConcurrency,
-        async (item: TranslationWorkItem) => {
-          const translated = await translateCatalogBatch(
-            item.entries,
-            item.language,
-            translationConfig,
-            translationModel
-          )
-          resultsByLang.get(item.language)!.push(...translated)
-          completedBatches++
-          progress.emit({
-            type: "step-progress",
-            step: "catalog-translation",
-            message: `${completedBatches}/${totalBatches} batches`,
-            page: completedBatches,
-            totalPages: totalBatches,
-          })
-        },
-        { runSignal: options.signal },
-      )
-
-      for (const lang of targetLanguages) {
-        const entries = resultsByLang.get(lang)!
-        const idOrder = new Map(translationEntries.map((e, i) => [e.id, i]))
-        entries.sort((a, b) => (idOrder.get(a.id) ?? 0) - (idOrder.get(b.id) ?? 0))
-
-        const output: TextCatalogOutput = {
-          entries,
-          generatedAt: new Date().toISOString(),
-        }
-        storage.putNodeData("text-catalog-translation", lang, output)
+        const legacyLang = lang.replace("-", "_")
+        const itemId = !storage.getLatestNodeData("text-catalog-translation", lang) && storage.getLatestNodeData("text-catalog-translation", legacyLang) ? legacyLang : lang
+        const readTranslation = () => storage.getLatestNodeData("text-catalog-translation", itemId)
+        const previousRow = readTranslation()
+        const previous = previousRow?.data as TextCatalogOutput | undefined
+        const captured = readRunOutputs(label, options, storage)
+        const output = await translateCatalog({ entries: translationEntries, language: lang, config: translationConfig,
+          llmModel: translationModel, previous: retainedTranslation(storage, lang, translationEntries.map((entry) => entry.id)), references: captureOutputReferences(storage, "translation", lang), scope: options.outputScope, signal: options.signal })
+        options.signal?.throwIfAborted()
+        if (inputSignature(output.entries) !== inputSignature(previous?.entries)) storage.transaction(() => {
+          if (readTranslation()?.version !== previousRow?.version) throw new Error("Translation changed during generation")
+          const changed = output.entries.filter((entry) => inputSignature(entry) !== inputSignature(previous?.entries.find((prior) => prior.id === entry.id)))
+          assertOutputPublication(captured, readRunOutputs(label, options, storage), changed.map((entry) => ({ kind: "translation", id: entry.id, language: lang })))
+          storage.putNodeData("text-catalog-translation", itemId, output)
+        })
       }
 
       progress.emit({ type: "step-complete", step: "catalog-translation" })
@@ -2647,6 +2687,7 @@ async function runTranslateStep(
     // ── Step 3: Prepare the independent per-language Core TTS catalogs ──
     progress.emit({ type: "step-start", step: "core-tts-catalog" })
     const coreTtsConfig = buildCoreTtsPreparationConfig(config)
+    coreTtsConfig.promptSignature = promptEngine.fingerprint(coreTtsConfig.promptName, { modelId: coreTtsConfig.modelId })
     const coreTtsModel = createLLMModel({
       modelId: coreTtsConfig.modelId,
       cacheDir,
@@ -2661,15 +2702,26 @@ async function runTranslateStep(
       : path.resolve(process.cwd(), "config")
     const profiles = loadCoreTtsProfiles(coreTtsConfigDir)
     const sourceDisplayEntries = [...catalog.entries, ...easyReadEntries]
+    const sourcePrepBefore = readRunOutputs(label, options, storage)
+    const sourcePrepVersion = storage.getLatestNodeData("core-tts-catalog", language)?.version
     const sourceCoreTts = await prepareCoreTtsCatalog({
       entries: sourceDisplayEntries,
+      selectedIds: sourcePrepBefore.filter((output) => output.identity.kind === "preparation" && output.identity.language === language && !output.excluded).map((output) => output.identity.id),
       language,
       config: coreTtsConfig,
+      references: captureOutputReferences(storage, "preparation", language),
       profile: resolveCoreTtsProfile(language, profiles),
       llmModel: coreTtsModel,
-      previous: getCoreTtsCatalog(storage, language),
+      previous: retainedCoreTts(storage, language, sourceDisplayEntries.map((entry) => entry.id)),
+      scope: options.outputScope, signal: options.signal,
     })
-    storage.putNodeData("core-tts-catalog", language, sourceCoreTts)
+    options.signal?.throwIfAborted()
+    storage.transaction(() => {
+      if (storage.getLatestNodeData("core-tts-catalog", language)?.version !== sourcePrepVersion) throw new Error("Speech text changed during preparation")
+      const identities = sourcePrepBefore.filter((status) => status.identity.kind === "preparation" && status.identity.language === language).map((status) => status.identity)
+      assertOutputPublication(sourcePrepBefore, readRunOutputs(label, options, storage), identities)
+      if (inputSignature(getCoreTtsCatalog(storage, language)?.entries) !== inputSignature(sourceCoreTts.entries)) storage.putNodeData("core-tts-catalog", language, sourceCoreTts)
+    })
     const sourceContext = buildCoreTtsSourceContext(
       sourceDisplayEntries,
       sourceCoreTts,
@@ -2689,18 +2741,32 @@ async function runTranslateStep(
           storage.getLatestNodeData("text-catalog-translation", lang) ??
           storage.getLatestNodeData("text-catalog-translation", legacyLang)
         if (!translatedRow) continue
-        targetDisplayEntries = (translatedRow.data as TextCatalogOutput).entries
+        // Retained collections may contain retired IDs or an earlier reading
+        // order. Context follows current sources, including missing neighbors.
+        const translatedById = new Map((translatedRow.data as TextCatalogOutput).entries.map((entry) => [entry.id, entry]))
+        targetDisplayEntries = sourceDisplayEntries.map((source) => ({ ...source, text: translatedById.get(source.id)?.text ?? "" }))
       }
+      const targetPrepBefore = readRunOutputs(label, options, storage)
+      const targetPrepVersion = storage.getLatestNodeData("core-tts-catalog", lang)?.version
       const targetCoreTts = await prepareCoreTtsCatalog({
         entries: targetDisplayEntries,
+        selectedIds: targetPrepBefore.filter((output) => output.identity.kind === "preparation" && output.identity.language === lang && !output.excluded).map((output) => output.identity.id),
         language: lang,
         config: coreTtsConfig,
+        references: captureOutputReferences(storage, "preparation", lang),
         profile: resolveCoreTtsProfile(lang, profiles),
         llmModel: coreTtsModel,
-        previous: getCoreTtsCatalog(storage, lang),
+        previous: retainedCoreTts(storage, lang, targetDisplayEntries.map((entry) => entry.id)),
+        scope: options.outputScope, signal: options.signal,
         sourceContext,
       })
-      storage.putNodeData("core-tts-catalog", lang, targetCoreTts)
+      options.signal?.throwIfAborted()
+      storage.transaction(() => {
+        if (storage.getLatestNodeData("core-tts-catalog", lang)?.version !== targetPrepVersion) throw new Error("Speech text changed during preparation")
+        const identities = targetPrepBefore.filter((status) => status.identity.kind === "preparation" && status.identity.language === lang).map((status) => status.identity)
+        assertOutputPublication(targetPrepBefore, readRunOutputs(label, options, storage), identities)
+        if (inputSignature(getCoreTtsCatalog(storage, lang)?.entries) !== inputSignature(targetCoreTts.entries)) storage.putNodeData("core-tts-catalog", lang, targetCoreTts)
+      })
       preparedLanguages++
       progress.emit({
         type: "step-progress",
@@ -2720,9 +2786,7 @@ async function runTranslateStep(
       imageTranslation.selectedImageIds.length === 0 ||
       imageTargetLanguages.length === 0
     ) {
-      // Disabling the step or shrinking the selection should remove stale
-      // variants from disk and DB.
-      storage.clearTranslatedImages()
+      // Disabled/unselected variants remain recoverable; output eligibility is configuration-derived.
       progress.emit({ type: "step-skip", step: "image-translation" })
       console.log(
         `[stage-run] ${label}: image translation skipped ` +
@@ -2730,40 +2794,6 @@ async function runTranslateStep(
       )
     } else {
       progress.emit({ type: "step-start", step: "image-translation" })
-
-      // Validate prerequisites BEFORE clearing existing variants — a missing
-      // API key shouldn't wipe prior work.
-      const openaiApiKey = resolveCredentialField(options, "openai", "apiKey")
-
-      const promptName = config.image_translation?.prompt ?? "image_translation"
-      const bookPromptPath = path.join(
-        path.resolve(booksDir),
-        label,
-        "prompts",
-        `${promptName}.liquid`
-      )
-      const globalPromptPath = path.join(
-        path.resolve(promptsDir),
-        `${promptName}.liquid`
-      )
-      let templateContent: string | null = null
-      if (fs.existsSync(bookPromptPath)) {
-        templateContent = fs.readFileSync(bookPromptPath, "utf-8")
-      } else if (fs.existsSync(globalPromptPath)) {
-        templateContent = fs.readFileSync(globalPromptPath, "utf-8")
-      }
-      if (!templateContent) {
-        throw new StepError(
-          "image-translation",
-          `Image translation prompt not found: ${promptName}.liquid`
-        )
-      }
-      const promptText = await renderLiquidTemplate(templateContent.trim(), {})
-
-      // Prerequisites validated — safe to clear previously-generated variants so
-      // shrinking the selection or changing languages drops stale ones. Cached
-      // regeneration is fast for variants we still want.
-      storage.clearTranslatedImages()
 
       // Resolve which selected images actually exist + grab their on-disk paths
       type ImageWork = {
@@ -2773,6 +2803,7 @@ async function runTranslateStep(
         diskPath: string
       }
       const bookDir = path.join(path.resolve(booksDir), label)
+      const imageBefore = readRunOutputs(label, options, storage)
       const items: ImageWork[] = []
       for (const imageId of imageTranslation.selectedImageIds) {
         const meta = storage.getImageMeta(imageId)
@@ -2786,6 +2817,9 @@ async function runTranslateStep(
           continue
         }
         for (const targetLang of imageTargetLanguages) {
+          const status = imageBefore.find((item) => item.identity.kind === "image-translation" && item.identity.id === imageId && item.identity.language === targetLang)
+          const previous = storage.getLatestNodeData("image-translation", `${imageId}_tr_${targetLang}`)?.data as import("@adt/types").TranslatedImageAsset | undefined
+          if (!status || !selectedForGeneration(status, previous, options.outputScope)) continue
           items.push({
             imageId,
             pageId: meta.pageId,
@@ -2799,6 +2833,14 @@ async function runTranslateStep(
         progress.emit({ type: "step-skip", step: "image-translation" })
         console.log(`[stage-run] ${label}: image translation skipped (no resolvable images)`)
       } else {
+        // Resolve provider credentials only after selection identifies work.
+        const { providerId: imageProviderId } = getDefaultProviderRegistry().resolveImage(
+          imageTranslation.modelId, { credentials: buildLLMCredentials(options) },
+        )
+        const imageApiKey = resolveCredentialField(options, imageProviderId, "apiKey")
+        const promptName = config.image_translation?.prompt ?? "image_translation"
+        const imagePromptEngine = createPromptEngine([path.join(path.resolve(booksDir), label, "prompts"), promptsDir], { basePromptModelId: config.base_prompt_model })
+        const promptText = await imagePromptEngine.renderText(promptName, {}, { modelId: imageTranslation.modelId })
         const total = items.length
         let completed = 0
         progress.emit({
@@ -2816,7 +2858,7 @@ async function runTranslateStep(
           try {
             const buffer = fs.readFileSync(item.diskPath)
             const result = await translateImage({
-              apiKey: openaiApiKey,
+              apiKey: imageApiKey,
               modelId: imageModelId,
               prompt: promptText,
               sourceLanguage: language,
@@ -2833,11 +2875,18 @@ async function runTranslateStep(
               signal: options.signal,
             })
 
+            options.signal?.throwIfAborted()
+            const identity = { kind: "image-translation" as const, id: item.imageId, language: item.targetLanguage }
+            if (outputSkipped(options.outputScope, identity)) return
+            assertOutputPublication(imageBefore, readRunOutputs(label, options, storage), [identity])
+            const status = imageBefore.find((entry) => outputIdentityKey(entry.identity) === outputIdentityKey(identity))!
             storage.putTranslatedImage({
+              input: outputEvidence(status.signature, createHash("sha256").update(result.buffer).digest("hex"), captureOutputReferences(storage, "image-translation", item.targetLanguage)),
               sourceImageId: item.imageId,
               pageId: item.pageId,
               languageCode: item.targetLanguage,
               buffer: result.buffer,
+              mimeType: result.mimeType,
               width: result.width,
               height: result.height,
             })
@@ -2905,8 +2954,12 @@ async function runSpeechStep(
       )
     )
 
-    // Core TTS is the only provider-text source. It already includes Easy Read
-    // entries and deliberately omits failed LaTeX conversions.
+    reconcileSpeechInputs({ storage, config, sourceLanguage: language, languages: outputLanguages,
+      profiles: loadCoreTtsProfiles(configDir),
+      promptsDir: options.promptsDir, bookDir })
+
+    // Resolve actual requested-language display text before checking for work.
+    // This step does not launch translation or text preparation.
     const hasCoreTtsEntries = outputLanguages.some(
       (lang) => getReadyCoreTtsEntries(storage, lang).length > 0,
     )
@@ -2917,6 +2970,11 @@ async function runSpeechStep(
       return
     }
 
+    const capturedOutputs = readRunOutputs(label, options, storage)
+    const capturedSpeechVersions = new Map(outputLanguages.map((lang) => [lang, {
+      audio: storage.getLatestNodeData("tts", lang)?.version,
+      timings: storage.getLatestNodeData("tts-timestamps", lang)?.version,
+    }]))
     progress.emit({ type: "step-start", step: "tts" })
     progress.emit({ type: "step-progress", step: "tts", message: "Preparing audio..." })
 
@@ -2995,10 +3053,7 @@ async function runSpeechStep(
     // synthesized in one request then sliced back into per-entry files, which
     // needs an OpenAI key for the Whisper alignment pass. Non-page entries
     // (glossary, quiz, easy-read) and non-Gemini languages keep per-entry.
-    const batchByPage = config.speech?.batch_by_page === true && !!openaiApiKey
-    if (config.speech?.batch_by_page === true && !openaiApiKey) {
-      console.warn(`[stage-run] ${label}: batch_by_page is enabled but no OpenAI key was provided; falling back to per-entry TTS (the Whisper alignment pass needs an OpenAI key)`)
-    }
+    const batchByPage = config.speech?.batch_by_page === true
     interface PageGroup {
       language: string
       pageKey: string
@@ -3007,6 +3062,7 @@ async function runSpeechStep(
       voice: string
       voiceLabel?: string
       entries: { id: string; text: string }[]
+      publishIds: Set<string>
     }
     const pageGroups = new Map<string, PageGroup>()
     const textByLanguage = new Map<string, Map<string, string>>()
@@ -3014,9 +3070,25 @@ async function runSpeechStep(
     const failedByLang = new Map<string, SpeechFailedEntry[]>()
     const reusedEntriesByLang = new Map<string, number>()
     for (const lang of outputLanguages) {
-      ttsResultsByLang.set(lang, [])
+      ttsResultsByLang.set(lang, [...getExistingSpeechEntries(storage, lang).values()])
       failedByLang.set(lang, [])
       reusedEntriesByLang.set(lang, 0)
+    }
+    const storeResult = (language: string, entry: SpeechFileEntry) => {
+      const entries = ttsResultsByLang.get(language)!
+      const key = voiceSlotEntryId(entry.textId, entry.voiceSlot)
+      const index = entries.findIndex((item) => voiceSlotEntryId(item.textId, item.voiceSlot) === key)
+      if (index >= 0) entries[index] = entry
+      else entries.push(entry)
+    }
+    const storeGenerated = (language: string, entry: SpeechFileEntry) => {
+      if (outputSkipped(options.outputScope, { kind: "audio", id: entry.textId, language, voiceSlot: entry.voiceSlot ?? "primary" })) return
+      const file = resolveSpeechAudioPath(bookDir, language, entry.fileName)
+      const status = capturedOutputs.find((output) => output.identity.kind === "audio" && output.identity.id === entry.textId && output.identity.language === language && output.identity.voiceSlot === (entry.voiceSlot ?? "primary"))
+      const audioHash = file ? crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex") : entry.audioHash
+      const signature = entry.speechInputSignature ?? status?.signature
+      storeResult(language, { ...entry, source: "ai", audioHash, speechInputSignature: signature,
+        ...(signature && audioHash ? { input: outputEvidence(signature, audioHash, captureOutputReferences(storage, "audio", language)) } : {}) })
     }
     // Expose the (live-mutated) result arrays so GET /tts can serve a
     // progressive snapshot while this run is active. Cleared in `finally`.
@@ -3026,6 +3098,7 @@ async function runSpeechStep(
       const existingSpeechEntries = getExistingSpeechEntries(storage, lang)
 
       const entries = getReadyCoreTtsEntries(storage, lang)
+      const pageById = new Map(capturedOutputs.filter((output) => output.identity.kind === "preparation" && output.identity.language === lang).map((output) => [output.identity.id, speechPageId(output.identity.id, output.pageIds)]))
       if (entries.length === 0) {
         console.warn(`[stage-run] ${label}: no ready Core TTS entries for ${lang}, skipping TTS for this language`)
         continue
@@ -3072,6 +3145,16 @@ async function runSpeechStep(
           const { provider, model: providerModel, voice, label: voiceLabel } = profile
           const slotEntryId = voiceSlotEntryId(entry.id, slot)
 
+          const status = capturedOutputs.find((output) => output.identity.kind === "audio" && output.identity.id === entry.id && output.identity.language === lang && output.identity.voiceSlot === slot)
+          const prior = existingSpeechEntries.get(slotEntryId)
+          const metadata = prior?.speechInputSignature && status ? { ...prior, input: { signature: prior.speechInputSignature, contentHash: status.contentHash, references: [] } } : prior
+          if (status && !selectedForGeneration(status, metadata, options.outputScope)) {
+            if (prior) {
+              storeResult(lang, { ...prior, voiceSlot: slot, voiceLabel: voiceLabel || undefined })
+              reusedEntriesByLang.set(lang, (reusedEntriesByLang.get(lang) ?? 0) + 1)
+            }
+            continue
+          }
           // Route page-scoped entries of a Gemini language into a per-page group
           // (generated together below). Skips the per-entry reuse check — page
           // audio is cached at the page level inside generatePageSpeechFiles.
@@ -3080,13 +3163,13 @@ async function runSpeechStep(
           // would otherwise overwrite the uploaded audio).
           if (
             batchThisVoice &&
-            isBatchableSpeechEntry(entry.id) &&
-            existingSpeechEntries.get(slotEntryId)?.provider !== "manual"
+            pageById.get(entry.id) !== undefined
           ) {
-            const pageKey = batchPageKeyOf(entry.id)!
+            const pageKey = pageById.get(entry.id)!
             const groupKey = `${lang}::${pageKey}::${slot}`
             let group = pageGroups.get(groupKey)
             if (!group) {
+              if (!openaiApiKey) throw new StepError("tts", "Page-batched speech requires an OpenAI key for alignment. Existing audio has been preserved.")
               group = {
                 language: lang,
                 pageKey,
@@ -3094,11 +3177,12 @@ async function runSpeechStep(
                 model: providerModel,
                 voice,
                 voiceLabel,
-                entries: [],
+                entries: entries.filter((candidate) => pageById.get(candidate.id) === pageKey && !isTtsExcluded(candidate.id, config.speech)),
+                publishIds: new Set<string>(),
               }
               pageGroups.set(groupKey, group)
             }
-            group.entries.push({ id: entry.id, text: entry.text })
+            group.publishIds.add(entry.id)
             continue
           }
 
@@ -3125,6 +3209,7 @@ async function runSpeechStep(
           const existingEntry = existingSpeechEntries.get(slotEntryId)
 
           if (
+            !options.outputScope?.replace?.some((replacement) => replacement.identity.kind === "audio" && replacement.identity.id === entry.id && replacement.identity.language === lang && (replacement.identity.voiceSlot ?? "primary") === slot) &&
             canReuseSpeechEntry(existingEntry, {
               bookDir,
               cacheDir,
@@ -3135,6 +3220,7 @@ async function runSpeechStep(
               voice,
               instructions,
               format: outputFormat,
+              sampleRate: config.speech?.sample_rate, bitRate: config.speech?.bit_rate,
               voiceSlot: slot,
               geminiTemperature: config.speech?.temperature,
               geminiSeed: config.speech?.seed,
@@ -3153,7 +3239,7 @@ async function runSpeechStep(
             } else {
               delete refreshedEntry.voiceLabel
             }
-            ttsResultsByLang.get(lang)?.push(refreshedEntry)
+            storeResult(lang, refreshedEntry)
             reusedEntriesByLang.set(lang, (reusedEntriesByLang.get(lang) ?? 0) + 1)
             continue
           }
@@ -3295,7 +3381,7 @@ async function runSpeechStep(
                 signal: options.signal,
                 onWhisperLog: appendWordTimestampsLog(storage, progress),
               })
-              for (const e of entries) ttsResultsByLang.get(group.language)?.push(e)
+              for (const e of entries) if (group.publishIds.has(e.textId)) storeGenerated(group.language, e)
               // A page served from cache makes no request — don't reward the
               // limiter for it (mirrors the per-entry `!entry.cached` guard).
               const pageCached = entries.length > 0 && entries.every((e) => e.cached)
@@ -3420,6 +3506,7 @@ async function runSpeechStep(
           attemptCount++
           try {
             entry = await generateSpeechFile({
+          sampleRate: config.speech?.sample_rate, bitRate: config.speech?.bit_rate,
               textId: item.textId,
               text: item.text,
               language: item.language,
@@ -3550,7 +3637,7 @@ async function runSpeechStep(
         })
 
         if (entry) {
-          ttsResultsByLang.get(item.language)?.push(entry)
+          storeGenerated(item.language, entry)
         }
       } catch (err) {
         // Run cancel — re-throw so processWithConcurrency unwinds; an aborted
@@ -3617,10 +3704,48 @@ async function runSpeechStep(
       console.error(`[stage-run] ${label}: ${failedItems.length} TTS item(s) failed:\n${failedItems.join("\n")}`)
     }
 
+    const publish = (timestamps?: Map<string, WordTimestampOutput>) => storage.transaction(() => {
+      options.signal?.throwIfAborted()
+      for (const lang of outputLanguages) {
+        const captured = capturedSpeechVersions.get(lang)!
+        if (storage.getLatestNodeData("tts", lang)?.version !== captured.audio || storage.getLatestNodeData("tts-timestamps", lang)?.version !== captured.timings) {
+          throw new Error("Audio or timings changed during generation. Previous output has been preserved.")
+        }
+      }
+    const generatedIdentities = ttsWorkItems.map((item) => ({ kind: "audio" as const, id: item.textId, language: item.language, voiceSlot: item.voiceSlot }))
+    for (const group of pageGroups.values()) for (const id of group.publishIds) generatedIdentities.push({ kind: "audio", id, language: group.language, voiceSlot: group.voiceSlot })
+    const timingIdentities = [...(timestamps ?? new Map<string, WordTimestampOutput>())].flatMap(([lang, output]) => {
+      const previous = storage.getLatestNodeData("tts-timestamps", lang)?.data as WordTimestampOutput | undefined
+      return Object.entries(output.entries).filter(([key, entry]) => inputSignature(entry) !== inputSignature(previous?.entries[key])).map(([, entry]) => ({ kind: "timestamps" as const, id: entry.textId, language: lang, voiceSlot: entry.voiceSlot ?? "primary" as const }))
+    })
+    assertOutputPublication(capturedOutputs, readRunOutputs(label, options, storage), [...generatedIdentities, ...timingIdentities].filter((identity) => !outputSkipped(options.outputScope, identity)))
     for (const lang of outputLanguages) {
-      const entries = ttsResultsByLang.get(lang)
+      let entries = ttsResultsByLang.get(lang)
       if (!entries) continue
-      const failed = failedByLang.get(lang) ?? []
+      const retained = getExistingSpeechEntries(storage, lang)
+      entries = entries.flatMap((entry) => {
+        if (!outputSkipped(options.outputScope, { kind: "audio", id: entry.textId, language: lang, voiceSlot: entry.voiceSlot ?? "primary" })) return [entry]
+        const old = retained.get(voiceSlotEntryId(entry.textId, entry.voiceSlot))
+        return old ? [old] : []
+      })
+      const timings = timestamps?.get(lang)
+      if (timings) for (const [key, timing] of Object.entries(timings.entries)) {
+        const identity = { kind: "timestamps" as const, id: timing.textId, language: lang, voiceSlot: timing.voiceSlot ?? "primary" }
+        if (!outputSkipped(options.outputScope, identity) && !outputSkipped(options.outputScope, { ...identity, kind: "audio" })) continue
+        const old = (storage.getLatestNodeData("tts-timestamps", lang)?.data as WordTimestampOutput | undefined)?.entries[key]
+        if (old) timings.entries[key] = old
+        else delete timings.entries[key]
+      }
+      const oldOutput = storage.getLatestNodeData("tts", lang)?.data as TTSOutput | undefined
+      const failureMap = new Map((oldOutput?.failed ?? []).map((entry) => [voiceSlotEntryId(entry.textId, entry.voiceSlot), entry]))
+      for (const entry of entries) {
+        const key = voiceSlotEntryId(entry.textId, entry.voiceSlot)
+        if (inputSignature(entry) !== inputSignature(retained.get(key))) failureMap.delete(key)
+      }
+      for (const failure of failedByLang.get(lang) ?? []) {
+        if (!outputSkipped(options.outputScope, { kind: "audio", id: failure.textId, language: lang, voiceSlot: failure.voiceSlot ?? "primary" })) failureMap.set(voiceSlotEntryId(failure.textId, failure.voiceSlot), failure)
+      }
+      const failed = [...failureMap.values()]
       // Reused entries are collected during the scan pass and generated ones
       // afterwards, so push order interleaves the two voices arbitrarily. Sort
       // into the persisted output — but not in place: the word-timestamp pass
@@ -3633,10 +3758,13 @@ async function runSpeechStep(
         generatedAt: new Date().toISOString(),
         ...(failed.length > 0 ? { failed } : {}),
       }
-      storage.putNodeData("tts", lang, output)
+      publishSpeechOutput(storage, lang, output, timestamps?.get(lang))
     }
 
+    })
+
     if (geminiFailedItems.length > 0) {
+      publish()
       const summary = `${geminiFailedItems.length} Gemini TTS item(s) failed. Missing Gemini audio can be generated one by one from the Speech view.`
       // Complete the step with gaps rather than erroring. The failed items are
       // persisted per-language in the TTS output (`failed`) and surfaced in the
@@ -3659,6 +3787,7 @@ async function runSpeechStep(
     if (wordHighlightingEnabled) {
       progress.emit({ type: "step-start", step: "word-timestamps" })
       const generatedWordTimestamps = await generateSpeechWordTimestamps({
+        storage, scope: options.outputScope, statuses: capturedOutputs,
         label,
         bookDir,
         cacheDir,
@@ -3674,23 +3803,11 @@ async function runSpeechStep(
       wordTimestampsByLang = generatedWordTimestamps.entriesByLanguage
       timestampFailedByLang = generatedWordTimestamps.failedByLanguage
 
-      // Only persist tts-timestamps when we actually generated them. When
-      // highlighting is disabled, leave existing rows untouched so that
-      // manually-calculated timestamps (via the speech view) are preserved
-      // across speech re-runs. Per-item failures are persisted alongside the
-      // entries so the Speech view can mark them for pruning / one-by-one
-      // regeneration (mirrors the TTS `failed` list).
-      const timestampsGeneratedAt = new Date().toISOString()
-      for (const lang of outputLanguages) {
-        const entries = wordTimestampsByLang.get(lang) ?? {}
-        const failed = timestampFailedByLang.get(lang) ?? []
-        storage.putNodeData("tts-timestamps", lang, {
-          entries,
-          generatedAt: timestampsGeneratedAt,
-          ...(failed.length > 0 ? { failed } : {}),
-        } satisfies WordTimestampOutput)
-      }
     }
+    const timingOutputs = wordHighlightingEnabled ? new Map(outputLanguages.map((lang) => [lang, {
+      entries: wordTimestampsByLang.get(lang) ?? {}, generatedAt: new Date().toISOString(), failed: timestampFailedByLang.get(lang),
+    } satisfies WordTimestampOutput])) : undefined
+    publish(timingOutputs)
 
     const totalTimestampFailed = [...timestampFailedByLang.values()].reduce(
       (sum, items) => sum + items.length,

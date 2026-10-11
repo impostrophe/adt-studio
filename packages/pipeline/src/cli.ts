@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
 import path from "node:path"
+import fs from "node:fs"
 import cliProgress from "cli-progress"
-import { PIPELINE, STAGE_BY_NAME, STEP_TO_STAGE } from "@adt/types"
+import { PIPELINE, STAGE_BY_NAME, STEP_TO_STAGE, AuthoredReplacement } from "@adt/types"
 import type { StepName, StageName, ProgressEvent } from "@adt/types"
-import { ExtractionAdmissionError } from "@adt/storage"
 import { parseCliArgs, USAGE } from "./cli-args.js"
 import { runFullPipeline } from "./pipeline-dag.js"
 import type { Progress } from "./progress.js"
+import { ExtractionAdmissionError, BookBusyError } from "@adt/storage"
 
 function log(msg: string): void {
   process.stderr.write(msg)
@@ -29,8 +30,21 @@ function createCliProgress(): Progress & { stop(): void } {
     ...PIPELINE.flatMap((s) => s.steps.map((st) => st.label.length)),
   )
   const stageFormat = (label: string) => ` ${label}`
-  const stepFormat = (label: string) =>
-    `   ${label.padEnd(maxLabel + 2)} [{bar}] {value}/{total}`
+  // A skipped step never ran, so its bar stays empty and says so instead of
+  // showing a filled bar that looks like a completed step.
+  const stepFormat =
+    (label: string): cliProgress.GenericFormatter =>
+    (options, params, payload: { skipped?: boolean }) => {
+      const name = `   ${label.padEnd(maxLabel + 2)} `
+      const bar = cliProgress.Format.BarFormat(
+        payload.skipped ? 0 : params.progress,
+        options,
+      )
+      const status = payload.skipped
+        ? "skipped"
+        : `${params.value}/${params.total}`
+      return `${name}[${bar}] ${status}`
+    }
 
   const multibar = new cliProgress.MultiBar(
     {
@@ -61,9 +75,15 @@ function createCliProgress(): Progress & { stop(): void } {
 
   return {
     emit(event: ProgressEvent) {
-      if (event.type === "step-complete" || event.type === "step-skip") {
+      if (event.type === "step-complete") {
         const bar = bars.get(event.step)
         if (bar) bar.update(bar.getTotal())
+        return
+      }
+
+      if (event.type === "step-skip") {
+        const bar = bars.get(event.step)
+        if (bar) bar.update(0, { skipped: true })
         return
       }
 
@@ -99,8 +119,14 @@ async function main(): Promise<void> {
     process.exit(args.length === 0 ? 1 : 0)
   }
 
-  const { label, pdfPath, startPage, endPage, booksRoot, concurrency } =
+  const { label, pdfPath, startPage, endPage, booksRoot, concurrency, fromStage, toStage, protectedReplacementsFile } =
     parseCliArgs(args)
+  const protectedReplacements = protectedReplacementsFile
+    ? AuthoredReplacement.array().parse(JSON.parse(fs.readFileSync(protectedReplacementsFile, "utf8"))) : undefined
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  process.on("SIGINT", cancel)
+  process.on("SIGTERM", cancel)
 
   const promptsDir = path.resolve(process.cwd(), "prompts")
   const templatesDir = path.resolve(process.cwd(), "templates")
@@ -116,6 +142,9 @@ async function main(): Promise<void> {
         startPage,
         endPage,
         concurrency,
+        fromStage, toStage, protectedReplacements,
+        replaceManual: protectedReplacementsFile !== undefined,
+        signal: controller.signal,
         promptsDir,
         templatesDir,
         webAssetsDir,
@@ -136,17 +165,18 @@ async function main(): Promise<void> {
   } catch (err) {
     progress.stop()
     throw err
+  } finally {
+    process.off("SIGINT", cancel)
+    process.off("SIGTERM", cancel)
   }
 }
 
 main().catch((err) => {
-  if (err instanceof ExtractionAdmissionError && err.summary) {
-    process.stderr.write(`\nAdmission only (${err.code}):\n` +
-      "  Extraction: verified reusable; existing extraction retained.\n" +
-      "  Downstream: blocked; no work started.\n" +
-      "  Current/stale/protected scopes: not assessed; shared planner unavailable.\n" +
-      "  Content changed: no. Generated output: none.\n" +
-      "  Pipeline incomplete; exiting with status 1.\n")
+  if (err instanceof ExtractionAdmissionError || err instanceof BookBusyError) {
+    process.stderr.write(`\nFailed: ${err.message}\n`)
+    if (err instanceof ExtractionAdmissionError && err.summary) {
+      process.stderr.write("Extraction: verified reusable\nDownstream: blocked; no work started\nCurrent/stale/protected scopes: not assessed\nContent changed: no. Generated output: none.\nPipeline incomplete; exiting with status 1.\nUse --from-stage sectioning --to-stage storyboard for the supported B1 range.\n")
+    }
     process.exit(1)
   }
   const detail =

@@ -3,7 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 import os from "node:os"
 import { Hono } from "hono"
-import { createBookStorage, openBookDb } from "@adt/storage"
+import { createBookStorage, openBookDb, writeSectioningLifecycle } from "@adt/storage"
 import { errorHandler } from "../middleware/error-handler.js"
 import { createPageRoutes } from "./pages.js"
 import type { TaskExecutor, TaskService } from "../services/task-service.js"
@@ -13,6 +13,34 @@ describe("Page routes", () => {
   let globalConfigPath: string
   let app: Hono
   const label = "test-book"
+
+  // These regression cases test structural/restore semantics. Emulate the
+  // editor's version read; missing/stale/racing guards are exercised without
+  // this helper in manual-edit-survival.test.ts.
+  function requestPageEdit(url: string, init?: RequestInit) {
+    const method = init?.method ?? "GET"
+    if (!["POST", "PUT", "DELETE"].includes(method)) return app.request(url, init)
+    let body: Record<string, unknown>
+    try { body = init?.body ? JSON.parse(String(init.body)) : {} } catch { return app.request(url, init) }
+    const restore = url.match(/\/versions\/([^/]+)\/([^/]+)\/restore/)
+    const page = url.match(/\/pages\/([^/]+)\/(sectioning|storyboard|sections\/\d+(?:\/(?:clone|split|merge|merge-cross-page|ai-edit))?)(?:\?|$)/)
+    if (!restore && !page) return app.request(url, init)
+    if (page?.[2] === "storyboard" && !body.sectioning) return app.request(url, init)
+    const requestLabel = url.match(/\/books\/([^/]+)/)?.[1] ?? label
+    const exists = fs.existsSync(path.join(tmpDir, requestLabel, `${requestLabel}.db`))
+    const storage = exists ? createBookStorage(requestLabel, tmpDir) : null
+    try {
+      const node = restore?.[1] ?? "page-sectioning", id = restore?.[2] ?? page![1]
+      body.baseVersion ??= storage?.getCurrentNodeVersion(node, id) ?? 0
+      if (url.includes("merge-cross-page") && storage) {
+        const pages = storage.getPages()
+        const index = pages.findIndex((p) => p.pageId === id)
+        const target = pages[index + (url.includes("direction=prev") ? -1 : 1)]
+        body.targetBaseVersion ??= target ? storage.getCurrentNodeVersion(node, target.pageId) ?? 0 : 0
+      }
+    } finally { storage?.close() }
+    return app.request(url, { ...init, headers: { "Content-Type": "application/json", ...init?.headers }, body: JSON.stringify(body) })
+  }
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pages-routes-"))
@@ -108,7 +136,7 @@ describe("Page routes", () => {
 
   describe("GET /api/books/:label/pages", () => {
     it("returns list of pages", async () => {
-      const res = await app.request(`/api/books/${label}/pages`)
+      const res = await requestPageEdit(`/api/books/${label}/pages`)
 
       expect(res.status).toBe(200)
       const body = await res.json()
@@ -123,14 +151,14 @@ describe("Page routes", () => {
     })
 
     it("returns 404 for nonexistent book", async () => {
-      const res = await app.request("/api/books/no-such-book/pages")
+      const res = await requestPageEdit("/api/books/no-such-book/pages")
       expect(res.status).toBe(404)
     })
   })
 
   describe("GET /api/books/:label/pages/:pageId", () => {
     it("returns full page data with pipeline outputs", async () => {
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1`
       )
 
@@ -152,7 +180,7 @@ describe("Page routes", () => {
     })
 
     it("returns page without pipeline data if not processed", async () => {
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p2`
       )
 
@@ -164,7 +192,7 @@ describe("Page routes", () => {
     })
 
     it("returns 404 for nonexistent page", async () => {
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/fake-page`
       )
       expect(res.status).toBe(404)
@@ -173,7 +201,7 @@ describe("Page routes", () => {
 
   describe("GET /api/books/:label/pages/:pageId/image", () => {
     it("returns page image as base64 JSON", async () => {
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/image`
       )
 
@@ -184,7 +212,7 @@ describe("Page routes", () => {
     })
 
     it("returns 404 for nonexistent page image", async () => {
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/fake-page/image`
       )
       expect(res.status).toBe(404)
@@ -222,7 +250,7 @@ describe("Page routes", () => {
         ],
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sectioning`,
         {
           method: "PUT",
@@ -237,7 +265,7 @@ describe("Page routes", () => {
     })
 
     it("returns 400 for invalid body", async () => {
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sectioning`,
         {
           method: "PUT",
@@ -255,7 +283,7 @@ describe("Page routes", () => {
         sections: [],
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/fake-page/sectioning`,
         {
           method: "PUT",
@@ -281,7 +309,7 @@ describe("Page routes", () => {
         seed.close()
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sectioning`,
         {
           method: "PUT",
@@ -312,7 +340,7 @@ describe("Page routes", () => {
         seed.close()
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sectioning`,
         {
           method: "PUT",
@@ -343,7 +371,7 @@ describe("Page routes", () => {
         seed.close()
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/rendering`,
         {
           method: "PUT",
@@ -376,7 +404,7 @@ describe("Page routes", () => {
     }
 
     const save = (body: unknown) =>
-      app.request(`/api/books/${label}/pages/${label}_p1/storyboard`, {
+      requestPageEdit(`/api/books/${label}/pages/${label}_p1/storyboard`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -527,7 +555,7 @@ describe("Page routes", () => {
     })
 
     it("returns 404 for nonexistent page", async () => {
-      const res = await app.request(`/api/books/${label}/pages/fake-page/storyboard`, {
+      const res = await requestPageEdit(`/api/books/${label}/pages/fake-page/storyboard`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rendering: { sections: [] } }),
@@ -544,7 +572,7 @@ describe("Page routes", () => {
         ],
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/image-filtering`,
         {
           method: "PUT",
@@ -559,7 +587,7 @@ describe("Page routes", () => {
     })
 
     it("returns 400 for invalid body", async () => {
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/image-filtering`,
         {
           method: "PUT",
@@ -600,7 +628,7 @@ describe("Page routes", () => {
     it("keeps the storyboard complete when a section is deleted", async () => {
       seedCompletedChain()
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0`,
         { method: "DELETE" }
       )
@@ -615,7 +643,7 @@ describe("Page routes", () => {
     it("keeps the storyboard complete when a section is cloned", async () => {
       seedCompletedChain()
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/clone`,
         { method: "POST" }
       )
@@ -631,7 +659,7 @@ describe("Page routes", () => {
   })
 
   describe("POST /api/books/:label/pages/:pageId/sections/:sectionIndex/clone", () => {
-    it("assigns fresh ids to cloned containers but preserves leaf ids", async () => {
+    it("assigns fresh identities to cloned containers and text leaves", async () => {
       const sourceContainerId = `${label}_p1_n0001`
       const sourceLeafId = `${label}_p1_n0002`
 
@@ -683,7 +711,7 @@ describe("Page routes", () => {
         storage.close()
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/clone`,
         { method: "POST" }
       )
@@ -708,7 +736,7 @@ describe("Page routes", () => {
         const cloned = sectioning.sections[1]
         expect(cloned.sectionId).toBe(`${label}_p1_sec002`)
         expect(cloned.nodes[0]?.nodeId).not.toBe(original.nodes[0]?.nodeId)
-        expect(cloned.nodes[0]?.children?.[0]?.nodeId).toBe(sourceLeafId)
+        expect(cloned.nodes[0]?.children?.[0]?.nodeId).not.toBe(sourceLeafId)
 
         const renderingRow = verify.getLatestNodeData("web-rendering", `${label}_p1`)
         const rendering = renderingRow?.data as {
@@ -717,7 +745,7 @@ describe("Page routes", () => {
         const clonedRendering = rendering.sections.find((section) => section.sectionIndex === 1)
         expect(clonedRendering?.html).toContain(`data-section-id="${label}_p1_sec002"`)
         expect(clonedRendering?.html).toContain(`data-id="${cloned.nodes[0]?.nodeId}"`)
-        expect(clonedRendering?.html).toContain(`data-id="${sourceLeafId}"`)
+        expect(clonedRendering?.html).toContain(`data-id="${cloned.nodes[0]?.children?.[0]?.nodeId}"`)
         expect(clonedRendering?.html).not.toContain(`data-id="${sourceContainerId}"`)
       } finally {
         verify.close()
@@ -776,7 +804,7 @@ describe("Page routes", () => {
         storage.close()
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0`,
         { method: "DELETE" }
       )
@@ -812,7 +840,7 @@ describe("Page routes", () => {
         storage.close()
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/clone`,
         { method: "POST" }
       )
@@ -917,7 +945,7 @@ describe("Page routes", () => {
         seed.close()
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/split`,
         {
           method: "POST",
@@ -948,7 +976,7 @@ describe("Page routes", () => {
         seed.close()
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/split`,
         {
           method: "POST",
@@ -974,7 +1002,7 @@ describe("Page routes", () => {
     it("splits a section, keeping the first half's id and leaving the untouched section alone", async () => {
       seedThreeNodeSection({ rendering: true })
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/split`,
         {
           method: "POST",
@@ -1042,7 +1070,7 @@ describe("Page routes", () => {
     it("partitions the fixed-layout placement sidecar by subtree", async () => {
       seedThreeNodeSection({ placement: true })
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/split`,
         {
           method: "POST",
@@ -1115,7 +1143,7 @@ describe("Page routes", () => {
         storage.close()
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/split`,
         {
           method: "POST",
@@ -1203,7 +1231,7 @@ describe("Page routes", () => {
         storage.close()
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/split`,
         {
           method: "POST",
@@ -1230,7 +1258,7 @@ describe("Page routes", () => {
     it("returns 400 when splitting before the first node of the section", async () => {
       seedThreeNodeSection()
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/split`,
         {
           method: "POST",
@@ -1244,7 +1272,7 @@ describe("Page routes", () => {
     it("returns 400 unless exactly one of beforeNodeIndex/beforeNodeId is given", async () => {
       seedThreeNodeSection()
 
-      const neither = await app.request(
+      const neither = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/split`,
         {
           method: "POST",
@@ -1254,7 +1282,7 @@ describe("Page routes", () => {
       )
       expect(neither.status).toBe(400)
 
-      const both = await app.request(
+      const both = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/split`,
         {
           method: "POST",
@@ -1271,7 +1299,7 @@ describe("Page routes", () => {
     it("returns 400 when beforeNodeIndex is out of range or zero", async () => {
       seedThreeNodeSection()
 
-      const outOfRange = await app.request(
+      const outOfRange = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/split`,
         {
           method: "POST",
@@ -1281,7 +1309,7 @@ describe("Page routes", () => {
       )
       expect(outOfRange.status).toBe(400)
 
-      const zero = await app.request(
+      const zero = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/split`,
         {
           method: "POST",
@@ -1331,7 +1359,7 @@ describe("Page routes", () => {
         storage.close()
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/merge?direction=next`,
         { method: "POST" }
       )
@@ -1426,7 +1454,7 @@ describe("Page routes", () => {
     it("keeps every surviving id when a middle section is deleted", async () => {
       seedSections(4)
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/1`,
         { method: "DELETE" }
       )
@@ -1443,7 +1471,7 @@ describe("Page routes", () => {
     it("keeps every surviving id when a middle section is cloned", async () => {
       seedSections(3)
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/clone`,
         { method: "POST" }
       )
@@ -1462,7 +1490,7 @@ describe("Page routes", () => {
     it("never reissues a retired id, even after the deletion is no longer visible", async () => {
       seedSections(3)
 
-      const del = await app.request(
+      const del = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/2`,
         { method: "DELETE" }
       )
@@ -1472,7 +1500,7 @@ describe("Page routes", () => {
       // A max-of-current counter would hand out `_sec003` again here, silently
       // adopting the deleted section's TOC entry, sign-language video and
       // answer-text catalog keys. The id space is tracked across all versions.
-      const clone = await app.request(
+      const clone = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/clone`,
         { method: "POST" }
       )
@@ -1499,7 +1527,7 @@ describe("Page routes", () => {
       // TOC entry, sign-language video and answer-text catalog keys on two
       // pages at once. The existing tests for this endpoint use single-section
       // pages, so nothing there could have caught it.
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p2/sections/0/merge-cross-page?direction=prev`,
         { method: "POST" }
       )
@@ -1533,7 +1561,7 @@ describe("Page routes", () => {
     it("does not reissue a spent id after an earlier sectioning version is restored", async () => {
       const seededVersion = seedSections(3)
 
-      const clone = await app.request(
+      const clone = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/clone`,
         { method: "POST" }
       )
@@ -1544,7 +1572,7 @@ describe("Page routes", () => {
       // the current-version pointer, so `_sec004` remains in history and must
       // stay spent. A counter stored on the entity would have been rewound
       // along with it and reissued `_sec004` to different content.
-      const restore = await app.request(
+      const restore = await requestPageEdit(
         `/api/books/${label}/versions/page-sectioning/${label}_p1/restore`,
         {
           method: "POST",
@@ -1554,7 +1582,7 @@ describe("Page routes", () => {
       )
       expect(restore.status).toBe(200)
 
-      const second = await app.request(
+      const second = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/clone`,
         { method: "POST" }
       )
@@ -1583,7 +1611,7 @@ describe("Page routes", () => {
       }
       seedSections(1)
 
-      const clone = await app.request(
+      const clone = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/clone`,
         { method: "POST" }
       )
@@ -1609,7 +1637,7 @@ describe("Page routes", () => {
       }
 
       // Merge sections 0 and 1: `_sec001` survives, `_sec002` is retired.
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/merge?direction=next`,
         { method: "POST" }
       )
@@ -1692,7 +1720,7 @@ describe("Page routes", () => {
         storage.close()
       }
 
-      const request = () => app.request(`/api/books/${label}/spreads/apply`, {
+      const request = () => requestPageEdit(`/api/books/${label}/spreads/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ spreadPairs: [] }),
@@ -1738,14 +1766,7 @@ describe("Page routes", () => {
       ).toEqual([fileName])
     })
 
-    it("clears the speech manifests wholesale, so no entry outlives a retired id", async () => {
-      // This is why `retireSectionIds`' speech prune is moot on the section-level
-      // ops but load-bearing on `spreads/apply` and the stage rerun: those two
-      // drop a page's sectioning history without clearing the manifests, while
-      // every op that goes through `saveStoryboardNode` wipes them entirely
-      // (`clearCaptionData`). If that ever stops being true, the prune is the
-      // only thing standing between a re-minted id and the old recording — so
-      // pin the behaviour rather than leaving it implied.
+    it("retains unrelated speech and retired speech history", async () => {
       seedSections(3)
 
       const audioDir = path.join(tmpDir, label, "audio", "en")
@@ -1772,7 +1793,7 @@ describe("Page routes", () => {
         storage.close()
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/1`,
         { method: "DELETE" }
       )
@@ -1780,12 +1801,14 @@ describe("Page routes", () => {
 
       const verify = createBookStorage(label, tmpDir)
       try {
-        expect(verify.getNodeItemIds("tts")).toEqual([])
+        expect(verify.getNodeItemIds("tts")).toEqual(["en"])
+        expect((verify.getLatestNodeData("tts", "en")!.data as { entries: Array<{ textId: string }> }).entries.map((entry) => entry.textId)).toEqual([`${label}_p1_sec003_ans_a`])
+        expect(verify.getAllNodeVersions("tts", "en")[0].data).toMatchObject({ entries: [{ textId: `${label}_p1_sec002_ans_a` }, { textId: `${label}_p1_sec003_ans_a` }] })
         expect(verify.getNodeItemIds("tts-timestamps")).toEqual([])
       } finally {
         verify.close()
       }
-      // The manifests go; the uploads never do.
+      // Physical recordings remain restorable.
       for (const textId of [`${label}_p1_sec002_ans_a`, `${label}_p1_sec003_ans_a`]) {
         expect(fs.existsSync(path.join(audioDir, `${textId}.mp3`))).toBe(true)
       }
@@ -1812,7 +1835,7 @@ describe("Page routes", () => {
         storage.close()
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/1`,
         { method: "DELETE" }
       )
@@ -1877,7 +1900,7 @@ describe("Page routes", () => {
     it("records the source page in the target section's sourcePageIds", async () => {
       seedBothPages()
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/merge-cross-page?direction=next`,
         { method: "POST" }
       )
@@ -1908,7 +1931,7 @@ describe("Page routes", () => {
     it("carries prior provenance from the moved section", async () => {
       seedBothPages({ sourcePageIds: [`${label}_p0`] })
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/merge-cross-page?direction=next`,
         { method: "POST" }
       )
@@ -1938,7 +1961,7 @@ describe("Page routes", () => {
         storage.close()
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sections/0/merge-cross-page?direction=next&renderingInSync=1`,
         { method: "POST" }
       )
@@ -1954,6 +1977,7 @@ describe("Page routes", () => {
   })
 
   describe("POST /api/books/:label/pages/re-render", () => {
+    beforeEach(() => writeSectioningLifecycle(path.join(tmpDir, label), "dynamic", true))
     it("marks the Storyboard running before submitting one task for all pages", async () => {
       const storage = createBookStorage(label, tmpDir)
       try {
@@ -2004,7 +2028,7 @@ describe("Page routes", () => {
     })
 
     it("requires an API key", async () => {
-      const res = await app.request(`/api/books/${label}/pages/re-render`, {
+      const res = await requestPageEdit(`/api/books/${label}/pages/re-render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pageIds: [`${label}_p1`] }),
@@ -2014,8 +2038,9 @@ describe("Page routes", () => {
   })
 
   describe("POST /api/books/:label/pages/:pageId/re-render", () => {
+    beforeEach(() => writeSectioningLifecycle(path.join(tmpDir, label), "dynamic", true))
     it("validates the request without requiring an unconditional OpenAI key", async () => {
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/re-render?sectionIndex=99`,
         { method: "POST" }
       )
@@ -2026,7 +2051,7 @@ describe("Page routes", () => {
     })
 
     it("returns 400 when sectionIndex query is out of range", async () => {
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/re-render?sectionIndex=99`,
         {
           method: "POST",
@@ -2043,9 +2068,117 @@ describe("Page routes", () => {
   describe("POST /api/books/:label/images/ai-generate", () => {
     const pageId = "test-book_p1"
     const endpoint = `/api/books/${label}/images/ai-generate?pageId=${pageId}`
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAGCAYAAADkOT91AAAAH0lEQVR4AV3BwREAMAiAMMr+O1ufHsmbxSEhISEh8QGPSwQIxMxWxQAAAABJRU5ErkJggg=="
+    const googleHeaders = { "Content-Type": "application/json", "X-Google-API-Key": "google-test" }
+
+    function mockGoogleImage(data = png, mimeType = "image/png") {
+      fs.appendFileSync(globalConfigPath, 'default_image_generation_model: "google:gemini-3.1-flash-image"\n')
+      const fetchMock = vi.fn(async () => Response.json({ status: "completed", steps: [
+        { type: "model_output", content: [{ type: "image", mime_type: mimeType, data }] },
+      ] }))
+      vi.stubGlobal("fetch", fetchMock)
+      return fetchMock
+    }
+
+    afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
+
+    it.each([false, true])("passes the target ratio for generation (style reference: %s)", async (withStyle) => {
+      const fetchMock = mockGoogleImage()
+      const response = await requestPageEdit(endpoint, {
+        method: "POST", headers: googleHeaders,
+        body: JSON.stringify({ prompt: "a diagram", targetImageId: `${pageId}_page`,
+          ...(withStyle ? { styleImageId: "test-book_p2_page" } : {}) }),
+      })
+      expect(response.status).toBe(200)
+      const request = JSON.parse(fetchMock.mock.calls[0][1].body)
+      expect(request.response_format.aspect_ratio).toBe("4:3")
+      expect(request.input.length).toBe(withStyle ? 2 : 1)
+    })
+
+    it("does not force source edits into a size or ratio bucket", async () => {
+      const fetchMock = mockGoogleImage()
+      const response = await requestPageEdit(endpoint, {
+        method: "POST", headers: googleHeaders,
+        body: JSON.stringify({ prompt: "translate the labels", targetImageId: `${pageId}_page`, referenceImageId: `${pageId}_page` }),
+      })
+      expect(response.status).toBe(200)
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("response_format")
+    })
+
+    it.each(['style="object-fit:fill;color:red"', "style='object-fit:cover'", ""])(
+      "contains differently proportioned replacements without stretching: %s", async (style) => {
+        mockGoogleImage()
+        const storage = createBookStorage(label, tmpDir)
+        try {
+          storage.putNodeData("web-rendering", pageId, { sections: [{
+            sectionIndex: 0, sectionType: "content", reasoning: "test",
+            html: `<section><img data-id="${pageId}_page" src="/api/books/${label}/images/${pageId}_page" width="800" height="600" ${style}></section>`,
+          }] })
+          const response = await requestPageEdit(endpoint, {
+            method: "POST", headers: googleHeaders,
+            body: JSON.stringify({ prompt: "a diagram", targetImageId: `${pageId}_page`, sectionIndex: 0, mode: "swap" }),
+          })
+          expect(response.status).toBe(200)
+          const result = await response.json()
+          expect(result).toMatchObject({ width: 4, height: 6, originalWidth: 800, originalHeight: 600 })
+          const rendering = storage.getLatestNodeData("web-rendering", pageId)!.data as { sections: Array<{ html: string }> }
+          expect(rendering.sections[0].html).toContain(`data-id="${result.imageId}"`)
+          expect(rendering.sections[0].html).toContain("object-fit:contain!important")
+          expect(rendering.sections[0].html).not.toMatch(/object-fit:(fill|cover)/)
+          expect(rendering.sections[0].html).toContain('width="800" height="600"')
+        } finally { storage.close() }
+      },
+    )
+
+    it("rejects undecodable output without saving, swapping, or poisoning the cache", async () => {
+      mockGoogleImage(Buffer.from("ffd8ffd9", "hex").toString("base64"), "image/jpeg")
+      const storage = createBookStorage(label, tmpDir)
+      try {
+        const beforeImages = storage.getPageImages(pageId)
+        const beforeRendering = storage.getLatestNodeData("web-rendering", pageId)
+        const response = await requestPageEdit(endpoint, {
+          method: "POST", headers: googleHeaders,
+          body: JSON.stringify({ prompt: "a diagram", targetImageId: `${pageId}_page`, sectionIndex: 0, mode: "swap" }),
+        })
+        expect(response.status).toBe(500)
+        expect(storage.getPageImages(pageId)).toEqual(beforeImages)
+        expect(storage.getLatestNodeData("web-rendering", pageId)).toEqual(beforeRendering)
+        const cache = path.join(tmpDir, label, ".cache")
+        expect(fs.existsSync(cache) ? fs.readdirSync(cache) : []).toEqual([])
+      } finally { storage.close() }
+    })
+
+    it("uses the Google default with no OpenAI key and saves actual returned dimensions", async () => {
+      const png = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAGCAYAAADkOT91AAAAH0lEQVR4AV3BwREAMAiAMMr+O1ufHsmbxSEhISEh8QGPSwQIxMxWxQAAAABJRU5ErkJggg=="
+      fs.appendFileSync(globalConfigPath, 'default_image_generation_model: "google:gemini-3.1-flash-image"\n')
+      vi.stubEnv("OPENAI_API_KEY", "")
+      const fetchMock = vi.fn(async () => Response.json({ status: "completed", steps: [
+        { type: "model_output", content: [{ type: "image", mime_type: "image/png", data: png }] },
+      ] }))
+      vi.stubGlobal("fetch", fetchMock)
+      try {
+        const response = await requestPageEdit(endpoint, {
+          method: "POST", headers: { "Content-Type": "application/json", "X-Google-API-Key": "google-test" },
+          body: JSON.stringify({ prompt: "a labelled diagram" }),
+        })
+        expect(response.status).toBe(200)
+        const result = await response.json()
+        expect(result).toMatchObject({ width: 4, height: 6 })
+        const storage = createBookStorage(label, tmpDir)
+        try {
+          const meta = storage.getImageMeta(result.imageId)!
+          expect(storage.getImageDimensions(result.imageId)).toEqual({ width: 4, height: 6 })
+          expect(fs.readFileSync(path.join(tmpDir, label, meta.relativePath)).toString("base64")).toBe(png)
+        } finally { storage.close() }
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.unstubAllGlobals()
+        vi.unstubAllEnvs()
+      }
+    })
 
     it("returns 400 when the selected image provider credential is missing", async () => {
-      const res = await app.request(endpoint, {
+      const res = await requestPageEdit(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: "a cat" }),
@@ -2057,7 +2190,7 @@ describe("Page routes", () => {
     })
 
     it("returns 400 when pageId query param is missing", async () => {
-      const res = await app.request(`/api/books/${label}/images/ai-generate`, {
+      const res = await requestPageEdit(`/api/books/${label}/images/ai-generate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -2072,7 +2205,7 @@ describe("Page routes", () => {
     })
 
     it("returns 400 when prompt is missing", async () => {
-      const res = await app.request(endpoint, {
+      const res = await requestPageEdit(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -2087,7 +2220,7 @@ describe("Page routes", () => {
     })
 
     it("returns 404 for nonexistent book", async () => {
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/no-such-book/images/ai-generate?pageId=pg001`,
         {
           method: "POST",
@@ -2103,7 +2236,7 @@ describe("Page routes", () => {
     })
 
     it("rejects referenceImageId with path traversal characters", async () => {
-      const res = await app.request(endpoint, {
+      const res = await requestPageEdit(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -2121,7 +2254,7 @@ describe("Page routes", () => {
     })
 
     it("rejects targetImageId with path traversal characters", async () => {
-      const res = await app.request(endpoint, {
+      const res = await requestPageEdit(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -2139,7 +2272,7 @@ describe("Page routes", () => {
     })
 
     it("returns 404 when reference image file does not exist", async () => {
-      const res = await app.request(endpoint, {
+      const res = await requestPageEdit(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -2174,7 +2307,7 @@ describe("Page routes", () => {
       formData.append("pageId", `${label}_p1`)
       formData.append("sourceImageId", `${label}_p1_page`)
 
-      const res = await app.request(`/api/books/${label}/images`, {
+      const res = await requestPageEdit(`/api/books/${label}/images`, {
         method: "POST",
         body: formData,
       })
@@ -2201,14 +2334,14 @@ describe("Page routes", () => {
       form1.append("image", new Blob([pngHeader], { type: "image/png" }), "crop.png")
       form1.append("pageId", `${label}_p1`)
       form1.append("sourceImageId", `${label}_p1_page`)
-      await app.request(`/api/books/${label}/images`, { method: "POST", body: form1 })
+      await requestPageEdit(`/api/books/${label}/images`, { method: "POST", body: form1 })
 
       // Second upload
       const form2 = new FormData()
       form2.append("image", new Blob([pngHeader], { type: "image/png" }), "crop.png")
       form2.append("pageId", `${label}_p1`)
       form2.append("sourceImageId", `${label}_p1_page`)
-      const res = await app.request(`/api/books/${label}/images`, { method: "POST", body: form2 })
+      const res = await requestPageEdit(`/api/books/${label}/images`, { method: "POST", body: form2 })
 
       expect(res.status).toBe(200)
       const body = await res.json()
@@ -2220,7 +2353,7 @@ describe("Page routes", () => {
       formData.append("pageId", `${label}_p1`)
       formData.append("sourceImageId", `${label}_p1_page`)
 
-      const res = await app.request(`/api/books/${label}/images`, {
+      const res = await requestPageEdit(`/api/books/${label}/images`, {
         method: "POST",
         body: formData,
       })
@@ -2233,7 +2366,7 @@ describe("Page routes", () => {
       formData.append("image", new Blob([Buffer.alloc(10)], { type: "image/png" }), "crop.png")
       formData.append("sourceImageId", `${label}_p1_page`)
 
-      const res = await app.request(`/api/books/${label}/images`, {
+      const res = await requestPageEdit(`/api/books/${label}/images`, {
         method: "POST",
         body: formData,
       })
@@ -2246,7 +2379,7 @@ describe("Page routes", () => {
       formData.append("image", new Blob([Buffer.alloc(10)], { type: "image/png" }), "crop.png")
       formData.append("pageId", `${label}_p1`)
 
-      const res = await app.request(`/api/books/${label}/images`, {
+      const res = await requestPageEdit(`/api/books/${label}/images`, {
         method: "POST",
         body: formData,
       })
@@ -2260,7 +2393,7 @@ describe("Page routes", () => {
       formData.append("pageId", `${label}_p1`)
       formData.append("sourceImageId", "../../../etc/passwd")
 
-      const res = await app.request(`/api/books/${label}/images`, {
+      const res = await requestPageEdit(`/api/books/${label}/images`, {
         method: "POST",
         body: formData,
       })
@@ -2276,7 +2409,7 @@ describe("Page routes", () => {
       formData.append("pageId", "pg001")
       formData.append("sourceImageId", "img001")
 
-      const res = await app.request(`/api/books/no-such-book/images`, {
+      const res = await requestPageEdit(`/api/books/no-such-book/images`, {
         method: "POST",
         body: formData,
       })
@@ -2355,18 +2488,18 @@ describe("Page routes", () => {
     }
   }
 
-  /** Assert that all storyboard-dependent node data and step_runs were cleared. */
-  function expectAllDownstreamCleared(dir: string, bookLabel: string) {
+  /** Assert retained catalog versions and invalidated attempt status. */
+  function expectCatalogOutputsPreserved(dir: string, bookLabel: string) {
     const s = createBookStorage(bookLabel, dir)
     try {
-      // Node data should be gone
-      expect(s.getLatestNodeData("image-captioning", `${bookLabel}_p1`)).toBeNull()
-      expect(s.getLatestNodeData("text-catalog", `${bookLabel}_p1`)).toBeNull()
-      expect(s.getLatestNodeData("text-catalog-translation", `${bookLabel}_p1`)).toBeNull()
-      expect(s.getLatestNodeData("core-tts-catalog", "en")).toBeNull()
-      expect(s.getLatestNodeData("easy-read", "book")).toBeNull()
-      expect(s.getLatestNodeData("tts", `${bookLabel}_p1`)).toBeNull()
-      expect(s.getLatestNodeData("tts-timestamps", "en")).toBeNull()
+      // Catalog content and history remain unchanged; assessment is invalidated.
+      expect(s.getLatestNodeData("image-captioning", `${bookLabel}_p1`)).toMatchObject({ version: 1 })
+      expect(s.getLatestNodeData("text-catalog", `${bookLabel}_p1`)).toMatchObject({ version: 1 })
+      expect(s.getLatestNodeData("text-catalog-translation", `${bookLabel}_p1`)).toMatchObject({ version: 1 })
+      expect(s.getLatestNodeData("core-tts-catalog", "en")).toMatchObject({ version: 1 })
+      expect(s.getLatestNodeData("easy-read", "book")).toMatchObject({ version: 1 })
+      expect(s.getLatestNodeData("tts", `${bookLabel}_p1`)).toMatchObject({ version: 1 })
+      expect(s.getLatestNodeData("tts-timestamps", "en")).toMatchObject({ version: 1 })
       expect(s.getLatestNodeData("accessibility-assessment", "book")).toBeNull()
       // Step runs should be gone
       const runs = s.getStepRuns()
@@ -2391,18 +2524,18 @@ describe("Page routes", () => {
   }
 
   /** Assert that translate/speech (but NOT image-captioning) node data and step_runs were cleared. */
-  function expectTextAndSpeechCleared(dir: string, bookLabel: string) {
+  function expectTextAndSpeechPreserved(dir: string, bookLabel: string) {
     const s = createBookStorage(bookLabel, dir)
     try {
       // image-captioning should still exist
       expect(s.getLatestNodeData("image-captioning", `${bookLabel}_p1`)).not.toBeNull()
       expect(s.getLatestNodeData("easy-read", "book")).not.toBeNull()
       // text-catalog, translations, tts should be gone
-      expect(s.getLatestNodeData("text-catalog", `${bookLabel}_p1`)).toBeNull()
-      expect(s.getLatestNodeData("text-catalog-translation", `${bookLabel}_p1`)).toBeNull()
-      expect(s.getLatestNodeData("core-tts-catalog", "en")).toBeNull()
-      expect(s.getLatestNodeData("tts", `${bookLabel}_p1`)).toBeNull()
-      expect(s.getLatestNodeData("tts-timestamps", "en")).toBeNull()
+      expect(s.getLatestNodeData("text-catalog", `${bookLabel}_p1`)).toMatchObject({ version: 1 })
+      expect(s.getLatestNodeData("text-catalog-translation", `${bookLabel}_p1`)).toMatchObject({ version: 1 })
+      expect(s.getLatestNodeData("core-tts-catalog", "en")).toMatchObject({ version: 1 })
+      expect(s.getLatestNodeData("tts", `${bookLabel}_p1`)).toMatchObject({ version: 1 })
+      expect(s.getLatestNodeData("tts-timestamps", "en")).toMatchObject({ version: 1 })
       expect(s.getLatestNodeData("accessibility-assessment", "book")).toBeNull()
       // Step runs: image-captioning should remain, text steps should be gone
       const runs = s.getStepRuns()
@@ -2456,7 +2589,7 @@ describe("Page routes", () => {
         }],
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/sectioning`,
         {
           method: "PUT",
@@ -2466,7 +2599,7 @@ describe("Page routes", () => {
       )
 
       expect(res.status).toBe(200)
-      expectAllDownstreamCleared(tmpDir, label)
+      expectCatalogOutputsPreserved(tmpDir, label)
     })
   })
 
@@ -2483,7 +2616,7 @@ describe("Page routes", () => {
         }],
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/rendering`,
         {
           method: "PUT",
@@ -2493,7 +2626,7 @@ describe("Page routes", () => {
       )
 
       expect(res.status).toBe(200)
-      expectAllDownstreamCleared(tmpDir, label)
+      expectCatalogOutputsPreserved(tmpDir, label)
     })
   })
 
@@ -2516,13 +2649,13 @@ describe("Page routes", () => {
       formData.append("pageId", `${label}_p1`)
       formData.append("sourceImageId", `${label}_p1_page`)
 
-      const res = await app.request(`/api/books/${label}/images`, {
+      const res = await requestPageEdit(`/api/books/${label}/images`, {
         method: "POST",
         body: formData,
       })
 
       expect(res.status).toBe(200)
-      expectAllDownstreamCleared(tmpDir, label)
+      expectCatalogOutputsPreserved(tmpDir, label)
     })
   })
 
@@ -2532,9 +2665,10 @@ describe("Page routes", () => {
 
       const data = {
         captions: [{ imageId: "img1", reasoning: "updated", caption: "A dog" }],
+        baseVersion: 1, sourceSignature: (await (await requestPageEdit(`/api/books/${label}/pages/${label}_p1`)).json()).captionSourceSignature,
       }
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/pages/${label}_p1/image-captioning`,
         {
           method: "PUT",
@@ -2546,7 +2680,7 @@ describe("Page routes", () => {
       expect(res.status).toBe(200)
       // image-captioning was just saved (new version), so it should exist
       // but text-catalog, translations, tts should be cleared
-      expectTextAndSpeechCleared(tmpDir, label)
+      expectTextAndSpeechPreserved(tmpDir, label)
     })
   })
 
@@ -2559,7 +2693,7 @@ describe("Page routes", () => {
       storage.close()
       seedDownstreamData(tmpDir, label)
 
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/versions/web-rendering/${label}_p1/restore`,
         {
           method: "POST",
@@ -2574,7 +2708,7 @@ describe("Page routes", () => {
       expect(check.getCurrentNodeVersion("web-rendering", `${label}_p1`)).toBe(1)
       expect(check.getLatestNodeData("web-rendering", `${label}_p1`)?.version).toBe(1)
       check.close()
-      expectAllDownstreamCleared(tmpDir, label)
+      expectCatalogOutputsPreserved(tmpDir, label)
     })
 
     it("restores Core TTS text while preserving uploaded recordings", async () => {
@@ -2629,7 +2763,7 @@ describe("Page routes", () => {
       })
       storage.close()
 
-      const response = await app.request(
+      const response = await requestPageEdit(
         `/api/books/${label}/versions/core-tts-catalog/en/restore`,
         {
           method: "POST",
@@ -2643,12 +2777,12 @@ describe("Page routes", () => {
       expect(check.getCurrentNodeVersion("core-tts-catalog", "en")).toBe(1)
       expect(
         (check.getLatestNodeData("tts", "en")?.data as { entries: Array<{ textId: string }> }).entries,
-      ).toEqual([expect.objectContaining({ textId: "pg001_t002" })])
+      ).toEqual([expect.objectContaining({ textId: "pg001_t001" }), expect.objectContaining({ textId: "pg001_t002" })])
       check.close()
     })
 
     it("rejects nodes that are not exposed by the version picker", async () => {
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/versions/metadata/book/restore`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: 1 }) }
       )
@@ -2656,7 +2790,7 @@ describe("Page routes", () => {
     })
 
     it("returns 400 for an invalid version", async () => {
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/versions/web-rendering/${label}_p1/restore`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: 0 }) }
       )
@@ -2664,7 +2798,7 @@ describe("Page routes", () => {
     })
 
     it("returns 404 for a nonexistent version", async () => {
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/${label}/versions/web-rendering/${label}_p1/restore`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: 99 }) }
       )
@@ -2672,7 +2806,7 @@ describe("Page routes", () => {
     })
 
     it("returns 404 for a nonexistent book without creating it", async () => {
-      const res = await app.request(
+      const res = await requestPageEdit(
         `/api/books/ghost-book/versions/web-rendering/x/restore`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: 1 }) }
       )

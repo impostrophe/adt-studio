@@ -1,34 +1,40 @@
+import { assertSafeExtractionRun } from "@adt/pipeline"
 import fs from "node:fs"
 import path from "node:path"
 import { Hono } from "hono"
 import { streamSSE } from "hono/streaming"
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
-import { createBookStorage, openBookDb } from "@adt/storage"
+import { createBookStorage, openBookDb, withBookWriter, readSectioningLifecycle } from "@adt/storage"
 import type { Storage } from "@adt/storage"
-import { StageName, STAGE_ORDER, PIPELINE, parseBookLabel, getStageRerunClearNodes, getStageClearOrder, PageErrorPolicy, DecisionBody, TTSOutput, WordTimestampOutput, parseVoiceSlotEntryId, sectionIdOfAnswerTextId } from "@adt/types"
+import { AuthoredRunOptions, OutputSkipRequest, OutputRunScope, StageName, STAGE_ORDER, PIPELINE, parseBookLabel, getStageRerunClearNodes, getStageClearOrder, PageErrorPolicy, DecisionBody, TTSOutput, WordTimestampOutput, parseVoiceSlotEntryId, sectionIdOfAnswerTextId } from "@adt/types"
 import { assertStageRunModelCredentials } from "@adt/llm"
 import {
   loadBookConfig,
+  isFixedLayoutBook,
+  prepareSectioningRun,
+  sectioningInvalidationSteps,
   collectSpentSectionIds,
   retireSectionIds,
   NOTHING_RETIRED,
   PAGE_SECTIONING_NODE,
-  assertSafeExtractionRun,
 } from "@adt/pipeline"
 import type { SectionIdRetirementResult } from "@adt/pipeline"
 import type { StageService } from "../services/stage-service.js"
 import type { BookEventBus, BookSSEEvent } from "../services/book-event-bus.js"
 import type { PageErrorDecisions } from "../services/page-error-decisions.js"
 import { readProviderCredentials } from "../middleware/provider-credentials.js"
+import { assertAuthoredReplacement, protectedAuthoredRecords } from "../services/authored-output-service.js"
 import { retireWithPreservedRecordings, DETACHED_AUDIO_DIR } from "../services/detached-audio.js"
 
 const StageRunBody = z
   .object({
+    ...AuthoredRunOptions.shape,
     fromStage: StageName,
     toStage: StageName,
     renderOnly: z.boolean().optional(),
     pageErrorPolicy: PageErrorPolicy.optional(),
+    outputScope: OutputRunScope.optional(),
   })
   .strict()
 
@@ -36,8 +42,8 @@ const StageRunBody = z
  * Does this rerun delete the `page-sectioning` history that section ids are
  * allocated from?
  *
- * Only that node. `fixed-layout-sectioning` is cleared by a storyboard rerun
- * too, but its id is not allocated — `sectionFixedLayoutPage` derives the page's
+ * Only that node. Storyboard keeps `fixed-layout-sectioning` history and switches
+ * its active tree during publication. Its id is not allocated — `sectionFixedLayoutPage` derives the page's
  * single section id from the pageId alone, so regenerating it produces the same
  * id and nothing pinned to it was ever at risk. Retiring those ids would detach
  * every pinned video on each storyboard rerun of a fixed-layout book, and on a
@@ -87,50 +93,10 @@ function hasAnswerSpeechEntries(storage: Storage): boolean {
   return false
 }
 
-/**
- * Retire every sectionId a rerun is about to invalidate, and report what that
- * reconciled.
- *
- * Clearing a stage deletes *every* version of the nodes it clears. When
- * `page-sectioning` is among them the section-id high-water mark goes with it,
- * so the re-section re-mints densely from `_sec001` and hands out ids that named
- * different content a moment ago.
- *
- * That is only harmful while something still points at the old ids, and the
- * clear does not reach everything:
- *
- * - `sign_language_videos.section_id` lives in a table, not `node_data`, so a
- *   pinned video would reappear on whatever unrelated section inherits its id.
- * - The speech manifests are keyed by *language*, not by page. `tts` is
- *   deliberately preserved by `getStageRerunClearNodes` whenever Speech is in
- *   the rerun range, and `tts-timestamps` is in no clear list at all — the node
- *   name differs from the `word-timestamps` step name that
- *   `STAGE_OUTPUT_NODES` is derived from. Generated audio still heals itself on
- *   `computeSpeechCacheKey`, but `canReuseSpeechEntry` accepts a
- *   `provider: "manual"` entry on file existence alone, so a re-minted id would
- *   inherit a recording of the old content.
- *
- * Retiring here is what makes the dense re-mint safe. Everything else keyed by
- * sectionId (`toc-generation`, `text-catalog`, `editable-activity`) is deleted
- * by the same clear.
- *
- * Nothing the user uploaded is deleted, as in the structural edit routes: a
- * video is unassigned in place, and a recording is backed up by the caller (see
- * `retireWithPreservedRecordings`, which is needed because audio filenames — unlike
- * video paths — are derived from the very id being reissued). Same shape as the
- * `spreads/apply` reconcile, which retires ids before `deletePage` drops the
- * history for the identical reason — and it goes through the same
- * `retireSectionIds`, because the two paths previously reconciled different
- * reference sets and that divergence is how the speech manifests were missed.
- *
- * Must run *before* the clear: it reads the sectioning history the ids come
- * from, and the `pages` table itself, both of which the extract branch deletes.
- * The pruned `tts` version it writes has to survive that clear, which it does
- * precisely because neither speech node is in `getStageRerunClearNodes`. On the
- * extract branch `clearExtractedData` does delete them, making the write moot —
- * but not special-cased, because "the clear will get it anyway" is the reasoning
- * that produced the stale claim this doc comment replaces.
- */
+/** Legacy extraction-reset reconciliation. Ordinary reruns now retain sectioning
+ * history and return immediately here; their worker retires only the successfully
+ * replaced page, inside its publication transaction. Existing-book extraction is
+ * refused by makeBeforeRun until its preservation prerequisite is available. */
 export function retireSectionIdsForClearedSectioning(
   storage: Storage,
   fromStage: StageName,
@@ -159,16 +125,15 @@ export function retireSectionIdsForClearedSectioning(
   return retireSectionIds(storage, retired)
 }
 
-/** Build a beforeRun callback that clears downstream data for a stage.
+/** Invalidate downstream execution status while retaining authored output.
  *  The returned function is idempotent — only runs once even if called multiple times.
  *  Exported so tests can pin the preserve-retirement-clear boundary. */
-export function makeBeforeRun(label: string, fromStage: StageName, toStage: StageName, booksDir: string): () => void {
+export function makeBeforeRun(label: string, fromStage: StageName, toStage: StageName, booksDir: string, configPath?: string): () => void {
   let ran = false
   return () => {
     if (ran) return
-    // Extract admission is performed by the shared runner before storage opens.
-    // Neither a cascade confirmation nor queued execution authorizes a reset.
-    if (fromStage === "extract") return
+    if (fromStage === "extract") return // Common execution admission owns Extract; never clear imports.
+    prepareSectioningRun(label, booksDir, fromStage, toStage, configPath)
     const storage = createBookStorage(label, booksDir)
     try {
       const { retired, preserved } = retireWithPreservedRecordings(
@@ -190,12 +155,13 @@ export function makeBeforeRun(label: string, fromStage: StageName, toStage: Stag
       }
 
       {
-        const nodes = getStageRerunClearNodes(fromStage, toStage)
+        // Sectioning/Storyboard publish replacements only after successful
+        // generation. Keep paired HTML/positioned trees and downstream work
+        // available throughout failure, cancellation and mode changes.
+        const nodes = fromStage === "sectioning" || fromStage === "storyboard"
+          ? [] : getStageRerunClearNodes(fromStage, toStage)
         if (nodes.length > 0) {
           storage.clearNodesByType(nodes)
-        }
-        if (fromStage === "storyboard" && typeof storage.clearDebugImages === "function") {
-          storage.clearDebugImages()
         }
         // Clear step run records for all downstream stages
         const stagesToClear = getStageClearOrder(fromStage)
@@ -245,11 +211,9 @@ export function createStageRoutes(
       })
     }
 
-    const { fromStage, toStage, renderOnly, pageErrorPolicy } = parsed.data
+    const { fromStage, toStage, renderOnly, pageErrorPolicy, outputScope, replaceManual, protectedReplacements } = parsed.data
     const active = stageService.getStatus(label).active
-    if (fromStage === "extract" && active?.status !== "running" && active?.status !== "cancelling") {
-      assertSafeExtractionRun(label, booksDir, configPath)
-    }
+    if (fromStage === "extract" && active?.status !== "running" && active?.status !== "cancelling") assertSafeExtractionRun(label, booksDir, configPath)
     const credentials = readProviderCredentials(c)
 
     // Fail before beforeRun clears any stage data: a run that cannot make a
@@ -259,18 +223,36 @@ export function createStageRoutes(
     // Keyless providers pass through.
     const fromIndex = STAGE_ORDER.indexOf(fromStage)
     const toIndex = STAGE_ORDER.indexOf(toStage)
-    assertStageRunModelCredentials(
-      loadBookConfig(label, booksDir, configPath),
-      fromIndex <= toIndex ? STAGE_ORDER.slice(fromIndex, toIndex + 1) : STAGE_ORDER,
-      credentials,
-    )
+    const config = loadBookConfig(label, booksDir, configPath)
+    const requestedStages = fromIndex <= toIndex ? STAGE_ORDER.slice(fromIndex, toIndex + 1) : STAGE_ORDER
+    // Fixed Storyboard uses extracted positioned content, with no model call.
+    // Sectioning and any other requested generative stages still need keys.
+    const modelStages = isFixedLayoutBook(config)
+      ? requestedStages.filter((stage) => stage !== "storyboard") : requestedStages
+    assertStageRunModelCredentials(config, modelStages, credentials)
 
     console.log(
       `[stages] ${label}: ${fromStage}→${toStage}${renderOnly ? " (render-only)" : ""} ` +
       `credentialProviders=${Object.keys(credentials).join(",") || "(none)"}`,
     )
 
-    const clearData = makeBeforeRun(label, fromStage, toStage, booksDir)
+    const activeRun = stageService.getStatus(label).active
+    if (activeRun?.status !== "running" && activeRun?.status !== "cancelling") {
+      withBookWriter(path.join(path.resolve(booksDir), parseBookLabel(label)), () => {
+        if (fromStage === "extract") return // Common execution admission owns Extract; never clear imports.
+    prepareSectioningRun(label, booksDir, fromStage, toStage, configPath)
+        const storage = createBookStorage(label, booksDir)
+        try { assertAuthoredReplacement(storage, { fromStage, toStage, replaceManual, protectedReplacements }) }
+        finally { storage.close() }
+      })
+    }
+    const prepare = makeBeforeRun(label, fromStage, toStage, booksDir, configPath)
+    const clearData = () => {
+      const storage = createBookStorage(label, booksDir)
+      try { assertAuthoredReplacement(storage, { fromStage, toStage, replaceManual, protectedReplacements }) }
+      finally { storage.close() }
+      prepare()
+    }
 
     const result = stageService.startStageRun(label, {
       booksDir,
@@ -280,6 +262,9 @@ export function createStageRoutes(
       configPath,
       fromStage,
       toStage,
+      outputScope,
+      replaceManual,
+      protectedReplacements,
       renderOnly,
       pageErrorPolicy,
       // Queued jobs clear data when they start executing
@@ -287,6 +272,14 @@ export function createStageRoutes(
     })
 
     return c.json({ status: result.status, label, fromStage, toStage })
+  })
+
+  app.post("/books/:label/stages/skip-outputs", async (c) => {
+    const label = parseBookLabel(c.req.param("label"))
+    const parsed = OutputSkipRequest.safeParse(await c.req.json())
+    if (!parsed.success) throw new HTTPException(400, { message: "Invalid output selection" })
+    if (!stageService.skipStageOutputs(label, parsed.data.identities)) throw new HTTPException(409, { message: "No active run to skip" })
+    return c.json({ skipped: parsed.data.identities })
   })
 
   // POST /books/:label/stages/cancel — Cancel the active run. Queued runs remain queued.
@@ -384,6 +377,13 @@ export function createStageRoutes(
     }
 
     const stepRunMap = new Map(stepRunRows.map((r) => [r.step, r]))
+    const lifecycle = readSectioningLifecycle(path.join(resolvedDir, safeLabel))
+    if (lifecycle && !lifecycle.sectioningReady) {
+      for (const step of sectioningInvalidationSteps()) {
+        const status = stepRunMap.get(step)?.status
+        if (status === "done" || status === "skipped") stepRunMap.delete(step)
+      }
+    }
 
     // Build steps
     const steps: Record<string, string> = {}
@@ -436,7 +436,7 @@ export function createStageRoutes(
 
     // Check if ADT is packaged (preview stage)
     const adtDir = path.join(resolvedDir, safeLabel, "adt")
-    if (fs.existsSync(adtDir)) stages.preview = "done"
+    if (fs.existsSync(adtDir) && (!lifecycle || (lifecycle.sectioningReady && stages.package === "done"))) stages.preview = "done"
 
     const hasStepErrors = Object.keys(stepErrors).length > 0
     const hasStepMessages = Object.keys(stepMessages).length > 0
@@ -448,7 +448,16 @@ export function createStageRoutes(
     const runStatus = active?.status ?? "idle"
     const pendingDecisions = decisions.getPendingDecisions(label)
 
+    let protectedWork: Array<import("@adt/types").AuthoredReplacement & { pageNumber?: number }> = []
+    if (fs.existsSync(dbPath)) {
+      const storage = createBookStorage(safeLabel, booksDir)
+      try {
+        const numbers = new Map(storage.getPages().map((p) => [p.pageId, p.pageNumber]))
+        protectedWork = protectedAuthoredRecords(storage).map((record) => ({ ...record, pageNumber: numbers.get(record.itemId) }))
+      } finally { storage.close() }
+    }
     return c.json({
+      protectedWork,
       stages,
       steps,
       error,
@@ -510,6 +519,7 @@ export function createStageRoutes(
                   data: JSON.stringify({
                     label: event.label,
                     error: event.error,
+                    sectioningPreflight: event.sectioningPreflight,
                   }),
                 })
               } else if (event.type === "stage-run-cancelled") {

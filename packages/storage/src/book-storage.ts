@@ -1,20 +1,17 @@
+import { storeImmutableAsset } from "./immutable-assets.js"
 import { createHash } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 import type sqlite from "node-sqlite3-wasm"
 import type { ExtractedPage, ExtractedImage } from "@adt/pdf"
 import type { LlmLogEntry } from "@adt/llm"
-import { parseBookLabel } from "@adt/types"
+import { TranslatedImageAsset, imageFileExtension, parseBookLabel, CATALOG_OUTPUT_NODES, STAGE_OUTPUT_NODES, PIPELINE } from "@adt/types"
 import type { Storage, PageData, ImageData, NodeDataRow, CroppedImageInput, SegmentedImageInput, SignLanguageVideoData, TranslatedImageInput } from "./storage.js"
 import { openBookDb } from "./db.js"
 import { readCurrentNodeRow } from "./node-current.js"
+import { invalidateSectioningLifecycle } from "./sectioning-transition.js"
 
 const storageDirectories = new WeakMap<Storage, string>()
-export function getStorageBookDir(storage: Storage): string {
-  const directory = storageDirectories.get(storage)
-  if (!directory) throw new Error("Extraction requires book-backed storage")
-  return directory
-}
 
 export interface BookPaths {
   bookDir: string
@@ -72,6 +69,7 @@ export function createBookStorage(label: string, booksRoot: string): Storage {
   }
 
   const storage: Storage = {
+    bookDir: paths.bookDir,
     transaction,
 
     clearExtractedData(): void {
@@ -82,15 +80,23 @@ export function createBookStorage(label: string, booksRoot: string): Storage {
 
     clearNodesByType(nodes: string[]): void {
       if (nodes.length === 0) return
+      if (STAGE_OUTPUT_NODES.sectioning.some((node) => nodes.includes(node))) {
+        invalidateSectioningLifecycle(paths.bookDir, PIPELINE.find((stage) => stage.name === "sectioning")!.steps.map((step) => step.name))
+      }
       transaction(() => {
         // Quiz history is also the permanent record of spent catalog/audio
         // identities. Invalidate its current output, never erase that record.
         if (nodes.includes("quiz-generation")) invalidateQuizOutput(db)
-        const deletable = nodes.filter((node) => node !== "quiz-generation")
+        const deletable = nodes.filter((node) => node !== "quiz-generation" && !CATALOG_OUTPUT_NODES.includes(node))
         if (deletable.length === 0) return
         const placeholders = deletable.map(() => "?").join(", ")
-        db.run(`DELETE FROM node_data WHERE node IN (${placeholders})`, deletable)
-        db.run(`DELETE FROM node_current WHERE node IN (${placeholders})`, deletable)
+        // Invalidate active output through a new version; never erase history.
+        const items = db.all(`SELECT node, item_id, MAX(version) AS version FROM node_data WHERE node IN (${placeholders}) GROUP BY node, item_id`, deletable) as Array<{ node: string; item_id: string; version: number }>
+        for (const item of items) {
+          if (!readCurrentNodeRow(db, item.node, item.item_id)) continue
+          db.run("INSERT INTO node_data (node, item_id, version, data) VALUES (?, ?, ?, NULL)", [item.node, item.item_id, item.version + 1])
+          db.run("INSERT INTO node_current (node, item_id, version) VALUES (?, ?, ?) ON CONFLICT (node, item_id) DO UPDATE SET version = excluded.version", [item.node, item.item_id, item.version + 1])
+        }
       })
     },
 
@@ -280,10 +286,25 @@ export function createBookStorage(label: string, booksRoot: string): Storage {
     },
 
     putTranslatedImage(input: TranslatedImageInput): string {
+      return transaction(() => {
       const safeLang = input.languageCode.replace(/[^a-zA-Z0-9-]/g, "_")
       const newImageId = `${input.sourceImageId}_tr_${safeLang}`
-      const filename = `${newImageId}.png`
-      fs.writeFileSync(path.join(paths.imagesDir, filename), input.buffer)
+      const extension = imageFileExtension(input.mimeType)
+      const asset = storeImmutableAsset(paths.bookDir, ["images"], newImageId, extension, input.buffer)
+      const filename = asset.fileName
+      const legacy = db.all("SELECT * FROM images WHERE image_id = ?", [newImageId]) as Array<{ path: string; hash: string; width: number; height: number; page_id: string }>
+      if (legacy[0] && !this.getLatestNodeData("image-translation", newImageId)) {
+        const old = legacy[0]
+        const root = fs.realpathSync(paths.bookDir)
+        const file = fs.realpathSync(path.resolve(root, old.path))
+        const relative = path.relative(root, file)
+        if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Legacy image path escapes book")
+        const bytes = fs.readFileSync(file)
+        if (createHash("sha256").update(bytes).digest("hex").slice(0, old.hash.length) !== old.hash) throw new Error("Legacy image bytes changed before snapshot")
+        const snapshot = storeImmutableAsset(paths.bookDir, ["images"], newImageId, path.extname(file).slice(1), bytes)
+        this.putNodeData("image-translation", newImageId, { imageId: newImageId, sourceImageId: input.sourceImageId, language: input.languageCode,
+          relativePath: `images/${snapshot.fileName}`, hash: snapshot.contentHash, width: old.width, height: old.height, pageId: old.page_id })
+      }
 
       db.run(
         `INSERT INTO images
@@ -306,10 +327,14 @@ export function createBookStorage(label: string, booksRoot: string): Storage {
           "translate",
         ]
       )
+      this.putNodeData("image-translation", newImageId, { imageId: newImageId, sourceImageId: input.sourceImageId, language: input.languageCode,
+        relativePath: `images/${filename}`, hash: asset.contentHash, width: input.width, height: input.height, pageId: input.pageId, source: "ai", input: input.input })
       return newImageId
+      })
     },
 
     clearTranslatedImages(filter?: { sourceImageIds?: string[]; languageCodes?: string[] }): void {
+      transaction(() => {
       const conditions: string[] = ["source = 'translate'"]
       const params: string[] = []
 
@@ -336,23 +361,17 @@ export function createBookStorage(label: string, booksRoot: string): Storage {
         params
       ) as Array<{ image_id: string; path: string }>
 
-      for (const row of rows) {
-        const filePath = path.resolve(paths.bookDir, row.path)
-        const rel = path.relative(paths.bookDir, filePath)
-        if (rel.startsWith("..") || path.isAbsolute(rel)) continue
-        try {
-          fs.rmSync(filePath, { force: true })
-        } catch {
-          // Best effort — DB row is removed below either way
-        }
-      }
+      // Removing an active variant never deletes files referenced by history.
+      for (const row of rows) this.putNodeData("image-translation", row.image_id, null)
 
       if (rows.length > 0) {
         db.run(`DELETE FROM images WHERE ${where}`, params)
       }
+      })
     },
 
     putNodeData(node: string, itemId: string, data: unknown): number {
+      return transaction(() => {
       const rows = db.all(
         "SELECT MAX(version) as max_version FROM node_data WHERE node = ? AND item_id = ?",
         [node, itemId]
@@ -369,23 +388,39 @@ export function createBookStorage(label: string, booksRoot: string): Storage {
         [node, itemId, nextVersion]
       )
       return nextVersion
+      })
     },
 
     /** Point (node, itemId) at an existing version. Returns false if that
      *  version doesn't exist. Does NOT create a new version — this is how a
      *  user rolls back to a prior version without appending a duplicate. */
     setCurrentNodeVersion(node: string, itemId: string, version: number): boolean {
+      return transaction(() => {
       const exists = db.all(
         "SELECT 1 FROM node_data WHERE node = ? AND item_id = ? AND version = ? LIMIT 1",
         [node, itemId, version]
       )
       if (exists.length === 0) return false
+      if (node === "image-translation") {
+        const rows = db.all("SELECT data FROM node_data WHERE node = ? AND item_id = ? AND version = ?", [node, itemId, version]) as Array<{ data: string }>
+        const manifest = TranslatedImageAsset.nullable().parse(JSON.parse(rows[0].data))
+        if (manifest) {
+          const root = fs.realpathSync(paths.bookDir)
+          const file = fs.realpathSync(path.resolve(root, manifest.relativePath))
+          const relative = path.relative(root, file)
+          if (relative.startsWith("..") || path.isAbsolute(relative) || createHash("sha256").update(fs.readFileSync(file)).digest("hex").slice(0, manifest.hash.length) !== manifest.hash) throw new Error("Historical image asset is missing or changed")
+          db.run(`INSERT INTO images (image_id, page_id, path, hash, width, height, source) VALUES (?, ?, ?, ?, ?, ?, 'translate')
+            ON CONFLICT(image_id) DO UPDATE SET page_id=excluded.page_id, path=excluded.path, hash=excluded.hash, width=excluded.width, height=excluded.height, source='translate'`,
+            [itemId, manifest.pageId, manifest.relativePath, manifest.hash, manifest.width, manifest.height])
+        } else db.run("DELETE FROM images WHERE image_id = ? AND source = 'translate'", [itemId])
+      }
       db.run(
         `INSERT INTO node_current (node, item_id, version) VALUES (?, ?, ?)
          ON CONFLICT (node, item_id) DO UPDATE SET version = excluded.version`,
         [node, itemId, version]
       )
       return true
+      })
     },
 
     /** The active version pointer for (node, itemId), or null when unset
@@ -454,6 +489,7 @@ export function createBookStorage(label: string, booksRoot: string): Storage {
 
     clearStepRuns(steps: string[]): void {
       if (steps.length === 0) return
+      invalidateSectioningLifecycle(paths.bookDir, steps)
       const placeholders = steps.map(() => "?").join(", ")
       db.run(`DELETE FROM step_runs WHERE step IN (${placeholders})`, steps)
     },
@@ -477,8 +513,8 @@ export function createBookStorage(label: string, booksRoot: string): Storage {
       const rows = db.all(
         "SELECT version, data FROM node_data WHERE node = ? AND item_id = ? ORDER BY version",
         [node, itemId]
-      ) as Array<{ version: number; data: string }>
-      return rows.map((row) => ({ version: row.version, data: JSON.parse(row.data) }))
+      ) as Array<{ version: number; data: string | null }>
+      return rows.map((row) => ({ version: row.version, data: row.data === null ? null : JSON.parse(row.data) }))
     },
 
     getNodeItemIds(node: string): string[] {
@@ -698,4 +734,10 @@ function ensureWithinRoot(target: string, root: string): void {
   if (target !== root && !target.startsWith(root + path.sep)) {
     throw new Error("Resolved path escapes books root")
   }
+}
+
+export function getStorageBookDir(storage: Storage): string {
+  const directory = storageDirectories.get(storage)
+  if (!directory) throw new Error("Extraction requires book-backed storage")
+  return directory
 }

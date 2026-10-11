@@ -4,7 +4,7 @@ import { countPdfPages, computeGroups } from "@adt/pdf"
 import { EXTRACTION_CONTRACT_VERSION, ExtractionInputs, PartManifest, type AppConfig } from "@adt/types"
 import { extractionHash, readExtractionManifest, inspectExtractionDestination, ExtractionAdmissionError, BookBusyError, assertBookWriter, resolveBookPaths, withBookWriter } from "@adt/storage"
 import type { ExtractOptions } from "./pdf-extraction.js"
-import { figureExtractionFlags } from "./pdf-extraction.js"
+import { figureExtractionFlags } from "./figure-extraction-config.js"
 import { isFixedLayoutBook } from "./fixed-layout-rendering.js"
 import { loadBookConfig } from "./config.js"
 

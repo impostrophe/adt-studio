@@ -217,20 +217,33 @@ describe("createBookStorage", () => {
       height: 150,
     })
     expect(newId).toBe("pg001_im001_tr_es")
-    expect(fs.existsSync(path.join(paths.imagesDir, "pg001_im001_tr_es.png"))).toBe(true)
+    expect(fs.existsSync(path.join(paths.bookDir, storage.getImageMeta("pg001_im001_tr_es")!.relativePath))).toBe(true)
+
+    // A JPEG variant (e.g. from the Google image backend) gets a .jpg extension.
+    storage.putTranslatedImage({
+      sourceImageId: "pg001_im001",
+      pageId: "pg001",
+      languageCode: "fr",
+      buffer: fakePng(200, 150),
+      mimeType: "image/jpeg",
+      width: 200,
+      height: 150,
+    })
+    expect(fs.existsSync(path.join(paths.bookDir, storage.getImageMeta("pg001_im001_tr_fr")!.relativePath))).toBe(true)
 
     const db = openBookDb(paths.dbPath)
     const rows = db.all(
-      "SELECT image_id, source, page_id FROM images WHERE source = 'translate'"
+      "SELECT image_id, source, page_id FROM images WHERE source = 'translate' ORDER BY image_id"
     ) as Array<{ image_id: string; source: string; page_id: string }>
     expect(rows).toEqual([
       { image_id: "pg001_im001_tr_es", source: "translate", page_id: "pg001" },
+      { image_id: "pg001_im001_tr_fr", source: "translate", page_id: "pg001" },
     ])
     db.close()
     storage.close()
   })
 
-  it("clearTranslatedImages removes translate rows and files but leaves originals", () => {
+  it("clearTranslatedImages retires manifests while retaining physical history and originals", () => {
     const { storage, paths } = createTempStorage()
     storage.putExtractedPage(makePage(1))
 
@@ -250,13 +263,15 @@ describe("createBookStorage", () => {
       width: 200,
       height: 150,
     })
-    expect(fs.existsSync(path.join(paths.imagesDir, "pg001_im001_tr_es.png"))).toBe(true)
-    expect(fs.existsSync(path.join(paths.imagesDir, "pg001_im001_tr_fr.png"))).toBe(true)
+    expect(fs.existsSync(path.join(paths.bookDir, storage.getImageMeta("pg001_im001_tr_es")!.relativePath))).toBe(true)
+    expect(fs.existsSync(path.join(paths.bookDir, storage.getImageMeta("pg001_im001_tr_fr")!.relativePath))).toBe(true)
 
+    const retainedPaths = ["es", "fr"].map((lang) => path.join(paths.bookDir, storage.getImageMeta(`pg001_im001_tr_${lang}`)!.relativePath))
     storage.clearTranslatedImages()
 
-    expect(fs.existsSync(path.join(paths.imagesDir, "pg001_im001_tr_es.png"))).toBe(false)
-    expect(fs.existsSync(path.join(paths.imagesDir, "pg001_im001_tr_fr.png"))).toBe(false)
+    expect(storage.getImageMeta("pg001_im001_tr_es")).toBeNull()
+    for (const retained of retainedPaths) expect(fs.existsSync(retained)).toBe(true)
+    expect(storage.getImageMeta("pg001_im001_tr_fr")).toBeNull()
     // Original extracted image is untouched
     expect(fs.existsSync(path.join(paths.imagesDir, "pg001_im001.png"))).toBe(true)
 
@@ -285,13 +300,13 @@ describe("createBookStorage", () => {
 
     storage.clearTranslatedImages({ languageCodes: ["fr"] })
 
-    expect(fs.existsSync(path.join(paths.imagesDir, "pg001_im001_tr_es.png"))).toBe(true)
-    expect(fs.existsSync(path.join(paths.imagesDir, "pg001_im001_tr_fr.png"))).toBe(false)
-    expect(fs.existsSync(path.join(paths.imagesDir, "pg001_im001_tr_pt-BR.png"))).toBe(true)
+    expect(fs.existsSync(path.join(paths.bookDir, storage.getImageMeta("pg001_im001_tr_es")!.relativePath))).toBe(true)
+    expect(storage.getImageMeta("pg001_im001_tr_fr")).toBeNull()
+    expect(fs.existsSync(path.join(paths.bookDir, storage.getImageMeta("pg001_im001_tr_pt-BR")!.relativePath))).toBe(true)
     storage.close()
   })
 
-  it("putTranslatedImage upsert overwrites the file and row for the same language", () => {
+  it("putTranslatedImage publishes a new immutable file and retains the previous bytes", () => {
     const { storage, paths } = createTempStorage()
     storage.putExtractedPage(makePage(1))
 
@@ -312,7 +327,9 @@ describe("createBookStorage", () => {
       height: 150,
     })
 
-    const onDisk = fs.readFileSync(path.join(paths.imagesDir, "pg001_im001_tr_es.png"))
+    const onDisk = fs.readFileSync(path.join(paths.bookDir, storage.getImageMeta("pg001_im001_tr_es")!.relativePath))
+    const first = storage.getAllNodeVersions("image-translation", "pg001_im001_tr_es")[0].data as { relativePath: string }
+    expect(fs.readFileSync(path.join(paths.bookDir, first.relativePath), "utf8")).toBe("first")
     expect(onDisk.toString()).toBe("second")
 
     const db = openBookDb(paths.dbPath)
@@ -767,7 +784,7 @@ describe("quiz history retention on invalidation", () => {
         { version: 1, data: first }, { version: 2, data: { quizzes: [{ quizId: "qz002" }] } },
         { version: 3, data: null },
       ])
-      expect(storage.getAllNodeVersions("text-catalog", "book")).toEqual([])
+      expect(storage.getAllNodeVersions("text-catalog", "book")).toEqual([{ version: 1, data: { entries: [] } }])
       const db = openBookDb(paths.dbPath)
       try {
         expect(readCurrentNodeRow(db, "quiz-generation", "book")).toBeNull()

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { openBookDb } from "@adt/storage"
+import { openBookDb, writeSectioningLifecycle } from "@adt/storage"
 import { createBookEventBus, type BookSSEEvent } from "./book-event-bus.js"
 import { createPageErrorDecisions } from "./page-error-decisions.js"
 import {
@@ -32,6 +32,7 @@ function makeBook(label: string): void {
     ["page-sectioning", new Date().toISOString()]
   )
   db.close()
+  writeSectioningLifecycle(bookDir, "dynamic", true)
 }
 
 function stepRunStatuses(label: string): Map<string, string> {
@@ -86,6 +87,27 @@ async function tick(): Promise<void> {
 }
 
 describe("stage-service cancellation", () => {
+  it("cancels a deferred run before preparation or runner writes begin", async () => {
+    const label = "cancel-before-start"
+    makeBook(label)
+    const db = openBookDb(path.join(tmpDir, label, `${label}.db`))
+    db.run("UPDATE step_runs SET status = 'done'")
+    db.close()
+    const before = stepRunStatuses(label)
+    const runner: StageRunner = { run: vi.fn(async () => undefined) }
+    const beforeRun = vi.fn(() => {
+      const db = openBookDb(path.join(tmpDir, label, `${label}.db`))
+      db.run("DELETE FROM step_runs")
+      db.close()
+    })
+    const service = createStageService(runner, createBookEventBus())
+    service.startStageRun(label, { ...baseOptions(label), beforeRun })
+    service.cancelStageRun(label)
+    await vi.waitFor(() => expect(service.getStatus(label).active).toBeNull())
+    expect(beforeRun).not.toHaveBeenCalled()
+    expect(runner.run).not.toHaveBeenCalled()
+    expect(stepRunStatuses(label)).toEqual(before)
+  })
   it("cancelling an active run: cancelling → cancelled, resets running steps, no error event", async () => {
     const label = "cancel-active"
     makeBook(label)
@@ -271,5 +293,44 @@ describe("stage-service cancellation", () => {
 
     svc.cancelStageRun(label)
     await expect(decisionPromise).resolves.toBe("stop")
+  })
+})
+
+describe("catalog run admission and skip scope", () => {
+  it("refuses a competing writer before preparing or announcing a run", async () => {
+    const { withBookWriter } = await import("@adt/storage")
+    const label = "competing"
+    makeBook(label)
+    let release!: () => void
+    const lease = withBookWriter(path.join(tmpDir, label), () => new Promise<void>((resolve) => { release = resolve }))
+    const prepare = vi.fn()
+    const run = vi.fn(async () => {})
+    const svc = createStageService({ run }, createBookEventBus())
+    try {
+      expect(() => svc.startStageRun(label, { ...baseOptions(label), beforeRun: prepare })).toThrow(/busy|writer/i)
+      expect(prepare).not.toHaveBeenCalled()
+      expect(run).not.toHaveBeenCalled()
+      expect(svc.getStatus(label).active).toBeNull()
+    } finally { release(); await lease }
+  })
+
+  it("delivers late skip to the active executor without carrying it into a later run", async () => {
+    const label = "skip-run"
+    makeBook(label)
+    const scopes: import("@adt/types").OutputRunScope[] = []
+    let finish: (() => void) | undefined
+    const svc = createStageService({ run: async (_label, options) => {
+      scopes.push(options.outputScope!)
+      await new Promise<void>((resolve) => { finish = resolve })
+    } }, createBookEventBus())
+    const identity = { kind: "translation" as const, id: "a", language: "fr" }
+    svc.startStageRun(label, baseOptions(label))
+    await tick()
+    expect(svc.skipStageOutputs?.(label, [identity])).toBe(true)
+    expect(scopes[0].skip).toEqual([identity])
+    finish!(); await tick()
+    svc.startStageRun(label, baseOptions(label)); await tick()
+    expect(scopes[1].skip).toBeUndefined()
+    finish!(); await tick()
   })
 })

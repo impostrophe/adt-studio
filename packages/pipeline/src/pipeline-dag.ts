@@ -1,7 +1,19 @@
+import { captureOutputReferences } from "./output-references.js"
+import { publishSpeechOutput } from "@adt/storage"
+import { readOutputCatalog } from "./output-catalog.js"
+import { outputEvidence, inputSignature } from "./output-freshness.js"
+import { reconcileTextCatalog, buildImageInventory } from "./catalog-reconciliation.js"
+import { withBookWriter, withNewBookWriter, resolveBookPaths, recoverSectioningTransition, ExtractionAdmissionError } from "@adt/storage"
+import { prepareExtractionAdmission, extractionOptionsFromConfig } from "./extraction-admission.js"
+import { assertAuthoredReplacement, replacementConfirmed } from "./authored-output.js"
+import { isProtectedContent } from "./manual-edits.js"
+import { createSectionIdFactory, retireSectionIds } from "./section-ids.js"
+import { preflightSectioning, SectioningPreflightError } from "./sectioning-preflight.js"
+import { reconcileSpeechInputs } from "./speech-inputs.js"
+import { prepareSectioningRun, completeSectioning, createStoryboardPublication, activeSectioningPages, sectioningInvalidationSteps, effectiveSectioningMode, SectioningSafetyError } from "./sectioning-lifecycle.js"
 import fs from "node:fs"
 import path from "node:path"
-import { createBookStorage, resolveBookPaths, withBookWriter, ExtractionAdmissionError } from "@adt/storage"
-import { prepareExtractionAdmission, extractionOptionsFromConfig } from "./extraction-admission.js"
+import { createBookStorage } from "@adt/storage"
 import type { Storage, PageData } from "@adt/storage"
 import {
   createLLMModel,
@@ -28,7 +40,7 @@ import type {
   VoiceSlot,
   WebRenderingOutput,
 } from "@adt/types"
-import { isTtsExcluded, voiceSlotEntryId } from "@adt/types"
+import { isTtsExcluded, voiceSlotEntryId, PIPELINE, STAGE_ORDER, SectioningResumeStage, AuthoredRunOptions, type AuthoredReplacement } from "@adt/types"
 import { extractPDF, figureExtractionFlags, resolveFigureExtractionMode } from "./pdf-extraction.js"
 import {
   resolveFontsCacheDir,
@@ -72,7 +84,8 @@ import { generateAllQuizzes, buildQuizGenerationConfig, batchPages, type QuizPag
 import { saveQuizOutput, assertQuizGenerationCapacity } from "./quiz-ids.js"
 import { buildTextCatalog } from "./text-catalog.js"
 import { buildEasyReadConfig, buildEasyReadSourceBlocks, createEmptyEasyReadOutput, generateEasyRead, flattenEasyReadEntries, isDeterministicEmptyEasyReadOutput } from "./easy-read.js"
-import { translateCatalogBatch, buildCatalogTranslationConfig, getTargetLanguages } from "./catalog-translation.js"
+import { retainedEasyRead } from "./retained-catalog.js"
+import { translateCatalog, buildCatalogTranslationConfig, getTargetLanguages } from "./catalog-translation.js"
 import {
   buildCoreTtsPreparationConfig,
   loadCoreTtsProfiles,
@@ -128,6 +141,11 @@ function progressOnly(p: Progress): Progress {
 }
 
 export interface FullPipelineOptions {
+  fromStage?: SectioningResumeStage
+  toStage?: SectioningResumeStage
+  replaceManual?: boolean
+  protectedReplacements?: AuthoredReplacement[]
+  signal?: AbortSignal
   label: string
   pdfPath: string
   booksRoot: string
@@ -154,25 +172,37 @@ export interface FullPipelineOptions {
  *
  * Run the full pipeline using the DAG runner for CLI use.
  */
-export async function runFullPipeline(
-  options: FullPipelineOptions,
-  progress: Progress = nullProgress,
-): Promise<PipelineDAGResult> {
+export async function runFullPipeline(options: FullPipelineOptions, progress: Progress = nullProgress): Promise<PipelineDAGResult> {
   const { bookDir } = resolveBookPaths(options.label, options.booksRoot)
-  return withBookWriter(bookDir, async () => {
+  const admit = fs.existsSync(bookDir) ? withBookWriter : withNewBookWriter
+  return admit(bookDir, async () => {
+    options.signal?.throwIfAborted()
+    recoverSectioningTransition(bookDir)
     const config = loadBookConfig(options.label, options.booksRoot, options.configPath)
-    const extraction = extractionOptionsFromConfig(options.pdfPath, config)
-    extraction.startPage = options.startPage ?? extraction.startPage
-    extraction.endPage = options.endPage ?? extraction.endPage
-    const admission = prepareExtractionAdmission(bookDir, extraction)
-    if (admission.outcome === "reused") throw new ExtractionAdmissionError("UNSAFE_RESUME_UNAVAILABLE")
-    return runInitialFullPipeline(options, progress)
+    const admission = prepareExtractionAdmission(bookDir, {
+      ...extractionOptionsFromConfig(options.pdfPath, config),
+      startPage: options.startPage ?? config.start_page,
+      endPage: options.endPage ?? config.end_page,
+    })
+    const scoped = options.fromStage !== undefined || options.toStage !== undefined
+    if (scoped) {
+      const from = SectioningResumeStage.parse(options.fromStage)
+      const to = SectioningResumeStage.parse(options.toStage)
+      if (STAGE_ORDER.indexOf(from) > STAGE_ORDER.indexOf(to)) throw new Error("Invalid stage range")
+      if (admission.outcome !== "reused") throw new Error("Scoped resume requires completed extraction; run Extract first")
+      AuthoredRunOptions.parse(options)
+      prepareSectioningRun(options.label, options.booksRoot, from, to, options.configPath)
+    } else if (admission.outcome === "reused") {
+      // Other downstream executors still lack a safe resume contract.
+      throw new ExtractionAdmissionError("UNSAFE_RESUME_UNAVAILABLE")
+    }
+    return runAdmittedFullPipeline(options, progress)
   })
 }
 
-async function runInitialFullPipeline(
+async function runAdmittedFullPipeline(
   options: FullPipelineOptions,
-  progress: Progress,
+  progress: Progress = nullProgress,
 ): Promise<PipelineDAGResult> {
   const {
     label,
@@ -192,10 +222,30 @@ async function runInitialFullPipeline(
 
   const storage = createBookStorage(label, booksRoot)
 
+  // SPEC-0010 extraction snapshots source bytes only after admission. Scoped
+  // reruns never copy an external PDF over the retained source.
+  const bookDir = path.join(booksRoot, label)
+
   try {
     const config = loadBookConfig(label, booksRoot, configPath)
+    const fromStage = options.fromStage
+    const toStage = options.toStage
+    const selectedStages = fromStage && toStage ? STAGE_ORDER.slice(STAGE_ORDER.indexOf(fromStage), STAGE_ORDER.indexOf(toStage) + 1) : undefined
+    if (fromStage && toStage) {
+      assertAuthoredReplacement(storage, { ...options, fromStage, toStage })
+      if (storage.getStepRuns().some((run) => run.status === "running")) throw new Error("A pipeline step is running; retry after it stops")
+      if (fromStage === "sectioning") {
+        const completed = new Map(storage.getStepRuns().map((run) => [run.step, run.status]))
+        // These are the stored prerequisites used by the same stage in Studio.
+        const extract = PIPELINE.find((stage) => stage.name === "extract")!
+        if (extract.steps.some((step) => !["done", "skipped"].includes(completed.get(step.name) ?? ""))) {
+          throw new Error("Complete Extract prerequisites in Studio before resuming Sectioning")
+        }
+        storage.clearStepRuns(sectioningInvalidationSteps())
+      }
+    }
     const cacheDir = options.cacheDir ?? path.join(path.resolve(booksRoot), label, ".cache")
-    const promptEngine = createPromptEngine(promptsDir, { basePromptModelId: config.base_prompt_model })
+    const promptEngine = createPromptEngine([path.join(bookDir, "prompts"), promptsDir], { basePromptModelId: config.base_prompt_model })
     const templateEngine = createTemplateEngine(templatesDir)
     const rateLimiter = config.rate_limit
       ? createRateLimiter(config.rate_limit.requests_per_minute)
@@ -225,7 +275,7 @@ async function runInitialFullPipeline(
     const getModel = (modelId: string): LLMModel => {
       let model = modelCache.get(modelId)
       if (!model) {
-        model = createLLMModel({ modelId, cacheDir, promptEngine, rateLimiter, logLevel, onLog: onLlmLog })
+        model = createLLMModel({ modelId, cacheDir, promptEngine, rateLimiter, logLevel, onLog: onLlmLog, signal: options.signal })
         modelCache.set(modelId, model)
       }
       return model
@@ -261,6 +311,7 @@ async function runInitialFullPipeline(
           // only consumer). Must match stage-runner so re-runs are consistent.
           fixedLayout: isFixedLayoutBook(config),
           fontsCacheDir: resolveFontsCacheDir(booksRoot),
+          signal: options.signal,
         },
         storage,
         progressOnly(p),
@@ -540,87 +591,84 @@ async function runInitialFullPipeline(
 
     const isFixedLayout = isFixedLayoutBook(config)
 
+    const sectioningDrafts = new Map<string, PageSectioningOutput>()
+    let sectioningPages: PageData[] = []
+    let previousSectioning = new Map<string, ReturnType<Storage["getLatestNodeData"]>>()
     executors.set("page-sectioning", async (p) => {
-      // Semantic LLM sectioning runs for ALL books (including fixed-layout) so
-      // `page-sectioning` always holds the editable semantic tree, the
-      // Sectioning view never empties, and the render strategy can be toggled
-      // without re-sectioning. Fixed-layout's positioned tree + rendering is
-      // produced in the web-rendering step instead (see below).
+      sectioningPages = activeSectioningPages(storage, config, bookDir)
+      previousSectioning = new Map(sectioningPages.map((page) => [page.pageId, storage.getLatestNodeData("page-sectioning", page.pageId)]))
+      const selected = sectioningPages.filter((page) => {
+        const row = previousSectioning.get(page.pageId)
+        return !row || !isProtectedContent(row.data as { source?: "ai" | "manual" }) || replacementConfirmed(options, "page-sectioning", page.pageId, row.version)
+      })
+      const selectedIds = new Set(selected.map((page) => page.pageId))
+      const retained = sectioningPages.filter((page) => !selectedIds.has(page.pageId))
+      const preflight = preflightSectioning(effectiveSectioningMode(config), retained,
+        new Map(retained.map((page) => [page.pageId, previousSectioning.get(page.pageId)?.data])))
+      if (preflight.total) throw new SectioningPreflightError(preflight)
+      if (!selected.length) return
       const model = getModel(pageSectioningConfig.modelId)
-      const pages = storage.getPages()
       const bookOutline = readBookOutline(storage)
-      const totalPages = pages.length
-      await processWithConcurrency(pages, effectiveConcurrency, async (page) => {
-        const imageClassRow = storage.getLatestNodeData("image-filtering", page.pageId)
-        if (!imageClassRow) return
-        const imageClassification = imageClassRow.data as ImageClassificationOutput
-        const unprunedImageIds = imageClassification.images
-          .filter((img) => !img.isPruned)
-          .map((img) => img.imageId)
-        const availableImages = unprunedImageIds.map((imageId) => ({
-          imageId,
-          imageBase64: storage.getImageBase64(imageId),
-        }))
-        const imageBase64 = storage.getPageImageBase64(page.pageId)
-        const result = await sectionPage(
-          {
-            pageId: page.pageId,
-            pageNumber: page.pageNumber,
-            text: page.text,
-            imageBase64,
-            availableImages,
-            outline: outlineContextForPage(bookOutline, page.pageId),
-          },
-          pageSectioningConfig,
-          model,
-        )
-        storage.putNodeData("page-sectioning", page.pageId, result)
-        p.emit({
-          type: "step-progress",
-          step: "page-sectioning",
-          message: page.pageId,
-          page: pages.indexOf(page) + 1,
-          totalPages,
-        })
+      await processWithConcurrency(selected, effectiveConcurrency, async (page) => {
+        options.signal?.throwIfAborted()
+        const row = storage.getLatestNodeData("image-filtering", page.pageId)
+        const classification = row?.data as ImageClassificationOutput | undefined
+        const imageIds = classification ? classification.images.filter((image) => !image.isPruned).map((image) => image.imageId)
+          : storage.getPageImages(page.pageId).map((image) => image.imageId)
+        const result = await sectionPage({ pageId: page.pageId, pageNumber: page.pageNumber, text: page.text,
+          imageBase64: storage.getPageImageBase64(page.pageId),
+          availableImages: imageIds.map((imageId) => ({ imageId, imageBase64: storage.getImageBase64(imageId) })),
+          outline: outlineContextForPage(bookOutline, page.pageId),
+        }, pageSectioningConfig, model)
+        options.signal?.throwIfAborted()
+        sectioningDrafts.set(page.pageId, result)
+        p.emit({ type: "step-progress", step: "page-sectioning", message: page.pageId,
+          page: sectioningDrafts.size, totalPages: selected.length })
       })
     })
 
     executors.set("translation", async (p) => {
-      const metadataRow = storage.getLatestNodeData("metadata", "book")
-      const metadata = metadataRow?.data as BookMetadata | null
+      const metadata = storage.getLatestNodeData("metadata", "book")?.data as BookMetadata | null
       const translationConfig = buildTranslationConfig(config, metadata?.language_code ?? null)
-      if (!translationConfig) return
-      const model = getModel(translationConfig.modelId)
-      const pages = storage.getPages()
-      const totalPages = pages.length
-      await processWithConcurrency(pages, effectiveConcurrency, async (page) => {
-        const row = storage.getLatestNodeData("page-sectioning", page.pageId)
-        if (!row) return
-        const sectioning = row.data as PageSectioningOutput
-        const translated = await translatePageTree(
-          page.pageId,
-          sectioning,
-          translationConfig,
-          model,
-        )
-        storage.putNodeData("page-sectioning", page.pageId, translated)
-        p.emit({
-          type: "step-progress",
-          step: "translation",
-          message: page.pageId,
-          page: pages.indexOf(page) + 1,
-          totalPages,
+      // Like Studio, publish a page only after its generation and translation
+      // both succeed. Retained manual/unknown pages never enter translation.
+      await processWithConcurrency([...sectioningDrafts], effectiveConcurrency, async ([pageId, draft]) => {
+        options.signal?.throwIfAborted()
+        const result = translationConfig
+          ? await translatePageTree(pageId, draft, translationConfig, getModel(translationConfig.modelId)) : draft
+        options.signal?.throwIfAborted()
+        storage.transaction(() => {
+          const previous = previousSectioning.get(pageId)
+          if ((storage.getLatestNodeData("page-sectioning", pageId)?.version ?? 0) !== (previous?.version ?? 0)
+            || JSON.stringify(loadBookConfig(label, booksRoot, configPath)) !== JSON.stringify(config)
+            || JSON.stringify(activeSectioningPages(storage, config, bookDir)) !== JSON.stringify(sectioningPages)) {
+            throw new SectioningSafetyError("STORYBOARD_INPUT_CHANGED", "Sectioning inputs changed during generation; previous output is kept.")
+          }
+          const mint = createSectionIdFactory(storage, pageId)
+          const sections = result.sections.map((section) => ({ ...section, sectionId: mint() }))
+          const old = previous?.data as PageSectioningOutput | undefined
+          retireSectionIds(storage, (old?.sections ?? []).flatMap((section) => section.sectionId ? [section.sectionId] : []))
+          storage.putNodeData("page-sectioning", pageId, { ...result, sections, source: "ai" })
+          reconcileTextCatalog(storage)
         })
+        p.emit({ type: "step-progress", step: "translation", message: pageId })
       })
+      options.signal?.throwIfAborted()
+      completeSectioning(label, booksRoot, config, configPath)
     })
 
     executors.set("web-rendering", async (p) => {
+      options.signal?.throwIfAborted()
+      const publication = createStoryboardPublication(storage, label, booksRoot, configPath)
+      const renderingStorage = publication.storage
       if (isFixedLayout) {
         // Fixed-layout: build the positioned tree (into `fixed-layout-sectioning`)
         // and render from it. Driven off positioned-text + image-filtering; no
         // LLM call. `page-sectioning` (semantic) is left intact.
         const imageUrlPrefix = `/api/books/${label}/images`
-        processFixedLayoutPages(storage, imageUrlPrefix)
+        processFixedLayoutPages(renderingStorage, imageUrlPrefix)
+        options.signal?.throwIfAborted()
+        publication.publish(renderingStorage.getPages().map((page) => page.pageId))
         p.emit({ type: "step-progress", step: "web-rendering", message: "fixed-layout pages" })
         return
       }
@@ -636,24 +684,24 @@ async function runInitialFullPipeline(
         }
         return model
       }
-      const pages = storage.getPages()
+      const pages = renderingStorage.getPages()
       const totalPages = pages.length
       // Resolve once per book — every page shares the same typography.
-      const typography = readTypography(storage)
+      const typography = readTypography(renderingStorage)
       await processWithConcurrency(pages, effectiveConcurrency, async (page) => {
-        const structuringRow = storage.getLatestNodeData("page-sectioning", page.pageId)
-        const imageClassRow = storage.getLatestNodeData("image-filtering", page.pageId)
+        const structuringRow = renderingStorage.getLatestNodeData("page-sectioning", page.pageId)
+        const imageClassRow = renderingStorage.getLatestNodeData("image-filtering", page.pageId)
         if (!structuringRow || !imageClassRow) return
         const sectioning = structuringRow.data as PageSectioningOutput
         const imageClassification = imageClassRow.data as ImageClassificationOutput
         const unprunedImageIds = imageClassification.images
           .filter((img) => !img.isPruned)
           .map((img) => img.imageId)
-        const pageDims = new Map(storage.getPageImages(page.pageId).map((img) => [img.imageId, { width: img.width, height: img.height }]))
+        const pageDims = new Map(renderingStorage.getPageImages(page.pageId).map((img) => [img.imageId, { width: img.width, height: img.height }]))
         const renderImages = new Map<string, { base64: string; width?: number; height?: number }>()
         for (const imageId of unprunedImageIds) {
           const dims = pageDims.get(imageId)
-          renderImages.set(imageId, { base64: storage.getImageBase64(imageId), width: dims?.width, height: dims?.height })
+          renderImages.set(imageId, { base64: renderingStorage.getImageBase64(imageId), width: dims?.width, height: dims?.height })
         }
         // Sections can reference images extracted on other pages (cross-page
         // merges, images added from another page) — those are not in this
@@ -661,19 +709,19 @@ async function runInitialFullPipeline(
         for (const imageId of collectReferencedImageIds(sectioning.sections)) {
           if (renderImages.has(imageId)) continue
           try {
-            const dims = storage.getImageDimensions(imageId)
-            renderImages.set(imageId, { base64: storage.getImageBase64(imageId), width: dims?.width ?? undefined, height: dims?.height ?? undefined })
+            const dims = renderingStorage.getImageDimensions(imageId)
+            renderImages.set(imageId, { base64: renderingStorage.getImageBase64(imageId), width: dims?.width ?? undefined, height: dims?.height ?? undefined })
           } catch {
             // Image file no longer exists — leave it out; the renderer emits
             // the URL reference without pixels.
           }
         }
-        const pageImageBase64 = storage.getPageImageBase64(page.pageId)
+        const pageImageBase64 = renderingStorage.getPageImageBase64(page.pageId)
         // Page images for content merged in from other pages (cross-page
         // merges) — per-section provenance recorded in sourcePageIds.
         const sourcePageImages = collectSourcePageImages(
           sectioning.sections,
-          (id) => storage.getPageImageBase64(id)
+          (id) => renderingStorage.getPageImageBase64(id)
         )
         const result = await renderPage(
           {
@@ -683,14 +731,15 @@ async function runInitialFullPipeline(
             sectioning: sectioning,
             images: renderImages,
             sourcePageImages,
-            bookFonts: buildBookFontsPromptContext(storage),
+            bookFonts: buildBookFontsPromptContext(renderingStorage),
             typography,
           },
           resolveRenderConfig,
           resolveRenderModel,
           templateEngine,
         )
-        storage.putNodeData("web-rendering", page.pageId, result)
+        options.signal?.throwIfAborted()
+        renderingStorage.putNodeData("web-rendering", page.pageId, result)
         p.emit({
           type: "step-progress",
           step: "web-rendering",
@@ -699,7 +748,8 @@ async function runInitialFullPipeline(
           totalPages,
         })
       })
-
+      options.signal?.throwIfAborted()
+      publication.publish(pages.map((page) => page.pageId))
     })
 
     // ── Quizzes stage ───────────────────────────────────────────
@@ -756,27 +806,13 @@ async function runInitialFullPipeline(
       const model = getModel(captionConfig.modelId)
       const summaryRow = storage.getLatestNodeData("book-summary", "book")
       const bookSummary = (summaryRow?.data as BookSummaryOutput | undefined)?.summary
-      const glossaryRow = storage.getLatestNodeData("glossary", "book")
-      const glossary = glossaryRow?.data as GlossaryOutput | undefined
-      const glossaryImageIdsByPage = groupGlossaryImageIdsByPage(
-        glossary,
-        (imageId) => storage.getImageMeta(imageId)?.pageId,
-      )
+      const inventory = buildImageInventory(storage)
+      const statuses = readOutputCatalog({ storage, config, bookDir: path.join(path.resolve(booksRoot), label), promptsDir, configDir: options.configDir ?? path.resolve("config") })
       const pages = storage.getPages()
       const totalPages = pages.length
       let completed = 0
       await processWithConcurrency(pages, effectiveConcurrency, async (page) => {
-        const renderingRow = storage.getLatestNodeData("web-rendering", page.pageId)
-        if (!renderingRow) return
-        const rendering = renderingRow.data as WebRenderingOutput
-        const sectioning = getRenderSectioning(storage, page.pageId)
-        const htmlSections = rendering.sections
-          .filter((s) => !sectioning?.sections[s.sectionIndex]?.isPruned)
-          .map((s) => s.html)
-        const imageIds = collectCaptionImageIds(
-          htmlSections,
-          glossaryImageIdsByPage.get(page.pageId),
-        )
+        const imageIds = inventory.filter((image) => image.pageId === page.pageId && image.assetHash).map((image) => image.id)
         if (imageIds.length === 0) {
           storage.putNodeData("image-captioning", page.pageId, { captions: [] })
         } else {
@@ -790,7 +826,10 @@ async function runInitialFullPipeline(
             captionConfig,
             model,
           )
-          storage.putNodeData("image-captioning", page.pageId, result)
+          storage.putNodeData("image-captioning", page.pageId, { ...result, captions: result.captions.map((entry) => {
+            const status = statuses.find((item) => item.identity.kind === "caption" && item.identity.id === entry.imageId)!
+            return { ...entry, source: "ai", input: outputEvidence(status.signature, { caption: entry.caption, decorative: entry.decorative === true }) }
+          }) })
         }
         completed++
         p.emit({
@@ -846,7 +885,7 @@ async function runInitialFullPipeline(
         config: tocConfig,
         llmModel: model,
       })
-      storage.putNodeData("toc-generation", "book", toc)
+      storage.putNodeData("toc-generation", "book", { ...toc, source: "ai" })
 
       p.emit({
         type: "step-progress",
@@ -859,7 +898,7 @@ async function runInitialFullPipeline(
 
     executors.set("text-catalog", async () => {
       const pages = storage.getPages()
-      const catalog = await buildTextCatalog(storage, pages)
+      const catalog = reconcileTextCatalog(storage)
       storage.putNodeData("text-catalog", "book", catalog)
     })
 
@@ -876,8 +915,11 @@ async function runInitialFullPipeline(
         return
       }
       const model = getModel(easyReadConfig.modelId)
+      easyReadConfig.promptSignature = promptEngine.fingerprint(easyReadConfig.promptName, { modelId: easyReadConfig.modelId })
       const totalEntries = blocks.reduce((sum, block) => sum + block.entries.length, 0)
       const output = await generateEasyRead(blocks, easyReadConfig, model, {
+        references: captureOutputReferences(storage, "easy-read", easyReadConfig.language),
+        previous: retainedEasyRead(storage, blocks),
         concurrency: effectiveConcurrency,
         onProgress: (completed, total) => {
           p.emit({
@@ -911,36 +953,12 @@ async function runInitialFullPipeline(
       if (translationEntries.length === 0) return
       const translationConfig = buildCatalogTranslationConfig(config, language)
       const model = getModel(translationConfig.modelId)
-      const batchSize = translationConfig.batchSize
-      interface WorkItem { language: string; batchIndex: number; entries: TextCatalogEntry[] }
-      const workItems: WorkItem[] = []
-      for (const lang of targetLanguages) {
-        for (let i = 0; i < translationEntries.length; i += batchSize) {
-          workItems.push({ language: lang, batchIndex: Math.floor(i / batchSize), entries: translationEntries.slice(i, i + batchSize) })
-        }
-      }
-      const totalBatches = workItems.length
-      let completedBatches = 0
-      const resultsByLang = new Map<string, TextCatalogEntry[]>()
-      for (const lang of targetLanguages) resultsByLang.set(lang, [])
-      await processWithConcurrency(workItems, effectiveConcurrency, async (item) => {
-        const translated = await translateCatalogBatch(item.entries, item.language, translationConfig, model)
-        resultsByLang.get(item.language)!.push(...translated)
-        completedBatches++
-        p.emit({
-          type: "step-progress",
-          step: "catalog-translation",
-          message: `${completedBatches}/${totalBatches} batches`,
-          page: completedBatches,
-          totalPages: totalBatches,
-        })
+      translationConfig.promptSignature = promptEngine.fingerprint(translationConfig.promptName, { modelId: translationConfig.modelId })
+      await processWithConcurrency(targetLanguages, effectiveConcurrency, async (lang) => {
+        const previous = storage.getLatestNodeData("text-catalog-translation", lang)?.data as TextCatalogOutput | undefined
+        const output = await translateCatalog({ entries: translationEntries, language: lang, config: translationConfig, llmModel: model, previous, references: captureOutputReferences(storage, "translation", lang) })
+        if (output !== previous) storage.putNodeData("text-catalog-translation", lang, output)
       })
-      for (const lang of targetLanguages) {
-        const entries = resultsByLang.get(lang)!
-        const idOrder = new Map(translationEntries.map((e, i) => [e.id, i]))
-        entries.sort((a, b) => (idOrder.get(a.id) ?? 0) - (idOrder.get(b.id) ?? 0))
-        storage.putNodeData("text-catalog-translation", lang, { entries, generatedAt: new Date().toISOString() })
-      }
     })
 
     executors.set("core-tts-catalog", async (p) => {
@@ -957,6 +975,7 @@ async function runInitialFullPipeline(
       if (sourceDisplayEntries.length === 0) return
 
       const preparationConfig = buildCoreTtsPreparationConfig(config)
+      preparationConfig.promptSignature = promptEngine.fingerprint(preparationConfig.promptName, { modelId: preparationConfig.modelId })
       const model = getModel(preparationConfig.modelId)
       const profiles = loadCoreTtsProfiles(
         options.configDir ?? path.resolve(process.cwd(), "config"),
@@ -965,6 +984,7 @@ async function runInitialFullPipeline(
         entries: sourceDisplayEntries,
         language,
         config: preparationConfig,
+        references: captureOutputReferences(storage, "preparation", language),
         profile: resolveCoreTtsProfile(language, profiles),
         llmModel: model,
         previous: getCoreTtsCatalog(storage, language),
@@ -995,6 +1015,7 @@ async function runInitialFullPipeline(
           entries: displayEntries,
           language: lang,
           config: preparationConfig,
+          references: captureOutputReferences(storage, "preparation", lang),
           profile: resolveCoreTtsProfile(lang, profiles),
           llmModel: model,
           previous: getCoreTtsCatalog(storage, lang),
@@ -1015,6 +1036,8 @@ async function runInitialFullPipeline(
     executors.set("tts", async (p) => {
       const language = getLanguage(storage, config)
       const outputLanguages = getOutputLanguages(config, language)
+      reconcileSpeechInputs({ storage, config, sourceLanguage: language, languages: outputLanguages,
+        profiles: loadCoreTtsProfiles(options.configDir ?? path.resolve("config")), promptsDir, bookDir: path.join(path.resolve(booksRoot), label) })
       if (!outputLanguages.some((lang) => getReadyCoreTtsEntries(storage, lang).length > 0)) return
 
       const configDir = options.configDir ?? path.resolve(process.cwd(), "config")
@@ -1214,6 +1237,7 @@ async function runInitialFullPipeline(
           attemptCount++
           const ttsSynthesizer = getSynthesizer(provider)
           return generateSpeechFile({
+          sampleRate: config.speech?.sample_rate, bitRate: config.speech?.bit_rate,
             textId: item.textId,
             text: item.text,
             language: item.language,
@@ -1315,7 +1339,7 @@ async function runInitialFullPipeline(
       for (const lang of outputLanguages) {
         const entries = resultsByLang.get(lang)!
         const output: TTSOutput = { entries, generatedAt: new Date().toISOString() }
-        storage.putNodeData("tts", lang, output)
+        publishSpeechOutput(storage, lang, output)
       }
     })
 
@@ -1329,6 +1353,7 @@ async function runInitialFullPipeline(
       const bookMetadata = metadataRow?.data as { title?: string | null } | null
       const bookTitle = bookMetadata?.title ?? label
       await packageAdtWeb(storage, {
+        promptsDir, configDir: options.configDir ?? path.resolve("config"),
         bookDir: path.join(path.resolve(booksRoot), label),
         label,
         language,
@@ -1336,7 +1361,8 @@ async function runInitialFullPipeline(
         title: bookTitle,
         webAssetsDir: options.webAssetsDir,
         applyBodyBackground: config.apply_body_background,
-        speechConfig: config.speech,
+        config,
+      speechConfig: config.speech,
         fixedLayout: isFixedLayoutBook(config),
         reflowableFont: config.reflowable_font,
         quizMatchBookStyle: config.quiz_generation?.match_book_style ?? true,
@@ -1352,7 +1378,13 @@ async function runInitialFullPipeline(
       storage.putNodeData("accessibility-assessment", "book", output)
     })
 
-    return await runPipelineDAG(executors, progress)
+    const persistedProgress: Progress = { emit(event) {
+      if (event.type === "step-start" && event.step !== "extract") storage.markStepStarted(event.step)
+      if (event.type === "step-complete") storage.markStepCompleted(event.step)
+      if (event.type === "step-error") storage.recordStepError(event.step, event.error)
+      progress.emit(event)
+    } }
+    return await runPipelineDAG(executors, persistedProgress, selectedStages)
   } finally {
     storage.close()
   }

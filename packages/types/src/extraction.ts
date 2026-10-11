@@ -60,10 +60,3 @@ export const ExtractionManifest = z.object({
   }
 })
 export type ExtractionManifest = z.infer<typeof ExtractionManifest>
-
-export const BookWriterOwner = z.object({
-  token: z.string().uuid(),
-  pid: z.number().int().positive(),
-  host: z.string().min(1),
-}).strict()
-export type BookWriterOwner = z.infer<typeof BookWriterOwner>

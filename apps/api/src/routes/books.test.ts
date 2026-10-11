@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { openBookDb, createBookStorage, withBookWriter } from "@adt/storage"
+import { openBookDb, createBookStorage, writeSectioningLifecycle } from "@adt/storage"
 import { zipSync } from "fflate"
 import { SCHEMA_VERSION } from "@adt/types"
 import type { StageName } from "@adt/types"
@@ -545,8 +545,8 @@ describe("PUT /books/:label/metadata", () => {
     expect((stored?.data as { language_code: string }).language_code).toBe("fr")
 
     const state = readState("meta-lang")
-    // Language-dependent outputs cleared...
-    expect(state.easyRead).toBeNull()
+    // Catalog outputs survive a language change; non-catalog stages invalidate.
+    expect(state.easyRead).toMatchObject({ version: 1, data: { blocks: [] } })
     expect(state.quiz).toBeNull()
     expect(state.steps.has("easy-read")).toBe(false)
     expect(state.steps.has("quiz-generation")).toBe(false)
@@ -585,8 +585,8 @@ describe("PUT /books/:label/metadata", () => {
     expect((stored?.data as { language_code: string }).language_code).toBe("es-UY")
 
     const state = readState("meta-locale")
-    // Language-dependent LLM outputs still re-run (the locale feeds prompts)...
-    expect(state.easyRead).toBeNull()
+    // Retained outputs can be reviewed against the changed locale.
+    expect(state.easyRead).toMatchObject({ version: 1, data: { blocks: [] } })
     expect(state.steps.has("easy-read")).toBe(false)
     // ...but the book summary stays — same base language (Spanish).
     expect(state.bookSummary).not.toBeNull()
@@ -737,11 +737,13 @@ describe("POST /books/:label/stages/run", () => {
       getQueuedStages: () => [],
 
       startStageRun: (_label, options) => {
+        options.beforeRun?.()
         receivedOptions = options
         return { status: "started" as const, id: "run-1" }
       },
     }
 
+    writeSectioningLifecycle(path.join(tmpDir, label), "dynamic", true)
     const app = createStageRoutes(stageService, mockEventBus, mockDecisions, tmpDir, "", "", globalConfigPath)
     const res = await app.request(`/books/${label}/stages/run`, {
       method: "POST",
@@ -758,19 +760,14 @@ describe("POST /books/:label/stages/run", () => {
     expect(res.status).toBe(200)
     expect(receivedOptions?.renderOnly).toBe(true)
     expect(receivedOptions?.credentials).toEqual({})
-    // Submission leaves content intact; only the admitted worker may clear.
-    const submittedStorage = createBookStorage(label, tmpDir)
-    try { expect(submittedStorage.getLatestNodeData("web-rendering", "pg001")).not.toBeNull() }
-    finally { submittedStorage.close() }
-    withBookWriter(path.join(tmpDir, label), () => receivedOptions?.beforeRun?.())
 
     const verifyStorage = createBookStorage(label, tmpDir)
     try {
       expect(verifyStorage.getLatestNodeData("page-sectioning", "pg001")).not.toBeNull()
-      expect(verifyStorage.getLatestNodeData("web-rendering", "pg001")).toBeNull()
+      expect(verifyStorage.getLatestNodeData("web-rendering", "pg001")).not.toBeNull()
       const runs = new Map(verifyStorage.getStepRuns().map((r) => [r.step, r.status]))
       expect(runs.get("page-sectioning")).toBe("done")
-      expect(runs.has("web-rendering")).toBe(false)
+      expect(runs.get("web-rendering")).toBeUndefined()
     } finally {
       verifyStorage.close()
     }
@@ -936,6 +933,7 @@ describe("POST /books/:label/stages/run", () => {
       getQueuedStages: () => [],
       addListener: () => () => {},
       startStageRun: (_label, options) => {
+        options.beforeRun?.()
         receivedOptions = options
         return { status: "started" as const, id: "run-2" }
       },
@@ -1362,11 +1360,11 @@ describe("GET /books/:label/export-project", () => {
     expect(res.status).toBe(404)
   })
 
-  it("returns 500 when web assets directory is missing (prepare-export)", async () => {
+  it("returns 500 when a generated ADT export is missing web assets", async () => {
     createTestBook("missing-assets-export")
     addPagesAndRenderings("missing-assets-export", 1)
     const app = createBookRoutes(tmpDir, path.join(tmpDir, "no-web-assets"))
-    const res = await app.request("/books/missing-assets-export/prepare-export", { method: "POST" })
+    const res = await app.request("/books/missing-assets-export/prepare-export?format=adt", { method: "POST" })
     expect(res.status).toBe(500)
   })
 })

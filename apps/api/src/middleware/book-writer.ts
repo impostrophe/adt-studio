@@ -1,18 +1,23 @@
 import type { MiddlewareHandler } from "hono"
-import { assertExtractionReadable, resolveBookPaths, withBookWriter } from "@adt/storage"
+import fs from "node:fs"
+import { HTTPException } from "hono/http-exception"
+import { recoverSectioningTransition, assertExtractionReadable, resolveBookPaths, withBookWriter } from "@adt/storage"
 
 /** Interactive writes and background workers use the same book-local lease. */
 export function bookWriterMiddleware(booksDir: string): MiddlewareHandler {
   return async (c, next) => {
     const label = c.req.param("label")
     if (!label) return next()
-    const { bookDir } = resolveBookPaths(label, booksDir)
     const suffix = c.req.path.split(`/books/${encodeURIComponent(label)}`)[1] ?? ""
     // These collection endpoints have no book label despite matching :label.
     if (suffix === "" && c.req.method === "POST" && ["import", "preview-import"].includes(label)) return next()
     // Run submission is queued by StageService. Cancellation/decisions must
     // remain available while a writer holds the lease, including a slow LLM.
     if (suffix.startsWith("/stages") || suffix.startsWith("/tasks")) return next()
+    let bookDir: string
+    try { bookDir = resolveBookPaths(label, booksDir).bookDir }
+    catch { throw new HTTPException(400, { message: "Invalid book label" }) }
+    if (!fs.existsSync(bookDir)) return next()
     // Part exports write a ledger; all archives need a consistent file set.
     const archiveRead = /^(GET|HEAD)$/.test(c.req.method) && /^\/export-[^/]+$/.test(suffix)
     if ((c.req.method === "GET" || c.req.method === "HEAD") && !archiveRead) {
@@ -22,6 +27,7 @@ export function bookWriterMiddleware(booksDir: string): MiddlewareHandler {
     }
     if (c.req.method === "OPTIONS") return next()
     return withBookWriter(bookDir, async () => {
+      recoverSectioningTransition(bookDir)
       // Explicit whole-book deletion is still allowed for a failed import.
       if (!(suffix === "" && c.req.method === "DELETE")) assertExtractionReadable(bookDir)
       await next()
