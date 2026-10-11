@@ -1093,7 +1093,7 @@ export function createPageRoutes(
       let synchronizationLayout: SectioningSynchronization["layout"] = "unknown"
       try {
         const cfg = loadBookConfig(safeLabel, booksDir, configPath)
-        const fixedLayout = isFixedLayoutBook(cfg)
+        const fixedLayout = isFixedLayoutBook(cfg) || getNodeData("fixed-layout-sectioning")?.data != null
         synchronizationLayout = fixedLayout ? "fixed" : "reflowable"
         if (!fixedLayout) {
           const registryRows = db.all(

@@ -2,7 +2,7 @@ import { withBookWriter, resolveBookPaths } from "@adt/storage"
 import {
   createStoryboardPublication, FIXED_LAYOUT_SECTIONING_NODE, SectioningSafetyError,
   isFixedLayoutBook, processFixedLayoutPages, stampGeneratedRendering, renderedSectionId,
-  readGenerationCatalog, inputSignature, reconcileTextCatalog,
+  readGenerationCatalog, inputSignature, reconcileTextCatalog, storyboardGenerationContent,
 } from "@adt/pipeline"
 import crypto from "node:crypto"
 import path from "node:path"
@@ -284,7 +284,15 @@ async function reRenderAdmittedPage(
       return incoming.get(id)!
     })
     for (const id of targetIds) if (!matched.has(id)) merged.push(incoming.get(id)!)
-    const rendering = { sections: merged }
+    // Partial repair cannot certify unchanged siblings against new prompts or
+    // configuration. Retain their previous generation signature as stale while
+    // updating the content hash, so shared resume still recognizes AI output.
+    const previousEvidence = parsed.success ? parsed.data.generationEvidence : undefined
+    const rendering: WebRenderingOutput = { ...(parsed.success ? parsed.data : {}), sections: merged }
+    if (previousEvidence?.source === "ai" && previousEvidence.input
+      && previousEvidence.input.contentHash === inputSignature(storyboardGenerationContent(parsed.success ? parsed.data : null, storage.getLatestNodeData(FIXED_LAYOUT_SECTIONING_NODE, pageId)?.data))) {
+      rendering.generationEvidence = { source: "ai", input: { ...previousEvidence.input, contentHash: inputSignature(storyboardGenerationContent(rendering, storage.getLatestNodeData(FIXED_LAYOUT_SECTIONING_NODE, pageId)?.data)) } }
+    } else delete rendering.generationEvidence
     const version = storage.putNodeData("web-rendering", pageId, rendering)
     return { version, rendering }
   } finally {

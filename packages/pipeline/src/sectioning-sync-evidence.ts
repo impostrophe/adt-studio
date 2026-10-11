@@ -83,12 +83,16 @@ export function classifyStoredSectioning(input: {
     }).current && matches[0].generationEvidence?.review?.action === "keep"
     if (reviewed && ["unknown-origin", "protected-divergence"].includes(result.status)) return { ...result, status: "current" as const, action: "none" as const,
       diagnostics: ["Explicitly reviewed rendering retained for these source inputs. Its origin remains protected."] }
-    const custom = current?.sectionType === "activity_custom"
+    const custom = current?.sectionType.startsWith("activity_custom")
+    // A missing projection is repairable only when the remaining document has
+    // unambiguous owned identities; legacy bytes are never presumed unrelated.
+    const ids = rendering.success ? rendering.data.sections.map(renderedSectionId) : []
+    const missing = matches.length === 0 && (!input.rendering || (rendering.success && ids.every((id) => !!id && input.sectionOwners[id]?.length === 1 && input.sectionOwners[id][0] === input.pageId) && new Set(ids).size === ids.length))
     const resolved = result.status === "current" || (!!input.proposed && result.status === "text-patched")
     return { ...result,
       ...(!input.proposed && result.status === "text-patched" ? { status: "text-drift" as const, diagnostics: ["Stored rendering has not incorporated the current source text."] } : {}),
       action: resolved || input.layout !== "reflowable" || !current ? "none" as const
-        : owned && !custom && (generated || (!input.rendering && matches.length === 0)) && !["protected-divergence", "unknown-origin"].includes(result.status) ? "repair" as const : "review" as const,
+        : owned && !custom && (generated || missing) && !["protected-divergence", "unknown-origin"].includes(result.status) ? "repair" as const : "review" as const,
     }
   })
   return candidate

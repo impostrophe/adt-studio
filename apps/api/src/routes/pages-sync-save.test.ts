@@ -188,7 +188,7 @@ describe("server-owned atomic synchronization Save", () => {
     const page = await get()
     expect(page.rendering).toEqual(before.rendering)
     const status = { unknown: "unknown-origin", manual: "protected-divergence", structural: "structural-drift", missing: "invalid-rendering", malformed: "invalid-rendering" }[kind]
-    expect(page.sectioningSynchronization.sections.find((entry) => entry.sectionId === sectionId)).toMatchObject({ status, action: kind === "structural" ? "repair" : "review" })
+    expect(page.sectioningSynchronization.sections.find((entry) => entry.sectionId === sectionId)).toMatchObject({ status, action: ["structural", "missing"].includes(kind) ? "repair" : "review" })
     expect((await get()).sectioningSynchronization).toEqual(page.sectioningSynchronization)
   })
 
@@ -423,4 +423,42 @@ describe("server-owned atomic synchronization Save", () => {
     }
     expect(afterPackage.pg001_sec001).toBe(beforePackage.pg001_sec001)
   })
+  it("rejects submitted duplicate identities atomically without blessing a client sync flag", async () => {
+    const before = rows()
+    const rendering = structuredClone(originalRendering)
+    rendering.sections[0].html = rendering.sections[1].html
+    const response = await save(edited(), { storyboard: true, rendering, renderingInSync: true })
+    expect(response.status).toBe(400)
+    expect(rows()).toEqual(before)
+  })
+
+  it("keeps the positioned boundary on GET after config switches to reflowable", async () => {
+    withStorage((db) => {
+      db.putNodeData("positioned-text", pageId, { pageWidth: 400, pageHeight: 600, drawItems: [{ kind: "paragraph", textId: "pg001_positioned001", top: 110, left: 72, lineHeight: 24, text: "Positioned original", segments: [{ text: "Positioned original", style: { color: "#111111", "font-size": "18px" } }] }] })
+      processFixedLayoutPages(db, "images/", [pageId])
+    })
+    const before = rows()
+    const result = await get()
+    expect(result.sectioningSynchronization.layout).toBe("fixed")
+    expect(result.sectioningSynchronization.sections.find((s) => s.sectionId === sectionId)).toMatchObject({ status: "fixed-layout-unmapped", action: "none" })
+    expect(rows()).toEqual(before)
+  })
+
+  it.each(["pruned", "legacy"])("allows an authored edit while preserving an unchanged %s sibling", async (kind) => {
+    const source = structuredClone(originalSource)
+    const rendering = structuredClone(originalRendering)
+    if (kind === "pruned") source.sections[1].isPruned = true
+    else rendering.sections[0].html = "<section><p>Legacy unknown sibling</p></section>"
+    withStorage((db) => {
+      db.putNodeData("page-sectioning", pageId, source)
+      db.putNodeData("web-rendering", pageId, rendering)
+    })
+    rendering.sections[1].html = rendering.sections[1].html.replace("class='grid'", "class='authored-grid'")
+    const response = await save(source, { storyboard: true, rendering, baseVersion: 2, renderingVersion: 2 })
+    expect(response.status, await response.clone().text()).toBe(200)
+    const page = await get()
+    expect(page.rendering.sections[0]).toEqual(rendering.sections[0])
+    expect(page.rendering.sections[1].html).toContain("class='authored-grid'")
+  })
+
 })

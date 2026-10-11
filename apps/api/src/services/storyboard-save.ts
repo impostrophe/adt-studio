@@ -8,6 +8,11 @@ import {
 import { PageSectioningOutput, WebRenderingOutput, type AppConfig, type StoryboardSaveRequest, type StoryboardSaveResponse, type SectioningSynchronization } from "@adt/types"
 import { assertEditVersion } from "./catalog-output-service.js"
 
+function pageGenerationStatus(options: GenerationCatalogOptions, pageId: string) {
+  try { return readGenerationCatalog(options).find((value) => value.identity.kind === "storyboard" && value.identity.id === pageId) }
+  catch { return undefined } // Unsupported generation inputs cannot certify freshness or block a deterministic edit.
+}
+
 export function sectionOwners(storage: Storage): Record<string, string[]> {
   const owners: Record<string, string[]> = Object.create(null)
   for (const page of storage.getPages()) {
@@ -49,8 +54,27 @@ export function saveStoryboard(storage: Storage, pageId: string, request: Storyb
     const source = request.sectioning ? PageSectioningOutput.parse(request.sectioning) : previousSource.success ? previousSource.data : null
     if (!source) throw new HTTPException(409, { message: "Save requires a valid semantic source. Reload and review the page." })
     const previousRendering = WebRenderingOutput.safeParse(renderingRow?.data)
+    const pageBefore = generation && previousRendering.success
+      ? pageGenerationStatus({ ...generation, storage, config }, pageId)
+      : undefined
     const layout = synchronizationLayout(storage, pageId, config)
     const candidate = sourceRow && previousSource.success ? storedSynchronization(storage, pageId, layout, source) : null
+    if (layout === "reflowable" && request.rendering && (!previousRendering.success || inputSignature(request.rendering.sections.map(sectionRenderingContent)) !== inputSignature(previousRendering.data.sections.map(sectionRenderingContent)))) {
+      const previous = previousRendering.success ? previousRendering.data.sections : []
+      const ids = request.rendering.sections.map(renderedSectionId)
+      const owners = sectionOwners(storage)
+      for (const section of request.rendering.sections) {
+        if (previous.some((entry) => inputSignature(sectionRenderingContent(entry)) === inputSignature(sectionRenderingContent(section)))) continue
+        const id = renderedSectionId(section)
+        if (!id || ids.filter((value) => value === id).length !== 1 || source.sections.filter((entry) => entry.sectionId === id && !entry.isPruned).length !== 1 || (owners[id] ?? []).some((owner) => owner !== pageId)) {
+          throw new HTTPException(400, { message: "Edited rendering must retain unique active section identities. Your draft has not been saved." })
+        }
+      }
+      if (ids.some((id) => id && ids.filter((value) => value === id).length > Math.max(1, previous.filter((entry) => renderedSectionId(entry) === id).length))) {
+        throw new HTTPException(400, { message: "Edited rendering introduces duplicate section identities. Your draft has not been saved." })
+      }
+    }
+
     const sourceContent = (tree: PageSectioningOutput) => ({ ...tree, source: undefined })
     const sourceChanged = !previousSource.success || inputSignature(sourceContent(source)) !== inputSignature(sourceContent(previousSource.data))
     const sourceVersion = sourceChanged ? storage.putNodeData("page-sectioning", pageId, { ...source, source: "manual" }) : sourceRow!.version
@@ -81,15 +105,19 @@ export function saveStoryboard(storage: Storage, pageId: string, request: Storyb
     }
     // Keep the shared full-resume catalog coherent with a deterministic Save.
     // A mixed/manual/unknown page cannot gain whole-page generated provenance.
-    if (nextRendering && generation && candidate?.sections.length && candidate.sections.every((section) => ["current", "text-patched"].includes(section.status))
+    if (nextRendering && generation && pageBefore && !pageBefore.protected && previousRendering.success && previousRendering.data.generationEvidence?.input && candidate?.sections.length && candidate.sections.every((section) => ["current", "text-patched"].includes(section.status))
       && nextRendering.sections.every((section) => section.generationEvidence?.source === "ai")
       && inputSignature(nextRendering) !== inputSignature(previousRendering.success ? previousRendering.data : null)) {
       const candidateRendering = nextRendering
       const view: Storage = { ...storage, getLatestNodeData(node, id) {
         return node === "web-rendering" && id === pageId ? { version: request.renderingVersion + 1, data: candidateRendering } : storage.getLatestNodeData(node, id)
       } }
-      const status = readGenerationCatalog({ ...generation, storage: view, config }).find((value) => value.identity.kind === "storyboard" && value.identity.id === pageId)
-      if (status) nextRendering = { ...nextRendering, generationEvidence: { source: "ai", input: { signature: status.signature, contentHash: status.contentHash, references: [{ node: "page-sectioning", itemId: pageId, version: sourceVersion }] } } }
+      const status = pageGenerationStatus({ ...generation, storage: view, config }, pageId)
+      // Correspondence alone cannot certify changed prompts, typography, model
+      // or layout settings. Advance whole-page freshness only from a current
+      // generated baseline; otherwise retain its stale signature and protection
+      // evidence for the deterministically changed content.
+      if (status) nextRendering = { ...nextRendering, generationEvidence: { source: "ai", input: { signature: pageBefore.current ? status.signature : previousRendering.data.generationEvidence.input.signature, contentHash: status.contentHash, references: [{ node: "page-sectioning", itemId: pageId, version: sourceVersion }] } } }
     }
     // Invalid stored data is retained on semantic-only saves, never replaced by
     // a parsed empty document. Evidence-only changes are part of the same write.

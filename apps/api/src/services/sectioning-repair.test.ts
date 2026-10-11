@@ -3,7 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { createBookStorage, writeSectioningLifecycle, withBookWriter } from "@adt/storage"
-import { stampGeneratedRendering, loadBookConfig } from "@adt/pipeline"
+import { stampGeneratedRendering, loadBookConfig, readGenerationCatalog } from "@adt/pipeline"
 import { saveStoryboard, storedSynchronization } from "./storyboard-save.js"
 import { PageSectioningOutput } from "@adt/types"
 import { reRenderPage } from "./page-edit-service.js"
@@ -146,4 +146,26 @@ describe("stable targeted repair at the real provider transport", () => {
     expect(readState().rendering).toEqual(before.rendering)
     expect(readState().translation).toEqual(before.translation)
   })
+  it("retains generated provenance after partial repair without certifying untouched inputs", async () => {
+    const db = createBookStorage(label, booksDir)
+    let oldSignature: string
+    try {
+      const source = PageSectioningOutput.parse(db.getAllNodeVersions("page-sectioning", pageId)[0].data)
+      const row = db.getLatestNodeData("web-rendering", pageId)!
+      const rendering = stampGeneratedRendering(row.data as never, source, pageId, 1)
+      const status = readGenerationCatalog({ storage: db, config: loadBookConfig(label, booksDir, options().configPath), bookDir: db.bookDir!, promptsDir: options().promptsDir, configPath: options().configPath }).find((s) => s.identity.kind === "storyboard")!
+      oldSignature = "previous-source-and-prompt-signature"
+      db.putNodeData("web-rendering", pageId, { ...rendering, generationEvidence: { source: "ai", input: { signature: oldSignature, contentHash: status.contentHash, references: [] } } })
+    } finally { db.close() }
+    fetchMock.mockResolvedValueOnce(repairedResponse())
+    await reRenderPage({ ...options(), repair: { ...options().repair, renderingVersion: 3 } })
+    const current = createBookStorage(label, booksDir)
+    try {
+      const status = readGenerationCatalog({ storage: current, config: loadBookConfig(label, booksDir, options().configPath), bookDir: current.bookDir!, promptsDir: options().promptsDir, configPath: options().configPath }).find((s) => s.identity.kind === "storyboard")!
+      expect(status).toMatchObject({ protected: false, current: false, updateNeeded: true })
+      expect((current.getLatestNodeData("web-rendering", pageId)!.data as any).generationEvidence.input.signature).toBe(oldSignature)
+    } finally { current.close() }
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
 })
