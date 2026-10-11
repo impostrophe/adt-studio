@@ -20,10 +20,10 @@ vi.mock("@/components/pipeline/pipeline-i18n", () => ({ getStageLabelI18n: (slug
 const { useSectioningModeConfirmation } = await import("./use-sectioning-mode-confirmation")
 const { useUpdateBookConfig } = await import("./use-book-config")
 
-function Harness() {
+function Harness({ label = "book" }: { label?: string }) {
   const mutation = useUpdateBookConfig()
   const adjacent = useUpdateBookConfig()
-  const confirmation = useSectioningModeConfirmation("book", mutation.isPending)
+  const confirmation = useSectioningModeConfirmation(label, mutation.isPending)
   return <>
     <span data-testid="persisted">{confirmation.state?.effectiveMode}</span>
     <button disabled={confirmation.busy} onClick={() => confirmation.request("page", () => mutation.mutate({ label: "book", config: { page_sectioning: { mode: "page" } } }))}>Select By Page</button>
@@ -51,6 +51,16 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 describe("Sectioning mode confirmation", () => {
+  it("discards a pending confirmation when navigation changes the book", async () => {
+    const { client, view } = mount()
+    await select()
+    expect(screen.getByRole("dialog")).toBeTruthy()
+    view.rerender(<QueryClientProvider client={client}><Harness label="other-book" /></QueryClientProvider>)
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    view.rerender(<QueryClientProvider client={client}><Harness /></QueryClientProvider>)
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(mocks.update).not.toHaveBeenCalled()
+  })
   it("confirms retained stale output and cancels without a mutation", async () => {
     mount(); await select()
     expect(screen.getByText(/Saved versions are kept/)).toBeTruthy()

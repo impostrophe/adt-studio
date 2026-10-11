@@ -1,5 +1,6 @@
-import type { RunStagesOptions } from "@/api/client"
+import type { BookConfigResponse, RunStagesOptions } from "@/api/client"
 import { useState, useEffect, useMemo } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { Trans, useLingui } from "@lingui/react/macro"
 import { LandingPageShell } from "@/components/pipeline/components/LandingPageShell"
 import { CascadeWarning } from "@/components/pipeline/components/CascadeWarning"
@@ -25,13 +26,14 @@ type SectioningModeKey = "dynamic" | "page"
 
 export function SectioningLandingPage({ bookLabel }: { bookLabel: string }) {
   const { t } = useLingui()
+  const queryClient = useQueryClient()
   const { data: bookConfigData } = useBookConfig(bookLabel)
   const { data: pages, isLoading: pagesLoading } = usePages(bookLabel)
   const { data: splitStatus, isLoading: splitStatusLoading } = useSplitStatus(bookLabel)
   const { data: activeConfigData } = useActiveConfig(bookLabel)
   const persist = usePersistConfig(bookLabel)
   const updateMode = useUpdateBookConfig()
-  const modeConfirmation = useSectioningModeConfirmation(bookLabel, updateMode.isPending)
+  const modeConfirmation = useSectioningModeConfirmation(bookLabel, updateMode.isPending || !bookConfigData)
   const { apiKey } = useApiKey()
   const hasStructuredTextProvider = useBookStructuredTextAvailability(bookLabel)
   const { queueRun } = useBookRun()
@@ -82,8 +84,12 @@ export function SectioningLandingPage({ bookLabel }: { bookLabel: string }) {
   const handleModeChange = (value: SectioningModeKey) => {
     if (value === modeConfirmation.state?.effectiveMode) return
     modeConfirmation.request(value, () => {
-      const existing = (bookConfigData?.config?.page_sectioning ?? {}) as Record<string, unknown>
-      updateMode.mutate({ label: bookLabel, config: { ...bookConfigData?.config, page_sectioning: { ...existing, mode: value } } })
+      // Confirmation can outlive a config refetch. The API replaces the whole
+      // override map, so merge into the latest loaded map, not the dialog's snapshot.
+      const latest = queryClient.getQueryData<BookConfigResponse>(["book-config", bookLabel])
+      if (!latest) return
+      const existing = (latest.config?.page_sectioning ?? {}) as Record<string, unknown>
+      updateMode.mutate({ label: bookLabel, config: { ...latest.config, page_sectioning: { ...existing, mode: value } } })
     })
   }
 
