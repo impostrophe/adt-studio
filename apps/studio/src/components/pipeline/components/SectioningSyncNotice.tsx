@@ -52,7 +52,7 @@ export function SectioningSyncNotice({ synchronization, bookLabel, pageId, showS
       )}
       {synchronization.diagnostics.length > 0 && <p><Trans>Some source or rendering data could not be verified. Review this page in Storyboard.</Trans></p>}
       {!fixed && repairable.length > 0 && <SectioningRepairAction key={`${bookLabel}:${pageId}`} bookLabel={bookLabel} pageId={pageId} synchronization={synchronization} sectionIds={repairable} />}
-      {!fixed && requiresReview && <OutputReview bookLabel={bookLabel} id={pageId} kinds={["storyboard"]} />}
+      {!fixed && requiresReview && <OutputReview bookLabel={bookLabel} id={pageId} kinds={["storyboard"]} allowGeneration={false} />}
       {(showStoryboardLink || requiresReview) && (
         <Link className="inline-block underline focus-visible:outline-2 focus-visible:outline-offset-2" to="/books/$label/$step/$pageId" params={{ label: bookLabel, step: "storyboard", pageId }}>
           <Trans>Open Storyboard</Trans>
