@@ -1,5 +1,7 @@
 # SPEC-0003 B1 — stacked implementation evidence
 
+Historical continuation report. For the subsequent review, fixes and refreshed verification, see [independent B1 review](spec-0003-independent-review.md). Publication statements below describe this earlier continuation.
+
 Date: 2026-10-11. Human approval remains pending. This report supersedes the
 functional-gap assessment in the October 10 reports, which remain historical
 records. It is not spec approval or release certification.
