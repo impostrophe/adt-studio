@@ -417,6 +417,8 @@ section_types:
         entries: [],
         styleClusters: [],
       })
+      // Outline rebuilding does not replace the filtering prerequisite for new Sectioning.
+      storage.putNodeData("image-filtering", "pg001", { images: [] })
       for (const step of PIPELINE.find((stage) => stage.name === "extract")!.steps) {
         if (step.name !== "book-outline") storage.markStepCompleted(step.name)
       }
