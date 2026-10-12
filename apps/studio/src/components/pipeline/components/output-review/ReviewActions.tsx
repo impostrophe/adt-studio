@@ -7,6 +7,7 @@ import { api } from "@/api/client"
 import { useApiKey } from "@/hooks/use-api-key"
 import { useBookRun } from "@/hooks/use-book-run"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import { useFloatingSaveDirtyEntries } from "../floating-save"
 import { getStageLabelI18n } from "../../pipeline-i18n"
 import { buildReviewPlan, hasFallback, identityKey, reviewGuard } from "./review-plan"
@@ -51,11 +52,24 @@ export function ReviewActions({ bookLabel, outputs, catalog, filtered, heading, 
     onSettled: () => client.invalidateQueries({ queryKey: ["books", bookLabel] }),
   })
   const disabled = dirty || isRunning || mutation.isPending
+  // "Updating…" belongs to the run this button started, not to unrelated runs.
+  // onSettled awaits the status refetch, so isRunning is current once the
+  // request settles. The button stays focusable while busy (aria-disabled, not
+  // disabled) so keyboard and screen-reader users keep their place.
+  const [requested, setRequested] = useState(false)
+  useEffect(() => { if (requested && !isRunning && !mutation.isPending) setRequested(false) }, [requested, isRunning, mutation.isPending])
+  const updating = requested && (isRunning || mutation.isPending)
   const count = plan.replace.length
   return <div className="space-y-1.5 px-3 py-2 text-xs">
     <div className="flex flex-wrap items-center gap-2">
       <div className="mr-auto">{heading}</div>
-      {plan.update.length > 0 && <Button size="sm" variant="outline" className="h-8 text-xs" disabled={disabled} onClick={() => mutation.mutate("update")}><RefreshCw className="h-3.5 w-3.5" />{filtered ? t`Update filtered items` : t`Update all`}</Button>}
+      {plan.update.length > 0 && <Button size="sm"
+        className="h-8 border border-amber-600 bg-amber-500 text-xs text-amber-950 shadow-sm hover:bg-amber-400 aria-disabled:cursor-default aria-disabled:hover:bg-amber-500"
+        disabled={disabled && !updating} aria-disabled={updating || undefined} aria-busy={updating || undefined}
+        onClick={() => { if (updating) return; setRequested(true); mutation.mutate("update") }}>
+        <RefreshCw className={cn("h-3.5 w-3.5", updating && "motion-safe:animate-spin")} aria-hidden="true" />
+        {updating ? t`Updating…` : filtered ? t`Update filtered items` : t`Update all`}
+      </Button>}
       {plan.keep.length > 0 && <Button size="sm" variant="outline" disabled={disabled} onClick={() => mutation.mutate("keep")}>{filtered ? t`Keep filtered content` : t`Keep all existing content`}</Button>}
       {count > 0 && <Button size="sm" variant="ghost" disabled={disabled} onClick={() => setConfirmReplace(!confirmReplace)} aria-expanded={confirmReplace}>{t`Replace edits…`}</Button>}
       {detailsButton}

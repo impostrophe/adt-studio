@@ -35,10 +35,11 @@ function setup(outputs: OutputStatus[], catalog = outputs, disclosure = false, c
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   clients.push(client)
   const refresh = vi.spyOn(client, "invalidateQueries")
-  const view = render(<QueryClientProvider client={client}>
+  const ui = () => <QueryClientProvider client={client}>
     <OutputReviewPanel bookLabel="book" outputs={outputs} catalog={catalog} conflicts={conflicts} disclosure={disclosure} renderDetail={(item) => <p>{item.identity.id}</p>} />
-  </QueryClientProvider>)
-  return { ...view, refresh }
+  </QueryClientProvider>
+  const view = render(ui())
+  return { ...view, refresh, ui }
 }
 
 it("offers Update all immediately, ignores healthy/excluded content and never replaces edits", async () => {
@@ -171,11 +172,38 @@ it("requires an explicit listed replacement and sends signature/content guards",
 it.each(["draft", "run"])("blocks all bulk changes during a %s", (mode) => {
   calls.dirty = mode === "draft"; calls.running = mode === "run"
   setup([output("generated"), output("protected", { protected: true, warnings: [{ reason: "legacy" }] })])
+  // A run this panel did not start leaves Update all disabled, not "Updating…".
   for (const name of ["Update all", "Keep all existing content", "Replace edits…"]) {
     const button = screen.getByRole("button", { name }) as HTMLButtonElement
     expect(button.disabled).toBe(true); fireEvent.click(button)
   }
   expect(calls.run).not.toHaveBeenCalled(); expect(calls.review).not.toHaveBeenCalled()
+})
+
+it("styles Update all as the amber primary action and shows progress until the run it started finishes", async () => {
+  let finish = () => {}
+  calls.run.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve }))
+  const view = setup([output("outdated")])
+  const button = screen.getByRole("button", { name: "Update all" }) as HTMLButtonElement
+  expect(button.className).toContain("bg-amber-500")
+  expect(button.className).toContain("text-amber-950")
+  fireEvent.click(button)
+  const busy = await screen.findByRole("button", { name: "Updating…" })
+  expect(busy).toBe(button)
+  // Busy, but still focusable for keyboard and screen-reader users.
+  expect(button.disabled).toBe(false)
+  expect(busy.getAttribute("aria-disabled")).toBe("true")
+  expect(busy.getAttribute("aria-busy")).toBe("true")
+  fireEvent.click(busy)
+  expect(calls.run).toHaveBeenCalledTimes(1)
+  calls.running = true
+  finish()
+  await waitFor(() => expect(view.refresh).toHaveBeenCalled())
+  view.rerender(view.ui())
+  expect(screen.getByRole("button", { name: "Updating…" })).toBe(button)
+  calls.running = false
+  view.rerender(view.ui())
+  await waitFor(() => expect(screen.getByRole("button", { name: "Update all" }).getAttribute("aria-busy")).toBeNull())
 })
 
 it("refreshes and reports partial acceptance if a later content guard rejects", async () => {
@@ -248,4 +276,13 @@ it("does not invent page/section pairs for older multi-page projections", () => 
   fireEvent.change(screen.getByRole("combobox", { name: "Page" }), { target: { value: "pg001" } })
   expect(Array.from((screen.getByRole("combobox", { name: "Section" }) as HTMLSelectElement).options).map((option) => option.value)).toEqual([""])
   expect(screen.getByText("Items needing attention: 1")).toBeTruthy()
+})
+
+it("keeps long item text to one line in the list and exposes the full text on hover", () => {
+  const long = Array.from({ length: 30 }, (_, i) => `A long Easy Read sentence part ${i}`).join(", ")
+  setup([output("long", { sourceText: long })])
+  fireEvent.click(screen.getByRole("button", { name: "Review items" }))
+  const line = screen.getByTitle(long)
+  expect(line.className).toContain("truncate")
+  expect(screen.getByRole("region", { name: "Content updates" }).className).toContain("min-w-0")
 })

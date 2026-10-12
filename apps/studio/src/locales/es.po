@@ -10794,6 +10794,9 @@ msgstr "Las actualizaciones conservan las ediciones manuales."
 msgid "Updates: {updates}. Warnings: {warnings}. Missing: {missing}."
 msgstr "Actualizaciones: {updates}. Advertencias: {warnings}. Faltantes: {missing}."
 
+msgid "Updating…"
+msgstr "Actualizando…"
+
 msgid "Upload"
 msgstr "Subir"
 

@@ -79,7 +79,8 @@ export function OutputReviewPanel({ bookLabel, outputs, catalog, conflicts = [],
   const detailsButton = <Button size="sm" variant="ghost" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls={id}>
     {open ? t`Hide details` : t`Review items`}{open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
   </Button>
-  return <section className="my-2 rounded-lg border bg-background" aria-label={t`Content updates`}>
+  // min-w-0: long item text must never widen a flex/grid parent (dialog, page).
+  return <section className="my-2 min-w-0 rounded-lg border bg-background" aria-label={t`Content updates`}>
     {disclosure ? <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">{heading}{detailsButton}</div>
       : <ReviewActions scopeKey={`${category}|${language}|${status}|${page}|${section}`} bookLabel={bookLabel} outputs={visible} catalog={catalog} filtered={filtered} heading={heading} detailsButton={detailsButton} />}
     {open && <div id={id} className="border-t">

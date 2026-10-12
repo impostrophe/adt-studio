@@ -183,6 +183,10 @@ export function StageSidebar({
     // surfaces missing-output attention after an attempt, and not during it.
     const hideMissingSpeech = step.slug === "speech" && !shouldShowMissingSpeech(state, speech)
     const visibleContent = content && hideMissingSpeech ? { ...content, missing: 0 } : content
+    const { updates = 0, warnings = 0, missing = 0 } = visibleContent ?? {}
+    const attentionLabel = updates || warnings || missing
+      ? i18n._(msg`Updates: ${updates}. Warnings: ${warnings}. Missing: ${missing}.`)
+      : undefined
     const stageCompleted = content ? content.current : state === "done"
     // Overview is the stage's landing page, and its Run button. It is normally
     // redundant while a stage is idle, because the stage's own view *is* the
@@ -272,7 +276,19 @@ export function StageSidebar({
                   role="img"
                   aria-label={noTextLayerLabel}
                   title={noTextLayerLabel}
-                  className="absolute -top-1 -right-1 z-20 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-500 ring-2 ring-background"
+                  className="absolute -top-1 -right-1 z-20 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-600 ring-2 ring-background"
+                >
+                  <TriangleAlert className="w-2 h-2 text-white" aria-hidden="true" />
+                </span>
+              ) : railCollapsed && attentionLabel ? (
+                // The review button beside the label is clipped while the rail
+                // is collapsed; mirror its attention on the icon until hover
+                // expands the rail and reveals the button.
+                <span
+                  role="img"
+                  aria-label={attentionLabel}
+                  title={attentionLabel}
+                  className="absolute -top-1 -right-1 z-20 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-600 ring-2 ring-background transition-opacity duration-150 delay-150 group-hover/rail:opacity-0"
                 >
                   <TriangleAlert className="w-2 h-2 text-white" aria-hidden="true" />
                 </span>
@@ -283,7 +299,7 @@ export function StageSidebar({
             </span>
           </Link>
 
-          {visibleContent && <StageOutputStatus bookLabel={bookLabel} stage={step.slug} summary={visibleContent} />}
+          {visibleContent && <StageOutputStatus bookLabel={bookLabel} stage={step.slug} summary={visibleContent} active={isActive} />}
 
           {state === "running" && (
             <button

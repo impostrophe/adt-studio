@@ -10794,6 +10794,9 @@ msgstr "Updates preserve manual edits."
 msgid "Updates: {updates}. Warnings: {warnings}. Missing: {missing}."
 msgstr "Updates: {updates}. Warnings: {warnings}. Missing: {missing}."
 
+msgid "Updating…"
+msgstr "Updating…"
+
 msgid "Upload"
 msgstr "Upload"
 

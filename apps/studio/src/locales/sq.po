@@ -10796,6 +10796,9 @@ msgstr "Përditësimet ruajnë redaktimet manuale."
 msgid "Updates: {updates}. Warnings: {warnings}. Missing: {missing}."
 msgstr "Përditësime: {updates}. Paralajmërime: {warnings}. Të munguara: {missing}."
 
+msgid "Updating…"
+msgstr "Duke përditësuar…"
+
 msgid "Upload"
 msgstr "Ngarko"
 

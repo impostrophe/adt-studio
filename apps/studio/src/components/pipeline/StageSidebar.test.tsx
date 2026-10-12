@@ -184,6 +184,32 @@ describe("StageSidebar", () => {
     expect(screen.queryByRole("button", { name: /Review Language outputs/ })).toBeNull()
   })
 
+  it("mirrors saved-output attention on the stage icon while the rail is collapsed", async () => {
+    matchRouteMock.mockReturnValue(false)
+    stageStateMock.mockImplementation((stage) => stage === "sectioning" || stage === "translate" ? "done" : "idle")
+    outputsMock.mockReturnValue({ data: { summaries: { stages: { translate: { applicable: 4, current: false, updates: 1, warnings: 0, missing: 0 } } } } })
+    const { StageSidebar } = await import("./components/StageSidebar")
+    const view = render(<StageSidebar bookLabel="demo-book" activeStep="sectioning" />)
+    const badge = screen.getByRole("img", { name: "Updates: 1. Warnings: 0. Missing: 0." })
+    expect(badge.className).toContain("bg-amber-600")
+    expect(screen.getByTitle("Language").contains(badge)).toBe(true)
+    // Expanded rail: the review button beside the label is visible instead.
+    matchRouteMock.mockReturnValue(true)
+    view.rerender(<StageSidebar bookLabel="demo-book" activeStep="sectioning" />)
+    expect(screen.queryByRole("img", { name: /Updates:/ })).toBeNull()
+    expect(screen.getByRole("button", { name: /Review Language outputs.*Updates: 1/ })).toBeTruthy()
+  })
+
+  it("keeps the review icon legible on the active stage's colored row", async () => {
+    stageStateMock.mockReturnValue("done")
+    outputsMock.mockReturnValue({ data: { summaries: { stages: { translate: { applicable: 4, current: false, updates: 1, warnings: 0, missing: 0 } } } } })
+    const { StageSidebar } = await import("./components/StageSidebar")
+    const view = render(<StageSidebar bookLabel="demo-book" activeStep="book" />)
+    expect(screen.getByRole("button", { name: /Review Language outputs/ }).className).toContain("text-amber-600")
+    view.rerender(<StageSidebar bookLabel="demo-book" activeStep="translate" />)
+    expect(screen.getByRole("button", { name: /Review Language outputs/ }).className).toContain("text-white")
+  })
+
   it("AC-15 preserves running/error job status separately from saved output warnings", async () => {
     outputsMock.mockReturnValue({ data: { summaries: { stages: { speech: { applicable: 3, current: true, updates: 0, warnings: 1, missing: 0 } } } } })
     stageStateMock.mockImplementation((stage) => stage === "speech" ? "running" : "idle")
