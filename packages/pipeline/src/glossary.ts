@@ -368,6 +368,7 @@ export async function regenerateGlossaryPreservingEdits(
     const historical = GlossaryOutputSchema.safeParse(row.data)
     if (historical.success) historical.data.items.forEach((item, index) => reserved.add(getGlossaryItemTextId(item, index)))
   }
+  const historicalIds = new Set(reserved)
   for (const item of merged.items) if (item.id) reserved.add(item.id)
   let next = 1
   const existingByWord = uniqueGlossaryWordIndexes(existingItems)
@@ -377,7 +378,9 @@ export async function regenerateGlossaryPreservingEdits(
     const word = normalizeGlossaryWord(item.word)
     const previousIndex = generatedByWord.get(word) === index ? existingByWord.get(word) : undefined
     let id = previousIndex === undefined ? item.id : existingItems[previousIndex].id
-    if (!id || assigned.has(id)) {
+    const retainedIdentity = existingItems.some((previous) => previous.id === id && normalizeGlossaryWord(previous.word) === word)
+    // Seed settings can carry a stale ID from another book or retired term.
+    if (!id || assigned.has(id) || (historicalIds.has(id) && !retainedIdentity)) {
       do { id = `gl${String(next++).padStart(3, "0")}` } while (reserved.has(id))
       reserved.add(id)
     }

@@ -19,7 +19,7 @@ it("inserting an earlier term retains legacy/manual identities and downstream co
     const original = storage.putNodeData("glossary", "book", { items: [term("Forest"), { ...term("River"), id: "gl_manual_river", source: "manual" }], pageCount: 1, generatedAt: "old" })
     storage.putNodeData("text-catalog-translation", "fr", { entries: [{ id: "gl001_def", text: "Correction forêt", source: "manual" }], generatedAt: "old" })
     const translateBefore = storage.getLatestNodeData("text-catalog-translation", "fr")
-    const run = async (words: string[]) => regenerateGlossaryPreservingEdits({ storage, pages: [{ pageId: "pg001", pageNumber: 1, text: "" }], config: { promptName: "glossary", modelId: "test", maxRetries: 0, language: "en", batchSize: 10 },
+    const run = async (words: string[], seedTerms?: Array<ReturnType<typeof term> & { id: string }>) => regenerateGlossaryPreservingEdits({ storage, pages: [{ pageId: "pg001", pageNumber: 1, text: "" }], config: { promptName: "glossary", modelId: "test", maxRetries: 0, language: "en", batchSize: 10, seedTerms },
       llmModel: { generateObject: async () => ({ object: { items: words.map(term) } }) } as unknown as LLMModel })
     const first = await run(["Ash", "Forest", "River"])
     const id = (word: string) => { const index = first.items.findIndex((item) => item.word === word); return getGlossaryItemTextId(first.items[index], index) }
@@ -34,5 +34,9 @@ it("inserting an earlier term retains legacy/manual identities and downstream co
     const beech = afterRollback.items.findIndex((item) => item.word === "Beech")
     expect(getGlossaryItemTextId(afterRollback.items[beech], beech)).not.toBe(id("Ash"))
     expect(afterRollback.items.find((item) => item.word === "Forest")?.id).toBe("gl001")
+    // Imported seed settings may carry an ID used by a different retired term.
+    const withSeed = await run(["Forest"], [{ ...term("Oak"), id: id("Ash") }])
+    expect(withSeed.items.find((item) => item.word === "Oak")?.id).not.toBe(id("Ash"))
+    expect(withSeed.items.find((item) => item.word === "Forest")?.id).toBe("gl001")
   } finally { storage.close() }
 })
