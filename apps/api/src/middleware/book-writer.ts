@@ -24,7 +24,7 @@ export function bookWriterMiddleware(booksDir: string): MiddlewareHandler {
     if ((c.req.method === "GET" || c.req.method === "HEAD") && !archiveRead) {
       // Keep diagnostics and source/config inspection available on failed imports.
       if (suffix && !/^\/(debug|step-status|config|source-pdf)(\/|$)/.test(suffix)) assertExtractionReadable(bookDir)
-      if (/^\/(adt|preview|package)(\/|$)/.test(suffix)) assertPackageReadable(bookDir)
+      if (/^\/(adt|preview|package|package-adt)(\/|$)/.test(suffix)) assertPackageReadable(bookDir)
       return next()
     }
     if (c.req.method === "OPTIONS") return next()

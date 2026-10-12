@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import type { Storage } from "@adt/storage"
+import { PACKAGE_JOURNAL } from "./packaging/publication.js"
 import { storyboardCoverage } from "./storyboard-coverage.js"
 
 /** A retained partial bundle remains usable, but newly rendered source HTML
@@ -11,6 +12,7 @@ export function storyboardPackageComplete(
   bookDir: string,
   pageIds: string[],
 ): boolean {
+  if (fs.existsSync(path.join(bookDir, PACKAGE_JOURNAL))) return false
   const adtDir = path.join(bookDir, "adt")
   let manifest: unknown
   try {
@@ -34,7 +36,10 @@ export function storyboardPackageComplete(
         (entry) =>
           entry?.section_id === sectionId && entry.href === `${sectionId}.html`,
       ).length === 1 &&
-      fs.existsSync(path.join(adtDir, `${sectionId}.html`)),
+      (() => {
+        try { return fs.lstatSync(path.join(adtDir, `${sectionId}.html`)).isFile() }
+        catch { return false }
+      })(),
   )
   return coverage.complete && coverage.rendered > 0
 }

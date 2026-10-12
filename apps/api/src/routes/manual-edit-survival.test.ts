@@ -554,13 +554,35 @@ it("cancels section replacement before publication and rejects a queued stale co
   db.putNodeData("book-outline", "book", { entries: [], styleClusters: [], reasoning: "fixture" })
   db.close()
   const releases: Array<() => void> = []
-  sectionPage.mockImplementation(async () => { await new Promise<void>((resolve) => releases.push(resolve)); return { reasoning: "new", sections: [] } })
+  let started!: () => void
+  const allStarted = new Promise<void>((resolve) => { started = resolve })
+  sectionPage.mockImplementation(async () => {
+    await new Promise<void>((resolve) => {
+      releases.push(resolve)
+      if (releases.length === 3) started()
+    })
+    return { reasoning: "new", sections: [] }
+  })
   const protectedReplacements = ["pg001", "pg002", "pg003"].map((itemId) => ({ node: "page-sectioning", itemId, version: 2, renderingVersion: read("web-rendering", itemId)?.version ?? 0, renderTreeVersion: read("fixed-layout-sectioning", itemId)?.version ?? 0 }))
-  const cancelled = run("sectioning", { replaceManual: true, protectedReplacements })
-  await vi.waitFor(() => expect(releases).toHaveLength(3))
-  expect((await send("stages/cancel", {}, "POST")).status).toBe(202)
-  releases.forEach((release) => release())
-  expect((await cancelled).status).toBe("cancelled")
+  // Synchronize with actual provider entry/completion, not a one-second polling
+  // deadline whose failure could leave three blocked providers in the next test.
+  let unsubscribe = () => {}
+  const cancelled = new Promise<void>((resolve, reject) => {
+    unsubscribe = bus.addListener(label, (event) => {
+      if (event.type === "stage-run-cancelled") resolve()
+      if (event.type === "stage-run-error") reject(new Error(event.error))
+    })
+  })
+  try {
+    expect((await send("stages/run", { fromStage: "sectioning", toStage: "sectioning", replaceManual: true, protectedReplacements }, "POST")).status).toBe(200)
+    await Promise.race([allStarted, cancelled.then(() => { throw new Error("Cancelled before provider entry") })])
+    expect((await send("stages/cancel", {}, "POST")).status).toBe(202)
+    releases.forEach((release) => release())
+    await cancelled
+  } finally {
+    releases.forEach((release) => release())
+    unsubscribe()
+  }
   for (const id of ["pg001", "pg002", "pg003"]) expect(read("page-sectioning", id)!.version).toBe(2)
   expect((await json("toc")).entries[0].sectionId).toBe("pg001_sec001")
 
