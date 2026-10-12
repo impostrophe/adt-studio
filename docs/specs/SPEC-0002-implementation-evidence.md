@@ -1,5 +1,76 @@
 # SPEC-0002 implementation evidence
 
+## Review preparation after manual testing — 2026-10-11
+
+The owner considers the manual product walkthrough complete. The confirmations
+below record the tested flows; they do not certify every numbered acceptance
+criterion or a release build. No repeat manual walkthrough is requested.
+
+At local `4dd0c83ab`, a fresh focused run of `manual-edit-survival.test.ts`,
+`use-guarded-draft.test.tsx`, `SectioningPageDetail.test.tsx`,
+`RevertSectioningEdits.test.tsx`, `UnsavedChangesGuard.test.tsx`,
+`QuizzesView.history.test.tsx` and `LandingPageShell.authorship.test.tsx` passes
+all 50 tests across seven files. Four independent review probes still reproduce
+old-rendering/new-section association, TOC draft identity confusion, loss of the
+fixed-layout tree on a skipped protected rerun, and skipped confirmed TOC work
+in a combined stage range. These are separate from the successful manual flows.
+
+Published downstream heads were rechecked. SPEC-0003 #884 already addresses
+fixed-layout pair retention; SPEC-0012 #888 addresses preview identity selection.
+Reuse those fixes. The catalog still assigns retained activity answers by section
+index, and the TOC rebase and same-run consent gaps remain in the inspected code,
+including updated #889 and #885. The #888 function probe was rerun, but no full
+downstream-stack build or HTTP test is claimed. The TOC identity and remaining
+catalog issues require correction before release; the combined-run issue is
+medium priority and can be explicitly assigned/deferred. Duplication/refactoring
+suggestions are nonblocking.
+
+At review preparation, PR #880 published `e5b93e57b`, while the tested
+conflict-prompt/TOC-badge commit `4dd0c83ab` and these later confirmations were
+local. The owner then authorized publishing the updates and the prepared review.
+The review records manual acceptance and the remaining findings; it does not
+supply independent human approval. Spec approval and merge review remain open.
+
+## Preview manual review — 2026-10-11
+
+The owner confirmed that saved edits appear in Preview after the reader
+walkthrough. This records visible edited content in the development preview;
+the response does not separately confirm quiz scoring, TOC link destinations,
+reload/restart persistence or exported/imported output. Those outcomes are not
+marked as verified by this confirmation.
+
+## Unsaved quiz navigation manual review — 2026-10-11
+
+The owner confirmed all three choices in the unsaved quiz navigation walkthrough:
+**Stay** keeps the editor and draft open; **Save & leave** saves the edit before
+navigating, with the saved value present on return; **Discard & leave** discards
+only the subsequent unsaved change and retains the earlier saved value. This is
+user-reported development UI acceptance.
+
+The owner subsequently clarified that the stale-draft **Save & leave** scenario
+was already tested and complete. Record that walkthrough as passed: another
+tab saves first, the stale save does not navigate away or overwrite the newer
+version, the draft remains available, and resolving the conflict permits a
+subsequent save and navigation. Do not request another run of this scenario.
+The separate busy-book rejection variant has not been manually confirmed.
+
+## Explicit quiz replacement manual review — 2026-10-11
+
+The owner confirmed the walkthrough for intentionally replacing the edited
+pages 6–8 quiz works. The walkthrough covered selecting the occupied position
+after page 8, identifying the protected question in the Replace warning,
+cancelling without changing saved content, and then confirming replacement.
+Expected successful output replaces quizzes at that position without appending
+an alternative below the edited quiz; other positions remain unchanged. This
+records user-reported development UI acceptance.
+
+The owner also confirmed the subsequent quiz-history recovery walkthrough:
+find the version before replacement using the header version picker and compare
+view, restore the quiz list, verify the manual question/answers and badge,
+navigate away and back, and rerun Quizzes. The expected restored manual quiz
+survives without duplication, while the newer generated version remains in
+history. This is user-reported development UI acceptance, not release validation.
+
 ## Conflict prompt clarity and styling — 2026-10-11
 
 The owner confirmed the two-tab quiz conflict flow works as described, but found
