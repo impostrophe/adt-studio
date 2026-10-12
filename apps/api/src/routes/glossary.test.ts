@@ -281,7 +281,7 @@ describe("PUT /books/:label/glossary", () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ imageRequirementsChanged: true })
     expect(captionRows("new-glossary-image").nodes).toHaveLength(1)
-    expect(captionRows("new-glossary-image").runs).toEqual([])
+    expect(captionRows("new-glossary-image").runs).toHaveLength(1)
   })
 
   it("keeps captions when the assigned picture is already captioned", async () => {

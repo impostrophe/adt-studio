@@ -284,10 +284,9 @@ describe("Page routes", () => {
       expect(res.status).toBe(404)
     })
 
-    it("marks the storyboard chain as needing a re-run, keeping node data", async () => {
-      // A sectioning edit invalidates the rendered HTML that every later stage
-      // is derived from, so those stages must stop reporting "done" — but their
-      // data (and version history) must survive.
+    it("marks only the obsolete storyboard attempt stale, retaining downstream history", async () => {
+      // Sectioning still guards obsolete rendering. Downstream content freshness
+      // comes from the catalog; historical attempts and output survive.
       const seed = createBookStorage(label, tmpDir)
       try {
         seed.markStepCompleted("web-rendering")
@@ -312,8 +311,8 @@ describe("Page routes", () => {
       try {
         const steps = after.getStepRuns().map((r) => r.step)
         expect(steps).not.toContain("web-rendering")
-        expect(steps).not.toContain("quiz-generation")
-        expect(steps).not.toContain("toc-generation")
+        expect(steps).toContain("quiz-generation")
+        expect(steps).toContain("toc-generation")
         // Non-destructive: the rendering itself is untouched.
         expect(after.getLatestNodeData("web-rendering", `${label}_p1`)).toBeTruthy()
       } finally {
@@ -418,9 +417,9 @@ describe("Page routes", () => {
       try {
         const steps = after.getStepRuns().map((r) => r.step)
         expect(steps).toContain("web-rendering")
-        // Everything derived from the HTML still has to be re-run.
-        expect(steps).not.toContain("quiz-generation")
-        expect(steps).not.toContain("toc-generation")
+        // Catalog freshness is independent of downstream attempt records.
+        expect(steps).toContain("quiz-generation")
+        expect(steps).toContain("toc-generation")
       } finally {
         after.close()
       }
@@ -530,7 +529,7 @@ describe("Page routes", () => {
       try {
         const steps = after.getStepRuns().map((r) => r.step)
         expect(steps).toContain("web-rendering")
-        expect(steps).not.toContain("quiz-generation")
+        expect(steps).toContain("quiz-generation")
       } finally {
         after.close()
       }
@@ -625,8 +624,8 @@ describe("Page routes", () => {
 
       const steps = stepsAfter()
       expect(steps).toContain("web-rendering")
-      // Downstream still has to catch up with the removed content.
-      expect(steps).not.toContain("toc-generation")
+      // Source membership changes the catalog without erasing run history.
+      expect(steps).toContain("toc-generation")
     })
 
     it("keeps the storyboard complete when a section is cloned", async () => {
@@ -640,7 +639,7 @@ describe("Page routes", () => {
 
       const steps = stepsAfter()
       expect(steps).toContain("web-rendering")
-      expect(steps).not.toContain("toc-generation")
+      expect(steps).toContain("toc-generation")
     })
 
     // Split's own staleness is covered by "marks the storyboard chain stale,
@@ -924,7 +923,7 @@ describe("Page routes", () => {
       }
     }
 
-    it("marks the storyboard chain stale, since both halves lose their HTML", async () => {
+    it("marks Storyboard stale after a split while retaining downstream attempt history", async () => {
       seedThreeNodeSection({ rendering: true })
       const seed = createBookStorage(label, tmpDir)
       try {
@@ -950,7 +949,7 @@ describe("Page routes", () => {
         // packaged book while the storyboard still reported "done".
         const steps = after.getStepRuns().map((r) => r.step)
         expect(steps).not.toContain("web-rendering")
-        expect(steps).not.toContain("package-web")
+        expect(steps).toContain("package-web")
       } finally {
         after.close()
       }
@@ -2475,7 +2474,7 @@ describe("Page routes", () => {
     }
   }
 
-  /** Assert retained catalog versions and invalidated attempt status. */
+  /** Assert retained catalog versions and attempt history. */
   function expectCatalogOutputsPreserved(dir: string, bookLabel: string) {
     const s = createBookStorage(bookLabel, dir)
     try {
@@ -2488,9 +2487,9 @@ describe("Page routes", () => {
       expect(s.getLatestNodeData("tts", `${bookLabel}_p1`)).toMatchObject({ version: 1 })
       expect(s.getLatestNodeData("tts-timestamps", "en")).toMatchObject({ version: 1 })
       expect(s.getLatestNodeData("accessibility-assessment", "book")).toBeNull()
-      // Step runs should be gone
+      // Completion rows describe attempts; content freshness is derived separately.
       const runs = s.getStepRuns()
-      const clearedSteps = [
+      const retainedSteps = [
         "image-captioning",
         "text-catalog",
         "easy-read",
@@ -2502,29 +2501,29 @@ describe("Page routes", () => {
         "package-web",
         "accessibility-assessment",
       ]
-      for (const step of clearedSteps) {
-        expect(runs.find((r) => r.step === step)).toBeUndefined()
+      for (const step of retainedSteps) {
+        expect(runs.find((r) => r.step === step)).toMatchObject({ status: "done" })
       }
     } finally {
       s.close()
     }
   }
 
-  /** Assert that translate/speech (but NOT image-captioning) node data and step_runs were cleared. */
+  /** Assert that caption changes preserve downstream output and attempt history. */
   function expectTextAndSpeechPreserved(dir: string, bookLabel: string) {
     const s = createBookStorage(bookLabel, dir)
     try {
       // image-captioning should still exist
       expect(s.getLatestNodeData("image-captioning", `${bookLabel}_p1`)).not.toBeNull()
       expect(s.getLatestNodeData("easy-read", "book")).not.toBeNull()
-      // text-catalog, translations, tts should be gone
+      // Content remains available while its freshness is derived.
       expect(s.getLatestNodeData("text-catalog", `${bookLabel}_p1`)).toMatchObject({ version: 1 })
       expect(s.getLatestNodeData("text-catalog-translation", `${bookLabel}_p1`)).toMatchObject({ version: 1 })
       expect(s.getLatestNodeData("core-tts-catalog", "en")).toMatchObject({ version: 1 })
       expect(s.getLatestNodeData("tts", `${bookLabel}_p1`)).toMatchObject({ version: 1 })
       expect(s.getLatestNodeData("tts-timestamps", "en")).toMatchObject({ version: 1 })
       expect(s.getLatestNodeData("accessibility-assessment", "book")).toBeNull()
-      // Step runs: image-captioning should remain, text steps should be gone
+      // All attempt records remain available.
       const runs = s.getStepRuns()
       expect(runs.find((r) => r.step === "image-captioning")).toBeDefined()
       expect(runs.find((r) => r.step === "easy-read")).toBeDefined()
@@ -2538,15 +2537,15 @@ describe("Page routes", () => {
         "package-web",
         "accessibility-assessment",
       ]) {
-        expect(runs.find((r) => r.step === step)).toBeUndefined()
+        expect(runs.find((r) => r.step === step)).toMatchObject({ status: "done" })
       }
     } finally {
       s.close()
     }
   }
 
-  describe("PUT /api/books/:label/pages/:pageId/sectioning clears downstream", () => {
-    it("clears caption + translate/speech data on sectioning save", async () => {
+  describe("PUT /api/books/:label/pages/:pageId/sectioning preserves downstream", () => {
+    it("preserves caption, translation and speech output/history on sectioning save", async () => {
       seedDownstreamData(tmpDir, label)
 
       const data = {
@@ -2590,8 +2589,8 @@ describe("Page routes", () => {
     })
   })
 
-  describe("PUT /api/books/:label/pages/:pageId/rendering clears downstream", () => {
-    it("clears caption + translate/speech data on rendering save", async () => {
+  describe("PUT /api/books/:label/pages/:pageId/rendering preserves downstream", () => {
+    it("preserves caption, translation and speech output/history on rendering save", async () => {
       seedDownstreamData(tmpDir, label)
 
       const data = {
@@ -2617,8 +2616,8 @@ describe("Page routes", () => {
     })
   })
 
-  describe("POST crop (images) clears downstream", () => {
-    it("clears caption + translate/speech data on image crop", async () => {
+  describe("POST crop (images) preserves downstream", () => {
+    it("preserves caption, translation and speech output/history on image crop", async () => {
       seedDownstreamData(tmpDir, label)
 
       // Minimal valid PNG (1x1 pixel)
@@ -2646,8 +2645,8 @@ describe("Page routes", () => {
     })
   })
 
-  describe("PUT image-captioning clears translate/speech downstream", () => {
-    it("clears text-catalog/translations/TTS but keeps image-captioning", async () => {
+  describe("PUT image-captioning preserves translation/speech downstream", () => {
+    it("keeps downstream catalog output and history after saving a caption", async () => {
       seedDownstreamData(tmpDir, label)
 
       const data = {
@@ -2666,7 +2665,7 @@ describe("Page routes", () => {
 
       expect(res.status).toBe(200)
       // image-captioning was just saved (new version), so it should exist
-      // but text-catalog, translations, tts should be cleared
+      // and downstream output plus attempt records remain available
       expectTextAndSpeechPreserved(tmpDir, label)
     })
   })

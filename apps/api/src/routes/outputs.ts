@@ -4,7 +4,7 @@ import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { createBookStorage, publishSpeechOutput, publishSpeechTimings } from "@adt/storage"
 import { OutputReviewRequest, OutputDisclosureOptions, parseBookLabel, type OutputStatus, type CatalogConflict } from "@adt/types"
-import { loadBookConfig, readOutputCatalog, outputIdentityKey, summarizeOutputs, buildTextCatalogSnapshot, reconcileSpeechInputs, loadCoreTtsProfiles } from "@adt/pipeline"
+import { loadBookConfig, readOutputCatalog, outputIdentityKey, summarizeOutputs, summarizeOutputScopes, buildTextCatalogSnapshot, reconcileSpeechInputs, loadCoreTtsProfiles, renderingOwnershipWarnings } from "@adt/pipeline"
 
 export function createOutputRoutes(booksDir: string, promptsDir: string, configPath?: string): Hono {
   const app = new Hono()
@@ -21,7 +21,7 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
     try {
       let conflicts: CatalogConflict[] = []
       const outputs = read(label, storage, (items) => { conflicts = items })
-      return c.json({ outputs, summary: summarizeOutputs(outputs), conflicts })
+      return c.json({ outputs, summary: summarizeOutputs(outputs), summaries: summarizeOutputScopes(outputs), conflicts, ownershipWarnings: renderingOwnershipWarnings(storage) })
     } finally { storage.close() }
   })
   app.get("/books/:label/outputs/disclosure", (c) => {
@@ -43,7 +43,7 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
         (!["audio", "preparation", "timestamps"].includes(output.identity.kind) || features.readAloud !== false) &&
         (output.identity.kind !== "caption" || captionConsumers.has(output.identity.id)))
         .map((output) => ({ ...output, included: output.usable }))
-      return c.json({ outputs, summary: summarizeOutputs(outputs), conflicts: catalog.conflicts ?? [] })
+      return c.json({ outputs, summary: summarizeOutputs(outputs), conflicts: catalog.conflicts ?? [], ownershipWarnings: renderingOwnershipWarnings(storage) })
     } finally { storage.close() }
   })
   app.post("/books/:label/outputs/review", async (c) => {
@@ -76,9 +76,11 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
         if (!current || !current.data || typeof current.data !== "object") throw new HTTPException(409, { message: "Output is no longer available." })
         const data = structuredClone(current.data) as Record<string, unknown>
         const entries = field === "self" ? [data] : field === "timings" ? Object.values(data.entries as Record<string, Record<string, unknown>>) : field === "blocks" ? (data.blocks as Array<{ entries: Record<string, unknown>[] }>).flatMap((block) => block.entries) : data[field] as Record<string, unknown>[]
-        const entry = entries.find((item) => item[idField] === output.identity.id && (!["audio", "timestamps"].includes(output.identity.kind) || (item.voiceSlot ?? "primary") === (output.identity.voiceSlot ?? "primary")))
-        if (!entry) throw new HTTPException(409, { message: "Output is no longer available." })
-        entry.review = { signature: review.signature, contentHash: review.contentHash, action: review.action }
+        const matching = entries.filter((item) => item[idField] === output.identity.id && (!["audio", "timestamps"].includes(output.identity.kind) || (item.voiceSlot ?? "primary") === (output.identity.voiceSlot ?? "primary")))
+        if (!matching.length) throw new HTTPException(409, { message: "Output is no longer available." })
+        // Shared Easy Read references carry the same reviewed identity. Do not
+        // certify a conflicting legacy copy whose content was not shown.
+        for (const entry of matching) if (field !== "blocks" || entry.text === output.text) entry.review = { signature: review.signature, contentHash: review.contentHash, action: review.action }
         const version = node === "tts" ? publishSpeechOutput(storage, itemId, data as unknown as import("@adt/types").TTSOutput)
           : node === "tts-timestamps" ? publishSpeechTimings(storage, itemId, data as unknown as import("@adt/types").WordTimestampOutput)
           : storage.putNodeData(node, itemId, data)

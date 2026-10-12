@@ -25,7 +25,7 @@ import {
   withResolvedQuizIds,
   resolveQuizId,
 } from "@adt/types"
-import { getRenderSectioning } from "./render-sectioning.js"
+import { getRenderSectioning, resolveRenderedSection } from "./render-sectioning.js"
 
 /** One output page, in reading order. */
 export type ResolvedItem =
@@ -128,7 +128,7 @@ export function defaultReadingOrder(
   const items: ReadingOrderItem[] = []
   for (const page of pageContexts) {
     for (const entry of page.rendering) {
-      const section = page.sections[entry.sectionIndex]
+      const section = resolveRenderedSection(entry, page.sections)
       if (!section) continue
       items.push({ kind: "section", id: section.sectionId })
     }
@@ -168,7 +168,7 @@ export function resolveReadingOrder(
   >()
   for (const page of pageContexts) {
     for (const entry of page.rendering) {
-      const section = page.sections[entry.sectionIndex]
+      const section = resolveRenderedSection(entry, page.sections)
       if (!section) continue
       sectionsById.set(section.sectionId, {
         pageId: page.pageId,

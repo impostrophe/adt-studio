@@ -189,7 +189,7 @@ describe("text catalog routes", () => {
         "package-web",
         "accessibility-assessment",
       ]) {
-        expect(storage.getStepRuns().find((run) => run.step === step)).toBeUndefined()
+        expect(storage.getStepRuns().find((run) => run.step === step)).toMatchObject({ status: "done" })
       }
     } finally {
       storage.close()
@@ -285,7 +285,7 @@ describe("text catalog routes", () => {
         "package-web",
         "accessibility-assessment",
       ]) {
-        expect(storage.getStepRuns().find((run) => run.step === step)).toBeUndefined()
+        expect(storage.getStepRuns().find((run) => run.step === step)).toMatchObject({ status: "done" })
       }
       expect(storage.setCurrentNodeVersion("core-tts-catalog", "en", 1)).toBe(true)
     } finally {

@@ -12,6 +12,7 @@ import { pathToFileURL } from "node:url"
 import { parseDocument, DomUtils } from "htmlparser2"
 import temml from "temml"
 import type { Storage } from "@adt/storage"
+import { readBookAsset } from "@adt/storage"
 import type {
   ContentNodeData,
   PageSectioningSection,
@@ -62,7 +63,7 @@ import { buildTextCatalog } from "../text-catalog.js"
 import { flattenEasyReadEntries, buildEasyReadSourceBlocks } from "../easy-read.js"
 import { retainedEasyRead } from "../retained-catalog.js"
 import { getCoreTtsCatalog, getReadyCoreTtsEntries } from "../core-tts.js"
-import { getRenderSectioning } from "../render-sectioning.js"
+import { renderingOwnershipWarnings } from "../render-sectioning.js"
 import { resolveReadingOrder, toPageEntry, type PageEntry } from "../reading-order.js"
 import { orderTocEntries } from "../toc-reading-order.js"
 import { normalizeSectionRoles, promoteFirstHeadingToH1 } from "../html-semantics.js"
@@ -190,7 +191,7 @@ function buildRuntimeTimecodeMap(
 // Folded into the packaging cache hash so already-packaged books regenerate
 // when renderPageHtml's output format changes (which book inputs don't capture).
 // Bump on any such change.
-const PACKAGING_FORMAT_VERSION = 8
+const PACKAGING_FORMAT_VERSION = 9
 
 export interface ComputePackagingInputHashOptions {
   storage: Storage
@@ -253,15 +254,16 @@ export function computePackagingInputHash(options: ComputePackagingInputHashOpti
   const assetEntries = collectDirectoryFingerprint(options.webAssetsDir).sort((a, b) => a[0].localeCompare(b[0]))
   hash.update(JSON.stringify(assetEntries))
 
-  // 6. Images directory fingerprint
+  // 6. Verify physical image bytes, including same-size/restored-mtime edits.
   const imagesDir = path.join(options.bookDir, "images")
   const imageEntries = collectDirectoryFingerprint(imagesDir).sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([file]) => [file, createHash("sha256").update(readBookAsset(options.bookDir, path.join("images", file))).digest("hex")])
   hash.update(JSON.stringify(imageEntries))
 
   // Physical audio identity is checked as well as the active manifest.
   const audioDir = path.join(options.bookDir, "audio")
   const audioEntries = collectDirectoryFingerprint(audioDir).sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([file]) => [file, createHash("sha256").update(fs.readFileSync(path.join(audioDir, file))).digest("hex")])
+    .map(([file]) => [file, createHash("sha256").update(readBookAsset(options.bookDir, path.join("audio", file))).digest("hex")])
   hash.update(JSON.stringify(audioEntries))
 
   // 7. Videos directory fingerprint
@@ -403,22 +405,7 @@ export async function packageAdtWeb(
   const copiedImages = new Set<string>()
   // Keep reporting orphaned renderings even though the shared order resolver
   // correctly omits entries without a real sectionId.
-  const orphanedRenderings: PackagingWarning[] = []
-  for (const page of pages) {
-    const sectioning = getRenderSectioning(storage, page.pageId)
-    const row = storage.getLatestNodeData("web-rendering", page.pageId)
-    const parsed = row ? WebRenderingOutputSchema.safeParse(row.data) : null
-    if (!parsed?.success) continue
-    for (const rendering of [...parsed.data.sections].sort((a, b) => a.sectionIndex - b.sectionIndex)) {
-      if (!sectioning?.sections[rendering.sectionIndex]) {
-        orphanedRenderings.push({
-          kind: "orphaned-rendering",
-          pageId: page.pageId,
-          sectionIndex: rendering.sectionIndex,
-        })
-      }
-    }
-  }
+  const orphanedRenderings = renderingOwnershipWarnings(storage)
 
   // The book's output sequence — the same resolver the live preview uses, so
   // the two cannot drift.
@@ -590,10 +577,10 @@ export async function packageAdtWeb(
       type: "step-progress",
       step,
       message:
-        `Warning: skipped ${orphanedRenderings.length} rendered section(s) with no sectioning row ` +
+        `Warning: skipped ${orphanedRenderings.length} rendered section(s) with no verified section owner ` +
         `(${orphanedRenderings.map((w) => `${w.pageId}[${w.sectionIndex}]`).join(", ")}). ` +
         `They are absent from the bundle. ` +
-        `Re-run the storyboard render for these pages to bring rendering back in sync with sectioning.`,
+        `Review their section identities in Storyboard before packaging again.`,
     })
   }
 

@@ -229,6 +229,7 @@ export async function renderSectionLlm(
   }
 
   return assignActivitySectionIds({
+    sectionId: section.sectionId,
     sectionIndex: input.sectionIndex,
     sectionType: section.sectionType,
     reasoning: result.object.reasoning,

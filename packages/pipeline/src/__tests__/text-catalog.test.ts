@@ -5,6 +5,15 @@ import { buildTextCatalog } from "../text-catalog.js"
 function createMockStorage(
   nodeData: Record<string, Record<string, unknown>>
 ): Storage {
+  // These fixtures are paired source/render publications, not identityless legacy imports.
+  for (const [pageId, value] of Object.entries(nodeData["web-rendering"] ?? {})) {
+    const rendering = value as { sections: Array<{ sectionIndex: number; sectionId?: string }> }
+    const source = (nodeData["fixed-layout-sectioning"]?.[pageId] ?? nodeData["page-sectioning"]?.[pageId]) as { sections: Array<{ sectionId: string }> } | undefined
+    for (const entry of rendering.sections) {
+      const owner = source?.sections[entry.sectionIndex]?.sectionId
+      if (owner) entry.sectionId = owner
+    }
+  }
   return {
     getLatestNodeData(node: string, itemId: string) {
       const data = nodeData[node]?.[itemId]
@@ -103,6 +112,7 @@ describe("buildTextCatalog", () => {
         pg001: {
           sections: [
             {
+              sectionId: "pg001",
               sectionIndex: 0,
               sectionType: "activity_multiple_choice",
               reasoning: "",

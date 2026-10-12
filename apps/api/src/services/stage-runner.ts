@@ -702,6 +702,7 @@ function canReuseSpeechEntry(
   })
   const outputPath = resolveSpeechAudioPath(options.bookDir, options.language, entry.fileName)
   if (!outputPath) return false
+  if (entry.audioHash && createHash("sha256").update(fs.readFileSync(outputPath)).digest("hex") !== entry.audioHash) return false
   if (entry.speechInputSignature) return entry.speechInputSignature === cacheKey
   // Legacy output has no trustworthy input evidence. Preserve it without
   // copying a cache result over files referenced by retained manifests.

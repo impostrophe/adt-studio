@@ -30,6 +30,7 @@ export function storeImmutableAsset(
   prefix: string,
   extension: string,
   bytes: Uint8Array,
+  options: { repairCorruptFile?: boolean } = {},
 ): { fileName: string; contentHash: string } {
   if (!/^[a-zA-Z0-9_.-]+$/.test(prefix) || !/^[a-zA-Z0-9]+$/.test(extension)) {
     throw new Error("Invalid asset name")
@@ -41,7 +42,11 @@ export function storeImmutableAsset(
   const destination = path.join(directory, fileName)
   // Do not follow a pre-existing symlink or silently accept corrupt bytes.
   if (fs.existsSync(destination)) {
-    if (!fs.lstatSync(destination).isFile() || !fs.readFileSync(destination).equals(Buffer.from(bytes))) {
+    if (!fs.lstatSync(destination).isFile()) throw new Error("Retained asset does not match its content identity")
+    if (!fs.readFileSync(destination).equals(Buffer.from(bytes))) {
+      // Repair generated content at a new immutable path. Never rewrite the
+      // old inode (including one referenced by history), nor follow symlinks.
+      if (options.repairCorruptFile) return storeImmutableAsset(bookDir, directories, `${prefix}-recovered-${randomUUID()}`, extension, bytes)
       throw new Error("Retained asset does not match its content identity")
     }
     return { fileName, contentHash }

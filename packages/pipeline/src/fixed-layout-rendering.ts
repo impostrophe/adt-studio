@@ -465,6 +465,7 @@ ${elements.join("\n")}${fitScript}
   return {
     sections: [
       {
+        sectionId: section.sectionId,
         sectionIndex: 0,
         sectionType: "fixed-layout-page",
         reasoning: "Fixed-layout: rendered from positioned section JSON (text + image bounds).",

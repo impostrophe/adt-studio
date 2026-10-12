@@ -1,5 +1,5 @@
 import { captureOutputReferences } from "@adt/pipeline"
-import { scopeLegacyActivityIds, getRenderSectioning } from "@adt/pipeline"
+import { scopeLegacyActivityIds, renderedSectionId } from "@adt/pipeline"
 import { saveAuthoredImageAlts } from "../services/authored-captions.js"
 import { catalogOutputs, editSourceSignature, assertEditSource, assertEditVersion } from "../services/catalog-output-service.js"
 import { OutputEditGuard } from "@adt/types"
@@ -30,11 +30,7 @@ import {
   bookBodyFont,
   bookFontFamilyChain,
   splitNodesBefore,
-  IMAGE_SET_CHANGE_CLEAR_NODE_TYPES,
-  IMAGE_SET_CHANGE_CLEAR_STEPS,
   PIPELINE,
-  getStageClearOrder,
-  getStageDependents,
   EDITABLE_ACTIVITY_NODE,
   formatSectionId,
   CoreTtsCatalogOutput,
@@ -470,8 +466,9 @@ async function executeAiImageGeneration(params: AiImageGenParams): Promise<{
 
 /** Clear storyboard-dependent data when page text, rendering, or images change. */
 function clearCaptionData(storage: Storage): void {
-  storage.clearNodesByType([...IMAGE_SET_CHANGE_CLEAR_NODE_TYPES])
-  storage.clearStepRuns([...IMAGE_SET_CHANGE_CLEAR_STEPS])
+  // Catalog outputs and attempt history survive edits. Their current input
+  // signatures, not cleared completion rows, determine freshness.
+  storage.clearNodesByType(["accessibility-assessment"])
 }
 
 const RestorableNode = z.enum([
@@ -500,126 +497,22 @@ function clearRestoredNodeDependents(
   storage: Storage,
   node: RestorableNode,
   itemId: string,
-  previousData?: unknown,
+  _previousData?: unknown,
 ): void {
-  switch (node) {
-    case "image-filtering":
-    case "page-sectioning":
-    case "web-rendering":
-      clearCaptionData(storage)
-      return
-
-    case "image-captioning":
-    case "glossary":
-    case "quiz-generation":
-      storage.clearNodesByType([
-        "text-catalog",
-        "text-catalog-translation",
-        "core-tts-catalog",
-        "tts",
-        "tts-timestamps",
-        "accessibility-assessment",
-      ])
-      storage.clearStepRuns([
-        "text-catalog",
-        "catalog-translation",
-        "core-tts-catalog",
-        "image-translation",
-        "tts",
-        "word-timestamps",
-        "package-web",
-        "accessibility-assessment",
-      ])
-      return
-
-    case "easy-read":
-      storage.clearNodesByType([
-        "text-catalog-translation",
-        "core-tts-catalog",
-        "tts",
-        "tts-timestamps",
-        "accessibility-assessment",
-      ])
-      storage.clearStepRuns([
-        "catalog-translation",
-        "core-tts-catalog",
-        "image-translation",
-        "tts",
-        "word-timestamps",
-        "package-web",
-        "accessibility-assessment",
-      ])
-      return
-
-    case "text-catalog-translation": {
-      const restored = TextCatalogOutput.safeParse(
-        storage.getLatestNodeData("text-catalog-translation", itemId)?.data,
-      )
-      if (restored.success) {
-        invalidateCoreTtsForDisplayEntries({
-          storage,
-          language: itemId,
-          entries: restored.data.entries,
-        })
-      }
-      storage.clearNodesByType(["accessibility-assessment"])
-      storage.clearStepRuns([
-        "core-tts-catalog",
-        "tts",
-        "word-timestamps",
-        "package-web",
-        "accessibility-assessment",
-      ])
-      return
-    }
-
-    case "core-tts-catalog": {
-      // Restoring speech text keeps prior audio/timings playable. Freshness is
-      // derived from the restored text, and audio is replaced only explicitly.
-      storage.clearNodesByType(["accessibility-assessment"])
-      storage.clearStepRuns([
-        "tts",
-        "word-timestamps",
-        "package-web",
-        "accessibility-assessment",
-      ])
-      return
-    }
-
-    case "toc-generation":
-      storage.clearNodesByType(["accessibility-assessment"])
-      storage.clearStepRuns(["package-web", "accessibility-assessment"])
+  if (node === "text-catalog-translation") {
+    const restored = TextCatalogOutput.safeParse(storage.getLatestNodeData(node, itemId)?.data)
+    if (restored.success) invalidateCoreTtsForDisplayEntries({ storage, language: itemId, entries: restored.data.entries })
   }
+  clearCaptionData(storage)
 }
 
-/**
- * Mark the storyboard chain as needing a re-run, without deleting any node data.
- *
- * A sectioning edit invalidates the storyboard's rendered HTML, and every later
- * output (text catalog, translations, audio, the packaged book) is re-derived
- * from that HTML — so leaving those stages marked "done" would silently ship the
- * old text. We clear only `step_runs`: the renderings and their version history
- * survive (so manual storyboard edits elsewhere in the book are not destroyed)
- * and are overwritten only when the user actually re-runs.
- *
- * `includeStoryboard: false` keeps the storyboard's own step run, for the case
- * where the caller wrote a matching `web-rendering` in the same save: the HTML
- * on disk already reflects the new sectioning, so only the stages *derived* from
- * it are behind. Marking storyboard stale there would be a lie that also costs
- * the user their editor — the Storyboard view is gated on the stage status.
- */
+/** Sectioning may make its rendering obsolete. Catalog freshness is derived
+ * independently and must not erase downstream run/error history. */
 function markStoryboardChainStale(
   storage: Storage,
   { includeStoryboard = true }: { includeStoryboard?: boolean } = {}
 ): void {
-  const stages = new Set<string>(
-    includeStoryboard ? getStageClearOrder("storyboard") : getStageDependents("storyboard")
-  )
-  storage.clearStepRuns(
-    PIPELINE.filter((stage) => stages.has(stage.name)).flatMap((stage) =>
-      stage.steps.map((step) => step.name)
-    )
-  )
+  if (includeStoryboard) storage.clearStepRuns(PIPELINE.find((stage) => stage.name === "storyboard")!.steps.map((step) => step.name))
 }
 
 /**
@@ -656,7 +549,10 @@ function saveStoryboardNode(
     const parsed = node === "web-rendering" ? WebRenderingOutput.safeParse(data) : null
     const saved = parsed?.success ? {
       ...parsed.data,
-      sections: parsed.data.sections.map((section) => scopeLegacyActivityIds(section, getRenderSectioning(storage, itemId)?.sections[section.sectionIndex]?.sectionId ?? itemId)),
+      sections: parsed.data.sections.map((section) => {
+        const owner = renderedSectionId(section)
+        return owner ? { ...scopeLegacyActivityIds(section, owner), sectionId: owner } : section
+      }),
     } : data
     const nextVersion = storage.putNodeData(node, itemId, saved)
     const conflictsAfter = buildTextCatalogSnapshot(storage, storage.getPages()).conflicts ?? []
@@ -732,7 +628,7 @@ function mintSectionId(storage: Storage, pageId: string): string {
 
 /** Point each rendering entry's data-section-id at its (re)numbered section. */
 function rewriteRenderingSectionIds(
-  entries: Array<{ sectionIndex: number; html: string }>,
+  entries: Array<{ sectionIndex: number; sectionId?: string; html: string }>,
   sections: Array<{ sectionId: string }>
 ): void {
   for (const rs of entries) {
@@ -743,6 +639,7 @@ function rewriteRenderingSectionIds(
     if (!expectedId) {
       throw new HTTPException(400, { message: "Unable to map rendering section to sectionId" })
     }
+    rs.sectionId = expectedId
     rs.html = rs.html.replace(
       /data-section-id="[^"]*"/,
       `data-section-id="${expectedId}"`
@@ -1750,25 +1647,7 @@ export function createPageRoutes(
         reconcileTextCatalog(storage)
         return next
       })
-      // Caption change cascades to text-catalog, translations, TTS, and package output.
-      storage.clearNodesByType([
-        "text-catalog",
-        "text-catalog-translation",
-        "core-tts-catalog",
-        "tts",
-        "tts-timestamps",
-        "accessibility-assessment",
-      ])
-      storage.clearStepRuns([
-        "text-catalog",
-        "catalog-translation",
-        "core-tts-catalog",
-        "image-translation",
-        "tts",
-        "word-timestamps",
-        "package-web",
-        "accessibility-assessment",
-      ])
+      clearCaptionData(storage)
       return c.json({ version })
     } finally {
       storage.close()

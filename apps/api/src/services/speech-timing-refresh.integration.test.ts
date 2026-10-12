@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { createBookStorage } from "@adt/storage"
 import type { TTSOutput, WordTimestampOutput } from "@adt/types"
 import { createStageRunner } from "./stage-runner.js"
+import { loadBookConfig, readOutputCatalog } from "@adt/pipeline"
 
 let root: string
 const label = "timing-refresh"
@@ -43,4 +44,24 @@ it.each(["model", "voice"])("refreshes timings for new audio after only the %s c
   db.close()
   await run()
   expect(transport).toHaveBeenCalledTimes(4)
+})
+
+it("AC-6/8/10 repairs corrupt generated audio from cache without overwriting retained bytes", async () => {
+  await run()
+  const db = storage()
+  const before = db.getLatestNodeData("tts", "en")!.data as TTSOutput
+  const file = path.join(db.bookDir!, "audio/en", before.entries[0].fileName)
+  fs.writeFileSync(file, "CORRUPTED")
+  db.close()
+  await run()
+  const reopened = storage()
+  const after = reopened.getLatestNodeData("tts", "en")!.data as TTSOutput
+  expect(after.entries[0].fileName).not.toBe(before.entries[0].fileName)
+  expect(fs.readFileSync(file, "utf8")).toBe("CORRUPTED")
+  expect(fs.readFileSync(path.join(reopened.bookDir!, "audio/en", after.entries[0].fileName), "utf8")).toBe("audio bytes 1")
+  const outputs = readOutputCatalog({ storage: reopened, config: loadBookConfig(label, root), bookDir: reopened.bookDir!, promptsDir: path.resolve("prompts"), configDir: path.resolve("config") })
+  expect(outputs.filter((output) => output.identity.kind === "audio")).toEqual([expect.objectContaining({ usable: true, current: true, missing: false })])
+  reopened.close()
+  await run()
+  expect(transport.mock.calls.filter(([url]) => String(url).includes("/audio/speech"))).toHaveLength(1)
 })

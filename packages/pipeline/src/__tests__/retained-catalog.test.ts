@@ -33,7 +33,7 @@ describe("retired catalog history", () => {
     storage.putNodeData("easy-read", "book", { blocks: [block], generatedAt: "then" })
     storage.putNodeData("easy-read", "book", { blocks: [], generatedAt: "retired" })
     const active = { ...block, pageId: "pg002", sectionId: "s2", entries: block.entries.map((entry) => ({ ...entry, pageId: "pg002", sectionId: "s2", originalText: "Changed" })) }
-    expect(retainedEasyRead(storage, [active])?.blocks[0].entries[0]).toMatchObject({ text: "My simple text", source: "manual", pageId: "pg002", sectionId: "s2" })
+    expect(retainedEasyRead(storage, [active])?.blocks[0].entries[0]).toMatchObject({ text: "My simple text", source: "manual", originalText: "Changed", pageId: "pg002", sectionId: "s2" })
     expect(retainedEasyRead(storage, [{ ...active, entries: [{ ...active.entries[0], sourceId: "new", easyReadId: "new_easy_read" }] }])?.blocks[0].entries).toEqual([])
     expect(storage.getLatestNodeData("easy-read", "book")?.data).toMatchObject({ blocks: [] })
     storage.setCurrentNodeVersion("easy-read", "book", 1)

@@ -19,7 +19,7 @@ import {
 } from "@adt/types"
 import type { Storage, PageData } from "@adt/storage"
 import { getGlossaryItemTextId } from "./glossary.js"
-import { getRenderSectioning } from "./render-sectioning.js"
+import { getRenderSectioning, renderedSectionId, resolveRenderedSection } from "./render-sectioning.js"
 
 /**
  * Like DomUtils.textContent but skips the children of any <script>/<style>
@@ -54,16 +54,16 @@ function extractPageEntries(
   pageId: string,
   rendering: WebRenderingOutput,
   captionMap: Map<string, string>,
-  prunedSectionIndices?: Set<number>,
   sectioning?: PageSectioningOutputType
 ): TextCatalogEntry[] {
   const entries: TextCatalogEntry[] = []
 
   for (const section of rendering.sections) {
-    if (prunedSectionIndices?.has(section.sectionIndex)) continue
+    const owner = resolveRenderedSection(section, sectioning?.sections)
+    if (owner?.isPruned || (renderedSectionId(section) && sectioning && !owner)) continue
 
     const doc = parseDocument(section.html)
-    const sectionId = sectioning?.sections[section.sectionIndex]?.sectionId
+    const sectionId = renderedSectionId(section)
     const location = { pageId, sectionId }
 
     // Only catalog leaves of the data-id tree. A wrapper element with a
@@ -100,6 +100,7 @@ function extractPageEntries(
         // Never assign catalog identities by reading position. New generated
         // activity IDs are persisted before planning; legacy IDs are scoped by
         // their owning section and cannot inherit positional corrections.
+        if (dataId.startsWith("activity_gen_") && !sectionId) continue
         const id = dataId.startsWith("activity_gen_")
           ? `${sectionId ?? pageId}__${dataId}`
           : dataId
@@ -117,7 +118,7 @@ function extractPageEntries(
 
     // Emit activity answer entries so they appear in the text catalog
     // for viewing, editing, and translation
-    entries.push(...extractAnswerEntries(pageId, section, sectioning))
+    entries.push(...extractAnswerEntries(pageId, section))
   }
 
   return entries
@@ -129,8 +130,7 @@ function extractPageEntries(
  */
 function extractAnswerEntries(
   pageId: string,
-  section: SectionRendering,
-  sectioning?: PageSectioningOutputType
+  section: SectionRendering
 ): TextCatalogEntry[] {
   const answers = section.activityAnswers
   if (!answers || Object.keys(answers).length === 0) return []
@@ -139,7 +139,7 @@ function extractAnswerEntries(
   // from an array position. With no sectioning row to read the real id from,
   // a guessed `_secNNN` would likely belong to a *different* section — and
   // these ids key the answers' translations and generated audio. Skip instead.
-  const sectionId = sectioning?.sections[section.sectionIndex]?.sectionId
+  const sectionId = renderedSectionId(section)
   if (!sectionId) return []
 
   const entries: TextCatalogEntry[] = []
@@ -248,19 +248,12 @@ export function buildTextCatalogSnapshot(storage: Storage, pages: PageData[]): T
     // so fixed-layout books read the positioned tree whose ids/section count
     // match the rendered HTML (1 section/page), not the semantic tree.
     const sectioning = getRenderSectioning(storage, page.pageId)
-    const prunedIndices = new Set<number>()
-    if (sectioning) {
-      sectioning.sections.forEach((s: { isPruned: boolean }, i: number) => {
-        if (s.isPruned) prunedIndices.add(i)
-      })
-    }
 
     const captionMap = loadCaptionMap(storage, page.pageId, extractImageIds(parsed.data.sections.map((section) => section.html)))
     entries.push(...extractPageEntries(
       page.pageId,
       parsed.data,
       captionMap,
-      prunedIndices,
       sectioning
     ))
 

@@ -1030,7 +1030,7 @@ export async function generateSpeechFile(
   assertWithinBase(cacheRoot, cachePath, "cache file")
   if (fs.existsSync(cachePath)) {
     signal?.throwIfAborted()
-    const asset = storeImmutableAsset(bookDir, ["audio", normalizedLanguage], assetPrefix, safeFormat, fs.readFileSync(cachePath))
+    const asset = storeImmutableAsset(bookDir, ["audio", normalizedLanguage], assetPrefix, safeFormat, fs.readFileSync(cachePath), { repairCorruptFile: true })
     return {
       textId: safeTextId,
       language: normalizedLanguage,
@@ -1068,7 +1068,7 @@ export async function generateSpeechFile(
   const buffer = Buffer.from(audioBytes)
 
   signal?.throwIfAborted()
-  const asset = storeImmutableAsset(bookDir, ["audio", normalizedLanguage], assetPrefix, safeFormat, buffer)
+  const asset = storeImmutableAsset(bookDir, ["audio", normalizedLanguage], assetPrefix, safeFormat, buffer, { repairCorruptFile: true })
 
   // Write to cache
   fs.mkdirSync(cacheRoot, { recursive: true })
@@ -1237,7 +1237,7 @@ export async function generatePageSpeechFiles(
     // A short edge fade guarantees zero-amplitude slice edges (belt-and-braces
     // with the silence-snap above) so back-to-back playback has no clicks.
     const slice = sliceWav(pageBytes, range.start, range.end, PAGE_SLICE_FADE_MS)
-    const asset = storeImmutableAsset(bookDir, ["audio", normalizedLanguage], voiceSlotEntryId(range.id, slot), safeFormat, slice)
+    const asset = storeImmutableAsset(bookDir, ["audio", normalizedLanguage], voiceSlotEntryId(range.id, slot), safeFormat, slice, { repairCorruptFile: true })
     results.push({
       textId: range.id,
       language: normalizedLanguage,

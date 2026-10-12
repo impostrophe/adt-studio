@@ -70,6 +70,7 @@ describe("Package routes", () => {
     storage.putNodeData("web-rendering", "pg001", {
       sections: [
         {
+          sectionId: "pg001_sec001",
           sectionIndex: 0,
           sectionType: "content",
           reasoning: "ok",
@@ -95,6 +96,7 @@ describe("Package routes", () => {
         {
           pageId: "pg001",
           pageNumber: 1,
+          sectionId: "pg001_sec001",
           sectionId: "pg001_sec001",
           sectionIndex: 0,
           sectionType: "content",
@@ -170,7 +172,7 @@ describe("Package routes", () => {
       const storage = createBookStorage("book-orphan", tmpDir)
       storage.putNodeData("web-rendering", "pg001", {
         sections: [
-          { sectionIndex: 0, sectionType: "content", reasoning: "ok", html: "<main><p>Kept</p></main>" },
+          { sectionId: "pg001_sec001", sectionIndex: 0, sectionType: "content", reasoning: "ok", html: "<main><p>Kept</p></main>" },
           { sectionIndex: 1, sectionType: "content", reasoning: "ok", html: "<main><p>Orphan</p></main>" },
         ],
       })

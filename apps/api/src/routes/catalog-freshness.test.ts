@@ -42,6 +42,63 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); fs.rmSync(root, { recursive: true, force: true }) })
 
 describe("catalog freshness through real API/storage boundaries", () => {
+  it("AC-11 invalidates packaging reuse when image bytes change with identical size and mtime", () => {
+    const db = storage()
+    try {
+      const image = path.join(db.bookDir!, db.getImageMeta("pg001_im001")!.relativePath)
+      const timestamp = new Date("2026-01-01T00:00:00Z")
+      fs.utimesSync(image, timestamp, timestamp)
+      const hash = () => computePackagingInputHash({ storage: db, bookDir: db.bookDir!, label, language: "en", outputLanguages: ["en"], title: "Test", webAssetsDir: path.resolve("assets/adt"), config: {} })
+      const before = hash()
+      fs.writeFileSync(image, "other")
+      fs.utimesSync(image, timestamp, timestamp)
+      expect(hash()).not.toBe(before)
+    } finally { db.close() }
+  })
+  it.each(["ai", "manual"] as const)("AC-2/15 persists only the affected %s translation's attention through Save, review and reopening", async (source) => {
+    const initial = await outputs()
+    const target = initial.find((item) => item.identity.kind === "translation" && item.identity.id === "pg001_t001" && item.identity.language === "fr")!
+    const db = storage()
+    const previous = db.getLatestNodeData("text-catalog-translation", "fr")!.data as TextCatalogOutput
+    db.putNodeData("text-catalog-translation", "fr", { ...previous, entries: previous.entries.map((entry) => entry.id === target.identity.id ? { ...entry, source, input: outputEvidence(target.signature, entry.text) } : entry) })
+    db.markStepCompleted("catalog-translation")
+    db.close()
+    const read = async () => (await (await app.request(`/books/${label}/outputs`)).json())
+    const before = await read()
+    const other = before.outputs.filter((item: OutputStatus) => item.identity.kind === "translation" && item.identity.id !== target.identity.id)
+    expect((await send("pages/pg001/rendering", rendering("Changed source"))).status).toBe(200)
+    const changed = await read()
+    expect(changed.outputs.filter((item: OutputStatus) => item.identity.kind === "translation" && item.identity.id !== target.identity.id)).toEqual(other)
+    const output = changed.outputs.find((item: OutputStatus) => item.identity.kind === "translation" && item.identity.id === target.identity.id && item.identity.language === "fr")
+    expect(output).toMatchObject({ text: "Bonjour", current: false, protected: source === "manual", updateNeeded: source === "ai" })
+    const category = source === "manual" ? "warnings" : "updates"
+    expect(changed.summaries.stages.translate[category]).toBe(before.summaries.stages.translate[category] + 1)
+    expect(changed.summaries.stages.translate.missing).toBe(before.summaries.stages.translate.missing)
+    const reopened = storage()
+    expect(reopened.getStepRuns().find((step) => step.step === "catalog-translation")?.status).toBe("done")
+    reopened.close()
+    if (source === "manual") {
+      expect((await send("outputs/review", { identity: output.identity, signature: output.signature, contentHash: output.contentHash, action: "keep" }, "POST")).status).toBe(200)
+      const reviewed = await read()
+      expect(reviewed.summaries.stages.translate).toEqual(before.summaries.stages.translate)
+      expect(reviewed.outputs.find((item: OutputStatus) => item.identity.kind === "translation" && item.identity.id === target.identity.id && item.identity.language === "fr")).toMatchObject({ text: "Bonjour", manual: true, protected: true, current: true })
+    }
+  })
+  it("AC-1/15 preserves completed attempts on cosmetic Save and derives attention from actual inputs", async () => {
+    const db = storage()
+    for (const step of ["web-rendering", "catalog-translation", "core-tts-catalog", "tts", "word-timestamps", "package-web"] as const) db.markStepCompleted(step)
+    const attempts = db.getStepRuns()
+    db.close()
+    const before = await outputs()
+    const provider = vi.fn(() => { throw new Error("Save must not call a provider") })
+    vi.stubGlobal("fetch", provider)
+    expect((await send("pages/pg001/rendering", rendering("Hello", "cosmetic"))).status).toBe(200)
+    const reopened = storage()
+    expect(reopened.getStepRuns()).toEqual(attempts)
+    reopened.close()
+    expect(await outputs()).toEqual(before)
+    expect(provider).not.toHaveBeenCalled()
+  })
   it("reads each shared page/audio asset once per projection and detects changed bytes on the next read", async () => {
     const db = storage()
     db.putExtractedPage({ pageId: "pg001", pageNumber: 1, text: "Hello", pageImage: { imageId: "pg001_page", buffer: Buffer.from("page"), format: "png", hash: "page", width: 100, height: 100 }, images: [1, 2, 3].map((i) => ({ imageId: `pg001_im00${i}`, buffer: Buffer.from(`image ${i}`), format: "png", hash: `image-${i}`, width: 20, height: 20 })) })
@@ -86,7 +143,7 @@ describe("catalog freshness through real API/storage boundaries", () => {
     expect(rejected.status).toBe(409)
     expect(await rejected.text()).toContain("pg001_t002")
     const verify = storage()
-    expect(verify.getLatestNodeData("web-rendering", "pg001")?.data).toEqual(legacy)
+    expect(verify.getLatestNodeData("web-rendering", "pg001")?.data).toEqual({ sections: [{ ...legacy.sections[0], sectionId: "pg001_sec001" }, legacy.sections[1]] })
     expect(verify.getLatestNodeData("text-catalog-translation", "fr")).toEqual(retained)
     verify.close()
   })

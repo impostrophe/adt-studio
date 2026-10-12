@@ -20,11 +20,57 @@
  * which clears it.
  */
 import type { NodeDataRow, Storage } from "@adt/storage"
-import type { PageSectioningOutput } from "@adt/types"
-import { PageSectioningOutput as PageSectioningOutputSchema } from "@adt/types"
+import type { PageSectioningOutput, PageSectioningSection, SectionRendering, PackagingWarning } from "@adt/types"
+import { PageSectioningOutput as PageSectioningOutputSchema, WebRenderingOutput } from "@adt/types"
+import { parseDocument, DomUtils } from "htmlparser2"
 
 export const FIXED_LAYOUT_SECTIONING_NODE = "fixed-layout-sectioning"
 export const PAGE_SECTIONING_NODE = "page-sectioning"
+
+/** Resolve the owner of retained HTML, independently of the latest source order.
+ * Adapted from SPEC-0012's stable HTML identity rule (PR #888). Identityless or
+ * contradictory legacy content is retained but cannot be assigned to a section:
+ * even matching leaf IDs may have moved since this rendering was produced.
+ */
+export function renderedSectionId(rendering: SectionRendering): string | undefined {
+  const doc = parseDocument(rendering.html)
+  const owners = DomUtils.findAll((element) => element.type === "tag" && element.attribs["data-section-id"] !== undefined, doc.children)
+  if (owners.length > 1) return undefined
+  // A layout wrapper is fine; an owner on only one descendant must not claim
+  // sibling text or another activity outside that section.
+  let child: (typeof doc.children)[number] | typeof doc | undefined = owners[0]
+  for (let ancestor = child?.parent; ancestor; ancestor = ancestor.parent) {
+    if (ancestor.children.some((sibling) => sibling !== child && (
+      (sibling.type === "text" && sibling.data.trim().length > 0) ||
+      (sibling.type === "tag" && sibling.name !== "head")
+    ))) return undefined
+    child = ancestor
+  }
+  const htmlId = owners[0]?.attribs["data-section-id"]
+  if (htmlId === "" || (htmlId && rendering.sectionId && htmlId !== rendering.sectionId)) return undefined
+  return rendering.sectionId ?? htmlId
+}
+
+export function resolveRenderedSection(
+  rendering: SectionRendering,
+  sections: readonly PageSectioningSection[] | undefined,
+): PageSectioningSection | undefined {
+  const id = renderedSectionId(rendering)
+  if (!id) return undefined
+  const matches = sections?.filter((section) => section.sectionId === id)
+  return matches?.length === 1 ? matches[0] : undefined
+}
+
+/** Shared omission disclosure for preview, API and packaged output. */
+export function renderingOwnershipWarnings(storage: Storage): PackagingWarning[] {
+  return storage.getPages().flatMap((page) => {
+    const rendering = WebRenderingOutput.safeParse(storage.getLatestNodeData("web-rendering", page.pageId)?.data)
+    if (!rendering.success) return []
+    const sections = getRenderSectioning(storage, page.pageId)?.sections
+    return rendering.data.sections.filter((entry) => !resolveRenderedSection(entry, sections))
+      .map((entry) => ({ kind: "orphaned-rendering" as const, pageId: page.pageId, sectionIndex: entry.sectionIndex }))
+  })
+}
 
 /**
  * The latest sectioning row a page is CURRENTLY rendered from: the positioned

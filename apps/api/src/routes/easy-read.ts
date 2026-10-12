@@ -1,4 +1,4 @@
-import { captureOutputReferences } from "@adt/pipeline"
+import { captureOutputReferences, assertOutputPublication } from "@adt/pipeline"
 import { catalogOutputs, editSourceSignature, assertEditSource, assertEditVersion } from "../services/catalog-output-service.js"
 import fs from "node:fs"
 import path from "node:path"
@@ -81,15 +81,6 @@ function clearEasyReadDependents(
 
   // Easy Read audio is always (re)generated when Easy Read is enabled, so a
   // change to the easy-read texts must invalidate speech + timestamps too.
-  storage.clearStepRuns([
-    "catalog-translation",
-    "core-tts-catalog",
-    "image-translation",
-    "package-web",
-    "accessibility-assessment",
-    "tts",
-    "word-timestamps",
-  ])
 }
 
 export function createEasyReadRoutes(
@@ -145,7 +136,7 @@ export function createEasyReadRoutes(
       const oldEntries = new Map((previousEasyRead?.blocks ?? []).flatMap((block) => block.entries.map((entry) => [entry.easyReadId, entry] as const)))
       const edits = new Map<string, string>()
       for (const entry of parsed.data.blocks.flatMap((block) => block.entries)) {
-        if (!oldEntries.has(entry.easyReadId) || edits.has(entry.easyReadId)) throw new HTTPException(409, { message: "Easy Read membership changed. Refresh before saving." })
+        if (!oldEntries.has(entry.easyReadId) || (edits.has(entry.easyReadId) && edits.get(entry.easyReadId) !== entry.text)) throw new HTTPException(409, { message: "Easy Read membership changed or shared text conflicts. Refresh before saving." })
         edits.set(entry.easyReadId, entry.text)
       }
       const output = EasyReadOutput.parse({ ...previousEasyRead, blocks: (previousEasyRead?.blocks ?? []).map((block) => ({ ...block,
@@ -189,6 +180,7 @@ export function createEasyReadRoutes(
         ? createRateLimiter(config.rate_limit.requests_per_minute)
         : undefined
       const model = createLLMModel({
+        signal: c.req.raw.signal,
         modelId: easyReadConfig.modelId,
         cacheDir,
         promptEngine,
@@ -199,10 +191,21 @@ export function createEasyReadRoutes(
       const previousRow = storage.getLatestNodeData("easy-read", "book")
       const previousEasyRead = retainedEasyRead(storage, blocks)
       const sourceBefore = inputSignature(blocks)
+      const outputsBefore = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath)
       easyReadConfig.promptSignature = promptEngine.fingerprint(easyReadConfig.promptName, { modelId: easyReadConfig.modelId })
       const output: EasyReadOutputType = await generateEasyRead(blocks, easyReadConfig, model, {
-        concurrency: config.concurrency ?? 32, previous: previousEasyRead,
+        concurrency: config.concurrency ?? 32, previous: previousEasyRead, signal: c.req.raw.signal,
+        references: captureOutputReferences(storage, "easy-read", language),
       })
+      c.req.raw.signal.throwIfAborted()
+      const outputsAfter = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath)
+      assertOutputPublication(outputsBefore, outputsAfter, outputsBefore.filter((item) => item.identity.kind === "easy-read").map((item) => item.identity))
+      // The legacy route permits generation while Easy Read is disabled, when
+      // the public projection intentionally contains no applicable outputs.
+      const latestConfig = loadBookConfig(safeLabel, booksDir, configPath)
+      const latestEasy = buildEasyReadConfig(latestConfig, readLanguage(metadata, latestConfig))
+      const latestEngine = createPromptEngine([bookPromptsDir, promptsDir], { basePromptModelId: latestConfig.base_prompt_model })
+      assertEditSource(inputSignature({ ...latestEasy, enabled: true, promptSignature: latestEngine.fingerprint(latestEasy.promptName, { modelId: latestEasy.modelId }) }), inputSignature(easyReadConfig))
       assertEditVersion(storage.getLatestNodeData("easy-read", "book")?.version, previousRow?.version ?? 0)
       assertEditSource(inputSignature(buildEasyReadSourceBlocks(storage, storage.getPages())), sourceBefore)
       const version = storage.putNodeData("easy-read", "book", output)

@@ -6,7 +6,6 @@ import { z } from "zod"
 import {
   GlossaryOutput,
   IMAGE_SET_CHANGE_CLEAR_NODE_TYPES,
-  IMAGE_SET_CHANGE_CLEAR_STEPS,
   parseBookLabel,
 } from "@adt/types"
 import type { ImageCaptioningOutput } from "@adt/types"
@@ -157,7 +156,6 @@ export function createGlossaryRoutes(
         // output, which invalidates every derived translation/audio/package
         // result — same cascade as adding an image elsewhere in the book.
         storage.clearNodesByType([...IMAGE_SET_CHANGE_CLEAR_NODE_TYPES])
-        storage.clearStepRuns([...IMAGE_SET_CHANGE_CLEAR_STEPS])
       }
       const pages = storage.getPages()
       const catalog = await buildTextCatalog(storage, pages)

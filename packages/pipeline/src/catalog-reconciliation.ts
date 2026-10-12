@@ -5,7 +5,7 @@ import { WebRenderingOutput, type TextCatalogOutput, type GlossaryOutput, type S
 import { buildTextCatalogSnapshot } from "./text-catalog.js"
 import { inputSignature } from "./output-freshness.js"
 import { extractImageIds } from "./image-captioning.js"
-import { getRenderSectioning } from "./render-sectioning.js"
+import { getRenderSectioning, renderedSectionId, resolveRenderedSection } from "./render-sectioning.js"
 
 /** Assign newly generated activity leaves real stored identities once. Reading
  * order is never used as identity. Existing authored data IDs are untouched. */
@@ -30,7 +30,9 @@ export function reconcileActivityIds(storage: Storage): void {
     if (!parsed.success) continue
     let changed = false
     const sections = parsed.data.sections.map((section) => {
-      const next = scopeLegacyActivityIds(section, getRenderSectioning(storage, page.pageId)?.sections[section.sectionIndex]?.sectionId ?? page.pageId)
+      const owner = renderedSectionId(section)
+      if (!owner) return section
+      const next = scopeLegacyActivityIds(section, owner)
       if (next !== section) changed = true
       return next
     })
@@ -70,8 +72,8 @@ export function buildImageInventory(storage: Storage) {
     if (!rendering.success) continue
     const sectioning = getRenderSectioning(storage, page.pageId)
     for (const section of rendering.data.sections) {
-      const source = sectioning?.sections[section.sectionIndex]
-      if (source?.isPruned) continue
+      const source = resolveRenderedSection(section, sectioning?.sections)
+      if (source?.isPruned || (renderedSectionId(section) && sectioning && !source)) continue
       for (const id of extractImageIds([section.html])) add(id, page.pageId, source?.sectionId)
     }
   }

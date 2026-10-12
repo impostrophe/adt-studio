@@ -108,6 +108,7 @@ function seedRenderedEasyReadSource(label: string): void {
         JSON.stringify({
           sections: [
             {
+              sectionId: "pg001_sec001",
               sectionIndex: 0,
               sectionType: "text_only",
               reasoning: "",
@@ -237,7 +238,7 @@ describe("easy read routes", () => {
         "SELECT step FROM step_runs WHERE step = ?",
         ["catalog-translation"],
       )
-      expect(stepRuns).toEqual([])
+      expect(stepRuns).toEqual([{ step: "catalog-translation" }])
     } finally {
       verify.close()
     }
@@ -357,9 +358,9 @@ describe("easy read routes", () => {
       })
 
       const stepRuns = after.getStepRuns()
-      expect(stepRuns.find((step) => step.step === "core-tts-catalog")).toBeUndefined()
-      expect(stepRuns.find((step) => step.step === "tts")).toBeUndefined()
-      expect(stepRuns.find((step) => step.step === "word-timestamps")).toBeUndefined()
+      expect(stepRuns.find((step) => step.step === "core-tts-catalog")).toMatchObject({ status: "done" })
+      expect(stepRuns.find((step) => step.step === "tts")).toMatchObject({ status: "done" })
+      expect(stepRuns.find((step) => step.step === "word-timestamps")).toMatchObject({ status: "done" })
     } finally {
       after.close()
     }

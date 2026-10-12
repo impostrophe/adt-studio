@@ -266,6 +266,7 @@ function seedEasyReadBook(booksDir: string, label: string): void {
     storage.putNodeData("web-rendering", "pg001", {
       sections: [
         {
+          sectionId: "pg001_sec001",
           sectionIndex: 0,
           sectionType: "text_only",
           reasoning: "",
@@ -2670,6 +2671,7 @@ structure_types:
       storage.putNodeData("web-rendering", "pg001", {
         sections: [
           {
+            sectionId: "pg001_sec001",
             sectionIndex: 0,
             sectionType: "activity",
             reasoning: "",

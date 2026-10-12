@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { OUTPUT_KIND_TO_STAGE, type OutputSummaries, type OutputScopeSummary } from "@adt/types"
 import type {
   OutputIdentity, OutputInputEvidence, OutputMetadata, OutputSelection,
   OutputStatus, OutputSummary, OutputWarning, OutputRunScope, TextCatalogEntry,
@@ -92,6 +93,33 @@ export function summarizeOutputs(outputs: OutputStatus[]): OutputSummary {
     warnings: total.warnings + Number(output.warnings.length > 0 && !output.excluded),
     missing: total.missing + Number(output.missing && !output.excluded),
   }), { updates: 0, warnings: 0, missing: 0 })
+}
+
+/** One projection powers stage, page, section and standalone-group summaries.
+ * Optional preparation is reviewed with speech, not unfinished Language work.
+ * Its warnings remain visible through consuming audio and inline details. */
+export function summarizeOutputScopes(outputs: OutputStatus[]): OutputSummaries {
+  const scopes: Record<keyof OutputSummaries, Map<string, OutputStatus[]>> = {
+    stages: new Map(), pages: new Map(), sections: new Map(), groups: new Map(),
+  }
+  const add = (scope: keyof OutputSummaries, key: string, output: OutputStatus) => {
+    const items = scopes[scope].get(key) ?? []
+    items.push(output)
+    scopes[scope].set(key, items)
+  }
+  for (const output of outputs) {
+    if (output.excluded) continue
+    if (output.identity.kind !== "preparation") add("stages", OUTPUT_KIND_TO_STAGE[output.identity.kind], output)
+    for (const page of output.pageIds) add("pages", page, output)
+    for (const section of output.sectionIds) add("sections", section, output)
+    if (output.group) add("groups", output.group, output)
+  }
+  const summarize = (items: OutputStatus[]): OutputScopeSummary => {
+    const unique = [...new Map(items.map((output) => [outputIdentityKey(output.identity), output])).values()]
+    return { ...summarizeOutputs(unique), applicable: unique.length, current: unique.every((output) => output.current) }
+  }
+  const project = (scope: keyof OutputSummaries) => Object.fromEntries([...scopes[scope]].map(([key, items]) => [key, summarize(items)]))
+  return { stages: project("stages"), pages: project("pages"), sections: project("sections"), groups: project("groups") }
 }
 
 /** A warning is not a reason to repeat identical successful work. */

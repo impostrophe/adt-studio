@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest"
-import { deriveOutputStatus, inputSignature, needsOutputGeneration, outputEvidence, selectedOutput, summarizeOutputs } from "../output-freshness.js"
+import { deriveOutputStatus, inputSignature, needsOutputGeneration, outputEvidence, selectedOutput, summarizeOutputs, summarizeOutputScopes } from "../output-freshness.js"
 
 const identity = { kind: "translation" as const, id: "pg001_tx001", language: "fr" }
 describe("catalog output freshness", () => {
+  it("AC-15 derives stage/page/section/group counts once per identity and keeps optional preparation out of Language", () => {
+    const missing = { ...deriveOutputStatus({ identity, signature: "new", usable: false, content: undefined }), pageIds: ["p1", "p2"], sectionIds: ["s1", "s2"], group: "glossary" as const }
+    const stale = deriveOutputStatus({ identity: { ...identity, id: "stale" }, signature: "new", content: "ancien", usable: true, metadata: { source: "ai", input: outputEvidence("old", "ancien") } })
+    const protectedOutput = deriveOutputStatus({ identity: { ...identity, id: "manual" }, signature: "new", content: "manuel", usable: true, metadata: { source: "manual" } })
+    const preparation = deriveOutputStatus({ identity: { kind: "preparation", id: "optional", language: "en" }, signature: "a", content: "fallback", usable: true, fallback: "failed", metadata: { source: "ai", input: outputEvidence("a", "fallback") } })
+    const result = summarizeOutputScopes([missing, missing, stale, protectedOutput, preparation, { ...missing, excluded: true, identity: { ...identity, id: "pruned" } }])
+    expect(result.stages.translate).toEqual({ applicable: 3, current: false, updates: 1, warnings: 1, missing: 1 })
+    expect(result.pages.p1).toEqual({ applicable: 1, current: false, updates: 0, warnings: 0, missing: 1 })
+    expect(result.sections.s2).toEqual(result.pages.p1)
+    expect(result.groups.glossary).toEqual(result.pages.p1)
+  })
   it("canonicalizes object keys but preserves input reading order and context", () => {
     expect(inputSignature({ text: "A", language: "fr" })).toBe(inputSignature({ language: "fr", text: "A" }))
     expect(inputSignature(["A", "B"])).not.toBe(inputSignature(["B", "A"]))

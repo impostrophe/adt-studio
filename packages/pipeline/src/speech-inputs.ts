@@ -42,7 +42,7 @@ export function reconcileSpeechInputs(options: {
   }
   if (options.config.easy_read?.enabled) {
     const existing = new Map(flattenEasyReadEntries(easyRead).map((entry) => [entry.id, entry]))
-    for (const block of buildEasyReadSourceBlocks(storage, storage.getPages())) for (const entry of block.entries) sourceEntries.push({ id: entry.easyReadId, text: existing.get(entry.easyReadId)?.text ?? "", locations: [{ pageId: entry.pageId, sectionId: entry.sectionId }] })
+    for (const entry of flattenEasyReadEntries({ blocks: buildEasyReadSourceBlocks(storage, storage.getPages()), generatedAt: "" })) sourceEntries.push({ ...entry, text: existing.get(entry.id)?.text ?? "" })
   }
   const config = { ...buildCoreTtsPreparationConfig(options.config), promptSignature: options.promptSignature }
   if (options.promptsDir && options.bookDir) {

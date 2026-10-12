@@ -412,6 +412,9 @@ export {
   getRenderSectioning,
   getRenderSectioningRow,
   getSemanticSectioning,
+  renderedSectionId,
+  resolveRenderedSection,
+  renderingOwnershipWarnings,
   FIXED_LAYOUT_SECTIONING_NODE,
   PAGE_SECTIONING_NODE,
 } from "./render-sectioning.js"
@@ -460,7 +463,7 @@ export {
   type ActivityFeedbackConfig,
 } from "./activity-feedback.js"
 
-export { inputSignature, outputEvidence, outputIdentityKey, deriveOutputStatus, selectedOutput, summarizeOutputs, needsOutputGeneration } from "./output-freshness.js"
+export { inputSignature, outputEvidence, outputIdentityKey, deriveOutputStatus, selectedOutput, summarizeOutputs, summarizeOutputScopes, needsOutputGeneration } from "./output-freshness.js"
 
 export { buildTextCatalogSnapshot } from "./text-catalog.js"
 export { assignActivityIds, reconcileActivityIds, reconcileTextCatalog, buildImageInventory } from "./catalog-reconciliation.js"

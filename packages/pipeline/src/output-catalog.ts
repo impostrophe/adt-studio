@@ -11,7 +11,7 @@ import { buildTextCatalogSnapshot } from "./text-catalog.js"
 import { buildImageInventory } from "./catalog-reconciliation.js"
 import { buildCaptionConfig } from "./image-captioning.js"
 import { buildCatalogTranslationConfig, getTargetLanguages, translationInputSignature } from "./catalog-translation.js"
-import { buildEasyReadConfig, buildEasyReadSourceBlocks, easyReadInputSignature, flattenEasyReadEntries } from "./easy-read.js"
+import { buildEasyReadConfig, buildEasyReadSourceBlocks, easyReadInputSignature, flattenEasyReadEntries, indexEasyReadEntries } from "./easy-read.js"
 import { buildCoreTtsPreparationConfig, buildCoreTtsSourceContext, resolveCoreTtsSpeechCatalog, coreTtsInputBasis, getCoreTtsCatalog, loadCoreTtsProfiles, resolveCoreTtsProfile } from "./core-tts.js"
 import { normalizeLocale, getBaseLanguage } from "./language-context.js"
 import { deriveOutputStatus, inputSignature, outputIdentityKey, withOutputLocations } from "./output-freshness.js"
@@ -91,15 +91,17 @@ export function readOutputCatalog(options: {
   }
   const easyConfig = buildEasyReadConfig(config, sourceLanguage)
   easyConfig.promptSignature = prompt(easyConfig.promptName, easyConfig.modelId)
-  const easy = retainedEasyRead(storage, buildEasyReadSourceBlocks(storage, storage.getPages()))
-  const easyById = new Map((easy?.blocks ?? []).flatMap((block) => block.entries.map((entry) => [entry.easyReadId, entry] as const)))
-  if (easyConfig.enabled) for (const block of buildEasyReadSourceBlocks(storage, storage.getPages())) for (const entry of block.entries) {
-    const previous = easyById.get(entry.easyReadId)
-    const source = { id: entry.easyReadId, text: previous?.text ?? "", locations: [{ pageId: entry.pageId, sectionId: entry.sectionId }] }
+  const easyBlocks = buildEasyReadSourceBlocks(storage, storage.getPages())
+  const easySources = indexEasyReadEntries({ blocks: easyBlocks, generatedAt: "" })
+  const easy = retainedEasyRead(storage, easyBlocks)
+  const easyById = new Map(flattenEasyReadEntries(easy).map((entry) => [entry.id, entry]))
+  if (easyConfig.enabled) for (const entry of flattenEasyReadEntries({ blocks: easyBlocks, generatedAt: "" })) {
+    const previous = easyById.get(entry.id)
+    const source = { id: entry.id, text: previous?.text ?? "", locations: entry.locations }
     sources.push(source)
-    add(withOutputLocations(deriveOutputStatus({ identity: { kind: "easy-read", id: entry.easyReadId, language: sourceLanguage },
-      signature: easyReadInputSignature(block, entry.sourceId, easyConfig), content: previous?.text, metadata: previous, usable: !!previous?.text.trim(),
-    }), source))
+    add(withOutputLocations(deriveOutputStatus({ identity: { kind: "easy-read", id: entry.id, language: sourceLanguage },
+      signature: easyReadInputSignature(easyBlocks, entry.id.slice(0, -"_easy_read".length), easyConfig), content: previous?.text, metadata: previous, usable: !!previous?.text.trim(),
+    }), { ...source, text: easySources.get(entry.id)!.originalText }))
   }
   const translationConfig = buildCatalogTranslationConfig(config, sourceLanguage)
   translationConfig.promptSignature = prompt(translationConfig.promptName, translationConfig.modelId)

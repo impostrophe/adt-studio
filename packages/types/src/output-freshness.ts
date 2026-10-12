@@ -100,6 +100,20 @@ export const OutputSummary = z.object({
 })
 export type OutputSummary = z.infer<typeof OutputSummary>
 
+/** Content status is independent of the most recent generation attempt. */
+export const OutputScopeSummary = OutputSummary.extend({
+  applicable: z.number().int().nonnegative(),
+  current: z.boolean(),
+})
+export type OutputScopeSummary = z.infer<typeof OutputScopeSummary>
+export const OutputSummaries = z.object({
+  stages: z.record(OutputScopeSummary),
+  pages: z.record(OutputScopeSummary),
+  sections: z.record(OutputScopeSummary),
+  groups: z.record(OutputScopeSummary),
+})
+export type OutputSummaries = z.infer<typeof OutputSummaries>
+
 export const BookWriterOwner = z.object({
   token: z.string().uuid(),
   pid: z.number().int().positive(),

@@ -9,7 +9,7 @@ import {
 import type { LLMModel } from "@adt/llm"
 import type { Storage, PageData } from "@adt/storage"
 import { processWithConcurrency } from "./concurrency.js"
-import { getRenderSectioning } from "./render-sectioning.js"
+import { getRenderSectioning, resolveRenderedSection } from "./render-sectioning.js"
 import { buildLanguageContext } from "./language-context.js"
 
 export interface GlossaryConfig {
@@ -225,7 +225,7 @@ export function collectPageTexts(
     const sectioning = getRenderSectioning(storage, page.pageId)
     const htmlParts = rendering.sections
       .filter(
-        (s) => !sectioning || !sectioning.sections[s.sectionIndex]?.isPruned
+        (s) => !sectioning || !resolveRenderedSection(s, sectioning.sections)?.isPruned
       )
       .map((s) => s.html)
     const text = stripHtml(htmlParts.join(" "))

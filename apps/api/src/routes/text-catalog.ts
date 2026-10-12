@@ -196,13 +196,6 @@ export function createTextCatalogRoutes(booksDir: string, promptsDir = path.reso
         entries: data.entries,
       })
       storage.clearNodesByType(["accessibility-assessment"])
-      storage.clearStepRuns([
-        "core-tts-catalog",
-        "tts",
-        "word-timestamps",
-        "package-web",
-        "accessibility-assessment",
-      ])
       return c.json({ version })
     } finally {
       storage.close()
@@ -279,12 +272,6 @@ export function createTextCatalogRoutes(booksDir: string, promptsDir = path.reso
       // Keep prior playable audio/timing versions. Actual speech-input evidence
       // marks them for an explicit update; a Save never removes user output.
       storage.clearNodesByType(["accessibility-assessment"])
-      storage.clearStepRuns([
-        "tts",
-        "word-timestamps",
-        "package-web",
-        "accessibility-assessment",
-      ])
       return c.json({ version, entry: nextEntry })
     } finally {
       storage.close()
