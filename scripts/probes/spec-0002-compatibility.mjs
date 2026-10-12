@@ -1,6 +1,7 @@
 /**
  * AC-11 read compatibility against an independently built pre-change tree.
- * Build both trees first (pnpm exec tsc --build apps/api), then run:
+ * Build both trees first (pnpm exec tsc --build apps/api and
+ * pnpm --filter @adt/runtime build), then run:
  * node scripts/probes/spec-0002-compatibility.mjs --baseline /path/to/old/tree
  * Uses a disposable real book, current HTTP saves and a separate old-API process.
  * This does not assert preservation when an old application edits/regenerates.
@@ -28,7 +29,7 @@ async function routes(tree, booksDir, guarded = false) {
   const { createTextCatalogRoutes } = await load(tree, "apps/api/dist/routes/text-catalog.js")
   const { createAdtPreviewRoutes } = await load(tree, "apps/api/dist/routes/adt-preview.js")
   const prompts = path.join(tree, "prompts")
-  const assets = path.join(currentTree, "assets/adt")
+  const assets = path.join(tree, "assets/adt")
   const config = path.join(booksDir, "config.yaml")
   const app = new Hono()
   if (guarded) {
@@ -70,7 +71,7 @@ async function readAndExport(tree, booksDir) {
   try {
     await packageAdtWeb(storage, {
       bookDir, label, language: "en", outputLanguages: ["en", "fr"], title: "Compatibility",
-      webAssetsDir: path.join(currentTree, "assets/adt"), promptsDir: path.join(tree, "prompts"),
+      webAssetsDir: path.join(tree, "assets/adt"), promptsDir: path.join(tree, "prompts"),
       configDir: path.join(tree, "config"), config: loadBookConfig(label, booksDir, path.join(booksDir, "config.yaml")),
     })
     for (const [file, expected] of [

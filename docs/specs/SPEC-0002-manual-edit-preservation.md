@@ -255,7 +255,9 @@ metadata and the original AC checklist below remain pending.
   SPEC-0002 AC-9/11/17 cannot claim unrestricted legacy preview/export acceptance.
 - **Ambiguous legacy translations:** reads preserve duplicate protected entries;
   generation and saves refuse ambiguous identities before provider calls or
-  publication. Restore a known unambiguous version or repair the book before
+  publication. The same guard applies to TOC entries with duplicate or empty
+  identities: reads retain every chapter, editing is disabled, and guarded Save
+  rejects the ambiguous document; history restore remains available. Restore a known unambiguous version or repair the book before
   continuing. No automatic choice between corrections is authorized.
 
 ## Acceptance criteria

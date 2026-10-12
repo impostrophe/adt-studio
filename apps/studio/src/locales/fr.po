@@ -10472,6 +10472,9 @@ msgstr "Cette session utilise un ancien instantané de la liste de contrôle du 
 msgid "This system cannot show desktop notifications."
 msgstr "Ce système ne peut pas afficher de notifications du bureau."
 
+msgid "This table of contents has conflicting chapter identities. Restore an earlier version before editing."
+msgstr "Cette table des matières contient des identités de chapitres en conflit. Restaurez une version antérieure avant de la modifier."
+
 msgid "This text is only perceptible to assistive technologies."
 msgstr "Ce texte n'est perceptible que par les technologies d'assistance."
 

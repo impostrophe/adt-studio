@@ -10470,6 +10470,9 @@ msgstr "This session is using an older reviewer checklist snapshot. Newer checkl
 msgid "This system cannot show desktop notifications."
 msgstr "This system cannot show desktop notifications."
 
+msgid "This table of contents has conflicting chapter identities. Restore an earlier version before editing."
+msgstr "This table of contents has conflicting chapter identities. Restore an earlier version before editing."
+
 msgid "This text is only perceptible to assistive technologies."
 msgstr "This text is only perceptible to assistive technologies."
 

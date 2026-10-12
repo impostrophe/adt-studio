@@ -10472,6 +10472,9 @@ msgstr "Kjo sesion po përdor një fotografi të vjetër të listës së kontrol
 msgid "This system cannot show desktop notifications."
 msgstr "Ky sistem nuk mund të shfaqë njoftime në desktop."
 
+msgid "This table of contents has conflicting chapter identities. Restore an earlier version before editing."
+msgstr "Kjo tabelë e përmbajtjes ka identitete kapitujsh që bien ndesh. Riktheni një version të mëparshëm para redaktimit."
+
 msgid "This text is only perceptible to assistive technologies."
 msgstr "Ky tekst perceptohet vetëm nga teknologjitë ndihmëse."
 

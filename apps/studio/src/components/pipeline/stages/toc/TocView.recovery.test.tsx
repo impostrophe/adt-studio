@@ -95,3 +95,14 @@ it("F2: loading the latest whole document explicitly discards the locked draft w
   await act(async () => { await floating.current.onSave!() })
   expect(response.entries).toEqual([entry("toc_001", "B")])
 })
+
+it("keeps ambiguous legacy TOCs readable with history available, but locks editing before a draft can change another chapter", async () => {
+  response.entries[1].id = response.entries[0].id
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><Harness /></QueryClientProvider>)
+  expect((await screen.findByDisplayValue("Chapter A")).matches(":disabled")).toBe(true)
+  expect(screen.getByDisplayValue("Chapter B").matches(":disabled")).toBe(true)
+  expect(screen.getByText("This table of contents has conflicting chapter identities. Restore an earlier version before editing.")).toBeTruthy()
+  expect(screen.getByRole("button", { name: /^v\s*1$/ }).matches(":disabled")).toBe(false)
+  expect(api.updateToc).not.toHaveBeenCalled()
+})

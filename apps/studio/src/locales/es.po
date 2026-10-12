@@ -10470,6 +10470,9 @@ msgstr "Esta sesión usa una instantánea anterior de la lista de verificación 
 msgid "This system cannot show desktop notifications."
 msgstr "Este sistema no puede mostrar notificaciones de escritorio."
 
+msgid "This table of contents has conflicting chapter identities. Restore an earlier version before editing."
+msgstr "Esta tabla de contenidos tiene identidades de capítulos en conflicto. Restaura una versión anterior antes de editarla."
+
 msgid "This text is only perceptible to assistive technologies."
 msgstr "Este texto solo es perceptible para tecnologías de asistencia."
 

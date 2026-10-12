@@ -8,7 +8,7 @@ import { HTTPException } from "hono/http-exception"
 import { TocGenerationOutput, isHeadingRole, parseBookLabel } from "@adt/types"
 import type { ContentNodeData } from "@adt/types"
 import { openBookDb, createBookStorage, readCurrentNodeRow } from "@adt/storage"
-import { stampManualEdits, inputSignature, resolveReadingOrder, readingOrderHref } from "@adt/pipeline"
+import { indexPreservedEntries, stampManualEdits, inputSignature, resolveReadingOrder, readingOrderHref } from "@adt/pipeline"
 
 function safeParseLabel(label: string): string {
   try {
@@ -96,6 +96,10 @@ export function createTocRoutes(booksDir: string): Hono {
       assertEditVersion(previous?.version, parsed.data.baseVersion)
       const { baseVersion: _base, ...content } = parsed.data
       const prior = TocGenerationOutput.safeParse(previous?.data)
+      try { if (prior.success) indexPreservedEntries(prior.data.entries, (entry) => entry.id) }
+      catch { throw new HTTPException(409, { message: "Saved table of contents has ambiguous chapter identities. Keep the draft and restore an unambiguous version before saving." }) }
+      try { indexPreservedEntries(content.entries, (entry) => entry.id) }
+      catch { throw new HTTPException(400, { message: "Table of contents entries need distinct, non-empty identities." }) }
       const [stamped] = stampManualEdits<TocGenerationOutput>(prior.success ? [prior.data] : [], [content], () => "book",
         (before, after) => inputSignature({ entries: before.entries, pageCount: before.pageCount }) === inputSignature({ entries: after.entries, pageCount: after.pageCount }))
       const version = storage.putNodeData("toc-generation", "book", stamped)

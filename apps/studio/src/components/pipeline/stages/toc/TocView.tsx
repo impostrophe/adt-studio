@@ -157,6 +157,7 @@ export function TocView({ bookLabel }: { bookLabel: string }) {
     queryClient.setQueryData(["books", bookLabel, "toc"], latest)
     return { value: latest, version: latest.version ?? 0 }
   }, rebaseTocDraft)
+  const ambiguousDocument = !!data && (data.entries.some((entry) => !entry.id) || new Set(data.entries.map((entry) => entry.id)).size !== data.entries.length)
   const { pending, setPending } = draft
   const wholeDocumentConflict = draft.conflict?.paths.includes("/entries") ?? false
   const [restoring, setRestoring] = useState(false);
@@ -345,9 +346,10 @@ export function TocView({ bookLabel }: { bookLabel: string }) {
         />
       }
     >
+      {ambiguousDocument && <p role="alert" className="m-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{t`This table of contents has conflicting chapter identities. Restore an earlier version before editing.`}</p>}
       <DraftConflict error={draft.error} paths={draft.conflict?.paths} onResolve={draft.resolve} wholeDocument={wholeDocumentConflict} />
 
-      <fieldset disabled={saving || restoring || wholeDocumentConflict} className="flex min-w-0 flex-1 flex-col overflow-y-auto border-0 p-0">
+      <fieldset disabled={saving || restoring || wholeDocumentConflict || ambiguousDocument} className="flex min-w-0 flex-1 flex-col overflow-y-auto border-0 p-0">
         <TocHintBanner />
         {data && data.source !== "ai" && (
           <div className="flex items-center px-4 pt-3">

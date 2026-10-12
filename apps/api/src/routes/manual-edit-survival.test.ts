@@ -783,3 +783,53 @@ it.each(["unknown", "conflicting"])("F1: %s rendered ownership stays inspectable
   expect((await json("debug/versions/web-rendering/pg001?includeData=true")).versions).toHaveLength(2)
   expect((await app.request(`/books/${label}/adt-preview/pg002_sec001.html`)).status).toBe(200)
 })
+
+it("F4: exact combined consent refuses a separate SQLite writer instead of refreshing to their new TOC", async () => {
+  const seed = book()
+  for (const id of ["pg001", "pg002", "pg003"]) {
+    seed.putNodeData("page-sectioning", id, { source: "manual", reasoning: "Protected", sections: [section(id, "Protected text")] })
+  }
+  const originalToc = read("toc-generation")!.data
+  seed.putNodeData("toc-generation", "book", { ...originalToc, source: "manual" })
+  for (const stage of PIPELINE.filter((s) => s.name === "extract")) for (const step of stage.steps) seed.markStepCompleted(step.name)
+  seed.putNodeData("book-outline", "book", { entries: [], styleClusters: [], reasoning: "fixture" })
+  seed.close()
+  const originalPage = read("page-sectioning", "pg001")
+  const status = await json("step-status")
+  fs.appendFileSync(configPath, "concurrency: 1\n")
+  let release!: () => void
+  sectionPage.mockImplementation(async ({pageId}: {pageId: string}) => {
+    if (pageId === "pg001") await new Promise<void>(resolve => { release = resolve })
+    return { reasoning: "New", sections: [section(pageId, "Generated")] }
+  })
+  const running = run("sectioning", { toStage: "toc", replaceManual: true, protectedReplacements: status.protectedWork.map(({node,itemId,version}: {node:string,itemId:string,version:number}) => ({node,itemId,version})) })
+  await vi.waitFor(() => expect(release).toBeDefined())
+  const external = book()
+  const changed = { ...originalToc, source: "manual", entries: [{ ...originalToc.entries[0], title: "Independent writer's chapter" }] }
+  const version = external.putNodeData("toc-generation", "book", changed)
+  external.close()
+  release()
+  const result = await running
+  expect(result.status).toBe("failed")
+  expect(generateToc).not.toHaveBeenCalled()
+  expect(read("toc-generation")).toMatchObject({ version, data: changed })
+  expect(read("page-sectioning", "pg001")).toEqual(originalPage)
+  expect((await json("debug/versions/toc-generation/book?includeData=true")).versions).toHaveLength(3)
+})
+
+it("rejects ambiguous TOC edits without losing raw chapters and permits recovery by restoring distinct identities", async () => {
+  const original = await json("toc")
+  const db = book()
+  const entries = [{ ...original.entries[0], title: "Chapter A" }, { ...original.entries[0], title: "Chapter B", sectionId: "pg002_sec001", href: "pg002_sec001.html" }]
+  db.putNodeData("toc-generation", "book", { ...original, entries })
+  db.close()
+  const previous = await json("toc")
+  expect(previous.entries).toEqual(entries)
+  expect((await send("toc", { ...previous, baseVersion: 2, entries: [entries[0]] })).status).toBe(409)
+  expect((await json("toc")).entries).toEqual(entries)
+  expect((await send("versions/toc-generation/book/restore", { version: 1, baseVersion: 2 }, "POST")).status).toBe(200)
+  expect((await send("toc", { ...original, baseVersion: 1, entries })).status).toBe(400)
+  expect((await send("toc", { ...original, baseVersion: 1, entries: [{ ...original.entries[0], title: "Recovered chapter" }] })).status).toBe(200)
+  expect((await json("toc")).entries[0].title).toBe("Recovered chapter")
+  expect((await json("debug/versions/toc-generation/book?includeData=true")).versions).toHaveLength(3)
+})
