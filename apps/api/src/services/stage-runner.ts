@@ -3,7 +3,7 @@ import { outputSkipped } from "@adt/pipeline"
 import { retainedCoreTts, retainedEasyRead } from "@adt/pipeline"
 import { outputIdentityKey } from "@adt/pipeline"
 import { createHash } from "node:crypto"
-import { speechPageId, reconcileSpeechInputs, translateCatalog, inputSignature, reconcileTextCatalog, readOutputCatalog, buildImageInventory, selectedForGeneration, outputEvidence, assertOutputPublication, timestampInputSignature } from "@adt/pipeline"
+import { speechPageId, reconcileSpeechInputs, translateCatalog, inputSignature, reconcileTextCatalog, readOutputCatalog, buildImageInventory, selectedForGeneration, outputEvidence, assertOutputPublication, timestampInputSignature, deriveOutputStatus } from "@adt/pipeline"
 import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
@@ -791,7 +791,15 @@ async function generateSpeechWordTimestamps(
       const status = options.statuses?.find((output) => output.identity.kind === "timestamps" && output.identity.id === entry.textId && output.identity.language === language && output.identity.voiceSlot === (entry.voiceSlot ?? "primary"))
       const prior = entriesByLanguage.get(language)?.[voiceSlotEntryId(entry.textId, entry.voiceSlot)]
       if (!status) return true
-      const effective = { ...status, signature: timestampInputSignature(entry.audioHash ?? entry.fileName, language, textByLanguage.get(language)?.get(entry.textId) ?? "") }
+      // Synthesis may have changed the audio since the initial projection.
+      // Re-derive eligibility as well as the signature against the proposed pair.
+      const effective = { ...status, ...deriveOutputStatus({
+        identity: status.identity,
+        signature: timestampInputSignature(entry.audioHash ?? entry.fileName, language, textByLanguage.get(language)?.get(entry.textId) ?? ""),
+        content: prior ? { words: prior.words, duration: prior.duration } : undefined,
+        metadata: prior, usable: !!prior && prior.audioHash === entry.audioHash,
+        excluded: status.excluded,
+      }), pageIds: status.pageIds, sectionIds: status.sectionIds, group: status.group }
       return selectedForGeneration(effective, prior, options.scope)
     }).map((entry) => ({
       language,

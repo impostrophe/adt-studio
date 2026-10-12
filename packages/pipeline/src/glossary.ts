@@ -3,6 +3,7 @@ import type { AppConfig, GlossaryItem, GlossaryOutput } from "@adt/types"
 import {
   glossaryLLMSchema,
   WebRenderingOutput,
+  GlossaryOutput as GlossaryOutputSchema,
   DEFAULT_LLM_MAX_RETRIES,
 } from "@adt/types"
 import type { LLMModel } from "@adt/llm"
@@ -100,7 +101,7 @@ export function mergeGeneratedGlossaryWithManualItems(
       mergedItems[existingIndex] = {
         ...generatedItem,
         ...manualItem,
-        id: getGlossaryItemTextId(generatedItem, existingIndex),
+        id: manualItem.id ?? generatedItem.id,
         source: "manual",
       }
       continue
@@ -145,9 +146,8 @@ function uniqueGlossaryWordIndexes(items: GlossaryItem[]): Map<string, number> {
   return indexes
 }
 
-/** Carry media from unchanged terms into a regenerated glossary. Images live
- * on the glossary entity; videos remain in the reusable video pool and are
- * remapped because positional `glNNN` ids can shift when terms are reordered. */
+/** Carry media from unchanged terms. Stable term IDs retain video assignments;
+ * removed or ambiguous terms lose only their active assignment. */
 function preserveGlossaryMedia(
   regenerated: GlossaryOutput,
   existingItems: GlossaryItem[],
@@ -353,12 +353,37 @@ export async function regenerateGlossaryPreservingEdits(
   options: Omit<GenerateGlossaryOptions, "excludedWords">
 ): Promise<GlossaryOutput> {
   const existingRow = options.storage.getLatestNodeData("glossary", "book")
-  const existingItems = (existingRow?.data as GlossaryOutput | undefined)?.items ?? []
+  const existingItems = ((existingRow?.data as GlossaryOutput | undefined)?.items ?? [])
+    .map((item, index) => ({ ...item, id: getGlossaryItemTextId(item, index) }))
   const generated = await generateGlossary({
     ...options,
     excludedWords: getPrunedGlossaryWords(existingItems),
   })
-  const regenerated = mergeGeneratedGlossaryWithManualItems(generated, existingItems)
+  const merged = mergeGeneratedGlossaryWithManualItems(generated, existingItems)
+  // Legacy positional IDs are materialized before merging. Reserve every ID in
+  // history so deleting a term or restoring an old version cannot reassign its
+  // translations, recordings or corrections to a different term.
+  const reserved = new Set(existingItems.map((item) => item.id))
+  for (const row of options.storage.getAllNodeVersions("glossary", "book")) {
+    const historical = GlossaryOutputSchema.safeParse(row.data)
+    if (historical.success) historical.data.items.forEach((item, index) => reserved.add(getGlossaryItemTextId(item, index)))
+  }
+  for (const item of merged.items) if (item.id) reserved.add(item.id)
+  let next = 1
+  const existingByWord = uniqueGlossaryWordIndexes(existingItems)
+  const generatedByWord = uniqueGlossaryWordIndexes(merged.items)
+  const assigned = new Set<string>()
+  const regenerated = { ...merged, items: merged.items.map((item, index) => {
+    const word = normalizeGlossaryWord(item.word)
+    const previousIndex = generatedByWord.get(word) === index ? existingByWord.get(word) : undefined
+    let id = previousIndex === undefined ? item.id : existingItems[previousIndex].id
+    if (!id || assigned.has(id)) {
+      do { id = `gl${String(next++).padStart(3, "0")}` } while (reserved.has(id))
+      reserved.add(id)
+    }
+    assigned.add(id)
+    return { ...item, id }
+  }) }
 
   return preserveGlossaryMedia(regenerated, existingItems, options.storage)
 }
