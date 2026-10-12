@@ -242,11 +242,12 @@ metadata and the original AC checklist below remain pending.
   created by that same run's committed section retirement. It cannot follow an
   external version. A mismatching confirmation fails explicitly instead of
   reporting successful replacement after skipping generation.
-- **TOC output projection (AC-17):** pruning or retiring a destination does not
-  authorize rewriting the protected document. Preview and web export retain its
+- **TOC output projection (AC-17):** when a stored or restored TOC refers to an
+  unavailable destination, preview and web export retain its
   titles/hierarchy as unlinked headings until the actual destination is restored;
   they never reuse the stored URL to point at unavailable content. An explicitly
-  empty saved TOC stays empty. Webpub uses its standard HTML contents fallback
+  empty saved TOC stays empty. Successful source retirement still removes active
+  references under AC-14; this projection does not change that publication rule. Webpub uses its standard HTML contents fallback
   when unlinked headings cannot be represented by manifest Link Objects. This
   does not extend AC-17 to EPUB/PNLD's separate navigation conversion policies.
 - **Retained fixed-layout output:** preserve positioned tree and HTML together

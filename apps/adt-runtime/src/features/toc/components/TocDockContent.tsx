@@ -80,10 +80,10 @@ function TocList({
 }) {
   return (
     <ul className="py-1">
-      {entries.map((entry) => {
+      {entries.map((entry, index) => {
         const active = entry.section_id === currentSectionId;
         return (
-          <li key={entry.section_id}>
+          <li key={`${entry.section_id}:${index}`}>
             <button
               type="button"
               title={entry.title}

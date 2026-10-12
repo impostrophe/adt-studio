@@ -43,3 +43,23 @@ describe("TOC unavailable destinations", () => {
     expect(navigateToPage).toHaveBeenCalledWith("current.html")
   })
 })
+
+it("does not duplicate or change authored headings when repeated targets are filtered", () => {
+  getDefaultStore().set(tocAtom, [
+    { section_id: "", href: "", title: "Parent A", chapter_id: "", level: 1 },
+    { section_id: "", href: "", title: "Parent B", chapter_id: "", level: 1 },
+    { section_id: "same", href: "same.html", title: "Chapter C", chapter_id: "", level: 1 },
+    { section_id: "same", href: "same.html", title: "Child D", chapter_id: "", level: 2 },
+  ])
+  render(<TocContent />)
+  const search = screen.getByRole("textbox")
+  fireEvent.change(search, { target: { value: "Child D" } })
+  expect(screen.queryByRole("button", { name: "Parent A" })).toBeNull()
+  expect(screen.queryByRole("button", { name: "Parent B" })).toBeNull()
+  expect(screen.queryByRole("button", { name: "Chapter C" })).toBeNull()
+  expect(screen.getAllByRole("button", { name: "Child D" })).toHaveLength(1)
+  fireEvent.change(search, { target: { value: "" } })
+  for (const title of ["Parent A", "Parent B", "Chapter C", "Child D"]) {
+    expect(screen.getAllByRole("button", { name: title })).toHaveLength(1)
+  }
+})
