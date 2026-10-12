@@ -8,12 +8,12 @@ issues: ["#618"]
 prs: []
 adr: ""
 created: 2026-09-22
-updated: 2026-09-26
+updated: 2026-10-12
 ---
 
-## Implementation scope (2026-09-25)
+## Implementation scope (2026-10-12)
 
-Phase A is implemented in this PR under the owner's explicit sequencing override; approval remains pending. The combined specification and implementation remain work in progress. [Acceptance evidence](SPEC-0009-implementation-evidence.md) records the implementation, tests and limits. Phase B remains unavailable because the common renderer does not yet establish all admission, freshness, protection and publication guarantees below. This is not full delivery of #618. `status: in-review`, `approvers: []` and the unapproved acceptance checklist are retained; `prs` stays empty until implementation lands.
+Phases A and B are implemented in this PR under the owner's explicit sequencing override; human specification and implementation review remain pending. The [full continuation evidence](../verification/spec-0009-full-continuation.md) and [independent review](../verification/spec-0009-independent-review-2026-10-12.md) distinguish functional acceptance from platform/release verification limits. The original [Phase A evidence](SPEC-0009-implementation-evidence.md) remains a historical record. `status: in-review`, `approvers: []` and the unapproved acceptance checklist are retained; `prs` stays empty until implementation lands. This does not approve the specification or close #618.
 
 ## Decision under review
 
@@ -23,9 +23,9 @@ SPEC-0009 extends the eight reserved entries in [PR #878's index](https://github
 
 ### Coordination with existing specs
 
-[PR #879 / SPEC-0001](https://github.com/unicef/adt-studio/pull/879) and [PR #880 / SPEC-0002](https://github.com/unicef/adt-studio/pull/880) are still proposals. References below describe required interfaces and safety properties, not approval or implementation of those PRs. This spec does not publish or depend on unpublished local revisions of them.
+The shared implementation stack through [SPEC-0013 / PR #889](https://github.com/unicef/adt-studio/pull/889), published at `c4ed8222088261f5a3d5663095d1bf743a896858`, supplies the common freshness, preservation, mode lifecycle, prompt capture, synchronization, retry and recovery contracts. Readiness was checked against published source, all 18 dependency criteria, independent review and exact-head hosted CI; approval/merge is still separate.
 
-Direct rerender requires expected-version checks, explicit replacement of protected rendering and failure-safe publication. These capabilities are not all supplied by the current preservation draft, which excludes Storyboard full-rerun preservation and broader replacement UI. They are Phase B prerequisites, not delivered dependencies.
+Phase B extends the common targeted renderer and task service with Validation admission, durable request receipts and guarded cache/output publication. Synchronized generated content can have a valid finding, so this admission does not require artificial synchronization drift. Manual/unknown-origin output, custom activities, positioned layout, historical findings and unproven targets retain navigation with an explanation. No separate Validation renderer or retry subsystem is introduced. See the evidence document for exact dependency heads and verification limits.
 
 ## Problem (with evidence)
 
