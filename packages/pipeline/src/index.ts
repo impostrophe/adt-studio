@@ -502,4 +502,4 @@ export { extractionOptionsFromConfig, prepareExtractionAdmission, assertSafeExtr
 
 export { protectedAuthoredRecords, assertAuthoredReplacement, replacementConfirmed, selectSectioningPages, resetSectioningStoryboard, AuthoredReplacementError } from "./authored-output.js"
 
-export { storyboardCoverage } from "./storyboard-coverage.js"
+export { storyboardCoverage, missingStoryboardInputMessage } from "./storyboard-coverage.js"

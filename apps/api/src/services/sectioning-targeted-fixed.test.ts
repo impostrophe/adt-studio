@@ -48,7 +48,10 @@ beforeEach(async () => {
   const s = store()
   try {
     await extractPDF({ pdfPath: path.join(repository, "tests/fixtures/raven.pdf"), startPage: 1, endPage: 2, fixedLayout: true }, s, { emit() {} })
-    for (const n of [1, 2]) s.putNodeData("page-sectioning", `pg00${n}`, semantic(n))
+    for (const n of [1, 2]) {
+      s.putNodeData("page-sectioning", `pg00${n}`, semantic(n))
+      s.putNodeData("image-filtering", `pg00${n}`, { images: s.getPageImages(`pg00${n}`).map((image) => ({ imageId: image.imageId, isPruned: image.imageId.endsWith("_page") })) })
+    }
   } finally { s.close() }
   writeSectioningLifecycle(dir, "page", true)
   await createStageRunner().run(label, { booksDir: root, configPath, promptsDir: path.join(repository, "prompts"), credentials: {}, fromStage: "storyboard", toStage: "storyboard" }, { emit() {} })

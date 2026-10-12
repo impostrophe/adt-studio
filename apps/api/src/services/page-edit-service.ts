@@ -1,7 +1,7 @@
 import { withBookWriter, resolveBookPaths } from "@adt/storage"
 import {
   resolveRenderedSection, createStoryboardPublication, FIXED_LAYOUT_SECTIONING_NODE, SectioningSafetyError,
-  isFixedLayoutBook, processFixedLayoutPages,
+  isFixedLayoutBook, processFixedLayoutPages, missingStoryboardInputMessage,
 } from "@adt/pipeline"
 import crypto from "node:crypto"
 import path from "node:path"
@@ -74,18 +74,31 @@ export async function reRenderPages(options: ReRenderOptions[]): Promise<ReRende
           throw new SectioningSafetyError("STORYBOARD_INPUT_CHANGED", "Fixed-layout rendering uses extracted positioned content and cannot apply an LLM prompt. Existing output is kept.")
         }
         const pageIds = options.map((item) => item.pageId)
-        processFixedLayoutPages(publication.storage, `/api/books/${label}/images`, pageIds, { onPage: (id) => publication.publishPage(id) })
-        publication.publish(pageIds)
+        const unavailable: string[] = []
+        processFixedLayoutPages(publication.storage, `/api/books/${label}/images`, pageIds, {
+          onPage: (id) => publication.publishPage(id),
+          onUnavailable: (id) => unavailable.push(id),
+        })
+        publication.publish()
+        if (unavailable.length) throw new SectioningSafetyError("STORYBOARD_PAGE_INPUT_MISSING", missingStoryboardInputMessage(unavailable))
         return pageIds.map((pageId) => {
           const row = storage.getLatestNodeData("web-rendering", pageId)!
           return { version: row.version, rendering: row.data }
         })
       }
+      const unavailable: string[] = []
       for (const item of options) {
-        await reRenderAdmittedPage(item, publication)
-        publication.publishPage(item.pageId)
+        try {
+          await reRenderAdmittedPage(item, publication)
+          publication.publishPage(item.pageId)
+        } catch (error) {
+          if (!(error instanceof SectioningSafetyError) || error.code !== "STORYBOARD_PAGE_INPUT_MISSING") throw error
+          publication.discardPage(item.pageId)
+          unavailable.push(item.pageId)
+        }
       }
-      publication.publish(options.map((item) => item.pageId))
+      publication.publish()
+      if (unavailable.length) throw new SectioningSafetyError("STORYBOARD_PAGE_INPUT_MISSING", missingStoryboardInputMessage(unavailable))
       return options.map((item) => {
         const row = storage.getLatestNodeData("web-rendering", item.pageId)!
         return { version: row.version, rendering: row.data }
@@ -108,17 +121,12 @@ async function reRenderAdmittedPage(
     if (sectionIndex !== undefined && storage.getLatestNodeData(FIXED_LAYOUT_SECTIONING_NODE, pageId)?.data != null) {
       throw new SectioningSafetyError("STORYBOARD_INPUT_CHANGED", "A positioned page must be re-rendered as a whole before re-rendering a semantic section. Existing output is kept.")
     }
-    const structuringRow = storage.getLatestNodeData("page-sectioning", pageId)
-
-    if (!structuringRow) {
-      throw new Error(
-        "Page must have page-sectioning data before re-rendering"
-      )
-    }
-
-    const structuringParsed = PageSectioningOutput.safeParse(structuringRow.data)
+    let structuringRow
+    try { structuringRow = storage.getLatestNodeData("page-sectioning", pageId) }
+    catch (error) { if (!(error instanceof SyntaxError)) throw error }
+    const structuringParsed = PageSectioningOutput.safeParse(structuringRow?.data)
     if (!structuringParsed.success) {
-      throw new Error("Invalid page-sectioning data")
+      throw new SectioningSafetyError("STORYBOARD_PAGE_INPUT_MISSING", missingStoryboardInputMessage([pageId]))
     }
     const sectioning = structuringParsed.data
 

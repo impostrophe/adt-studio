@@ -88,7 +88,7 @@ describe("page-edit-service", () => {
           apiKey: "test-key",
         })
       ).rejects.toThrow(
-        "Page must have page-sectioning data before re-rendering"
+        "STORYBOARD_PAGE_INPUT_MISSING"
       )
     })
 

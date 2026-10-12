@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
-  state: { effectiveMode: "dynamic", hasOutput: true, stale: true },
+  state: { effectiveMode: "dynamic", hasOutput: true, preferenceChanged: true },
   running: false,
   getState: vi.fn(), update: vi.fn(),
 }))
@@ -44,7 +44,7 @@ async function select() {
 }
 beforeEach(() => {
   mocks.running = false
-  mocks.state = { effectiveMode: "dynamic", hasOutput: true, stale: true }
+  mocks.state = { effectiveMode: "dynamic", hasOutput: true, preferenceChanged: true }
   mocks.getState.mockImplementation(async () => ({ ...mocks.state }))
   mocks.update.mockImplementation(async () => { mocks.state.effectiveMode = "page"; return { config: { page_sectioning: { mode: "page" } } } })
 })
@@ -61,9 +61,9 @@ describe("Sectioning mode confirmation", () => {
     expect(screen.queryByRole("dialog")).toBeNull()
     expect(mocks.update).not.toHaveBeenCalled()
   })
-  it("confirms retained stale output and cancels without a mutation", async () => {
+  it("explains the preference change and cancels without a mutation", async () => {
     mount(); await select()
-    expect(screen.getByText(/Saved versions are kept/)).toBeTruthy()
+    expect(screen.getByText(/Saved content and Storyboard stay available/)).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
     expect(mocks.update).not.toHaveBeenCalled()
     expect(screen.getByTestId("persisted").textContent).toBe("dynamic")

@@ -1,3 +1,4 @@
+import { storyboardPackageComplete } from "../services/storyboard-package-coverage.js"
 import fs from "node:fs"
 import path from "node:path"
 import { Hono } from "hono"
@@ -408,10 +409,12 @@ export function createStageRoutes(
     }
 
     let coverage: ReturnType<typeof storyboardCoverage> | undefined
+    let packagedComplete = false
     if (fs.existsSync(dbPath)) {
       const storage = createBookStorage(safeLabel, booksDir)
       try {
         coverage = storyboardCoverage(storage, activeSectioningPages(storage, loadBookConfig(safeLabel, booksDir, configPath), path.dirname(dbPath)).map((page) => page.pageId))
+        packagedComplete = storyboardPackageComplete(storage, path.dirname(dbPath), activeSectioningPages(storage, loadBookConfig(safeLabel, booksDir, configPath), path.dirname(dbPath)).map((page) => page.pageId))
         if (!coverage.complete && ["done", "skipped"].includes(steps["web-rendering"])) steps["web-rendering"] = "idle"
       } finally { storage.close() }
     }
@@ -442,8 +445,7 @@ export function createStageRoutes(
     }
 
     // Check if ADT is packaged (preview stage)
-    const adtDir = path.join(resolvedDir, safeLabel, "adt")
-    if (fs.existsSync(adtDir) && coverage?.complete && coverage.rendered > 0) stages.preview = "done"
+    if (packagedComplete) stages.preview = "done"
 
     const hasStepErrors = Object.keys(stepErrors).length > 0
     const hasStepMessages = Object.keys(stepMessages).length > 0

@@ -9,6 +9,7 @@ import { storyboardCoverage, getRenderSectioning, loadBookConfig } from "@adt/pi
 import { createBookRoutes } from "../routes/books.js"
 import { createStageRoutes } from "../routes/stages.js"
 import { createPageRoutes } from "../routes/pages.js"
+import { createPackageRoutes } from "../routes/package.js"
 import { createAdtPreviewRoutes } from "../routes/adt-preview.js"
 import { prepareExport } from "./export-service.js"
 import { errorHandler } from "../middleware/error-handler.js"
@@ -59,6 +60,8 @@ beforeEach(() => {
     const id = `p${n}`
     s.putExtractedPage({ pageId: id, pageNumber: n, text: "Source", images: [], pageImage: { imageId: `${id}_page`, buffer: Buffer.from("retained pixels"), format: "png", hash: "pixels", width: 4, height: 6 } })
     s.putNodeData("page-sectioning", id, tree(id, 2, n === 2 ? "manual" : undefined))
+    s.putNodeData("positioned-text", id, { drawItems: [], pageWidth: 4, pageHeight: 6, renderWidth: 8, renderHeight: 12 })
+    s.putNodeData("image-filtering", id, { images: [] })
     s.putNodeData("web-rendering", id, { sections: [{ sectionIndex: 0, sectionType: "text_only", reasoning: "old", sectionId: `${id}_sec001`, html: `<section data-section-id="${id}_sec001">Retained HTML</section>` }] })
   }
   s.putNodeData("book-outline", "book", { entries: [], styleClusters: [], reasoning: "fixture" })
@@ -73,6 +76,7 @@ beforeEach(() => {
   service = createStageService(createStageRunner(), bus, decisions)
   app = new Hono().onError(errorHandler)
     .route("/", createBookRoutes(root, undefined, configPath))
+    .route("/", createPackageRoutes(root, path.resolve("assets/adt"), configPath))
     .route("/", createStageRoutes(service, bus, decisions, root, root, undefined, configPath))
     .route("/", createPageRoutes(root, root, undefined, configPath))
     .route("/", createAdtPreviewRoutes(root, path.resolve("assets/adt"), configPath, path.resolve("prompts")))
@@ -81,14 +85,15 @@ afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
 
 // Original AC-18/19 mode gates and retained-current HTML were superseded by
 // the authorized October review. These cases exercise their revised outcomes.
-it.each(["reflowable", "fixed", "reflowable-part", "fixed-part"])("mode preference, missing-only run, explicit reset and publication through HTTP: %s", async (layout) => {
+it.each(["reflowable", "fixed", "reflowable-part", "fixed-part"].flatMap((layout) => ["page", "dynamic"].map((mode) => ({ layout, mode }))))("mode preference, missing-only run, explicit reset and publication through HTTP: $layout → $mode", async ({ layout, mode }) => {
+  if (mode === "dynamic") { fs.writeFileSync(path.join(dir, "config.yaml"), "page_sectioning:\n  mode: page\n"); writeSectioningLifecycle(dir, "page", true) }
   if (layout.startsWith("fixed")) fs.appendFileSync(configPath, "default_render_strategy: fixed\nrender_strategies:\n  fixed:\n    render_type: fixed_layout\n")
   if (layout.endsWith("part")) fs.writeFileSync(path.join(dir, "part.json"), JSON.stringify({ adtPart: 1, sourceLabel: label, title: null,
     range: { startPage: 5, endPage: 10 }, pageCount: 100, fingerprint: {}, identityHash: "i", semanticsHash: "s", createdAt: "now", partLabelSuggestion: "part" }))
   const active = layout.endsWith("part") ? ["p7"] : ["p2", "p7"]
   const before = ["p2", "p7"].map((id) => [history("page-sectioning", id), history("web-rendering", id)])
   const pixels = fs.readFileSync(path.join(dir, "images/p7_page.png"))
-  expect((await send("config", { page_sectioning: { mode: "page" } }, "PUT")).status).toBe(200)
+  expect((await send("config", { page_sectioning: { mode } }, "PUT")).status).toBe(200)
   expect(["p2", "p7"].map((id) => [history("page-sectioning", id), history("web-rendering", id)])).toEqual(before)
   expect((await run({ toStage: "sectioning" })).status).toBe("completed")
   expect(sectionPage).not.toHaveBeenCalled()
@@ -205,4 +210,26 @@ it("partial section rendering stays usable but incomplete across page, library, 
   expect(preview.status).toBe(200)
   const exported = await prepareExport(label, "webpub", root, path.resolve("assets/adt"), configPath)
   expect(exported.warnings).toContainEqual({ kind: "missing-storyboard", pageId: "p2" })
+})
+
+it("newly completed source output cannot complete an older partial package", async () => {
+  expect((await run({ fromStage: "storyboard" })).status).toBe("completed")
+  const adt = path.join(dir, "adt")
+  fs.mkdirSync(path.join(adt, "content"), { recursive: true })
+  const entries = ["p2_sec001", "p2_sec002", "p7_sec001", "p7_sec002"].map((id) => ({ section_id: id, href: `${id}.html` }))
+  for (const entry of entries) fs.writeFileSync(path.join(adt, entry.href), "<p>Retained output</p>")
+  const manifest = path.join(adt, "content", "pages.json")
+  fs.writeFileSync(manifest, JSON.stringify(entries.slice(0, 2)))
+  const status = await (await app.request(`/books/${label}/package-adt/status`)).json()
+  expect(status).toMatchObject({ hasAdt: true, complete: false })
+  expect((await (await app.request(`/books/${label}/step-status`)).json()).stages.preview).not.toBe("done")
+  const books = await (await app.request("/books")).json()
+  expect(books[0].completedStages).not.toContain("preview")
+  // Retained complete membership is usable even without a new build hash;
+  // this is coverage, not an extra lifecycle/freshness gate.
+  fs.writeFileSync(manifest, JSON.stringify(entries))
+  expect(await (await app.request(`/books/${label}/package-adt/status`)).json()).toMatchObject({ hasAdt: true, complete: true })
+  expect((await (await app.request(`/books/${label}/step-status`)).json()).stages.preview).toBe("done")
+  fs.unlinkSync(path.join(adt, entries[3].href))
+  expect(await (await app.request(`/books/${label}/package-adt/status`)).json()).toMatchObject({ hasAdt: true, complete: false })
 })

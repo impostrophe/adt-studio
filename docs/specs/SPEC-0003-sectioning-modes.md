@@ -209,3 +209,7 @@ reviews and exact integrated heads, builds its own map and adversarial probes,
 then rechecks fixes at frozen heads. Preserve PR title/body; publish only to #884,
 verify exact-head hosted CI and request @elasticsounds review in a comment. Do not
 merge or close source issues. ADR 025 and spec approval remain pending.
+
+### Fixed-layout input qualification (review F7)
+
+A fixed-layout rerender requires valid current `positioned-text` and `image-filtering` results for each page, with positive finite viewport dimensions. Missing, SQL/JSON-null or unreadable extraction input is not an explicitly empty page. Report it per page and retain that page's previous output; other ordinary-run pages may publish. An actual layout switch still requires every active page. A validated empty positioned result and empty image classification can represent a truly blank source page. Legacy books with missing fixed inputs remain readable through their safely owned retained output; rebuilding those pages requires restoration of valid input or the extraction repair owned by SPEC-0010. Do not synthesize a blank success or recommend the deliberately unavailable existing-book Extract rerun.

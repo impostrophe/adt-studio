@@ -46,6 +46,8 @@ beforeEach(() => {
         pageImage: { imageId: `p${n}_page`, buffer: Buffer.from("retained image"), hash: "test", width: 4, height: 6, format: "png" },
       })
       s.putNodeData("page-sectioning", `p${n}`, semantic(n))
+      s.putNodeData("positioned-text", `p${n}`, { drawItems: [], pageWidth: n === 7 ? 8 : 4, pageHeight: 6, renderWidth: 8, renderHeight: 12 })
+      s.putNodeData("image-filtering", `p${n}`, { images: [] })
     }
   } finally { s.close() }
   writeSectioningLifecycle(path.join(root, label), "page", true)
@@ -206,7 +208,7 @@ describe("Storyboard layout publication", () => {
     const old = ["p2", "p7"].map((id) => before.getAllNodeVersions("web-rendering", id))
     before.close()
     const db = openBookDb(path.join(root, label, `${label}.db`))
-    db.run("DELETE FROM images WHERE page_id = ?", ["p7"])
+    db.run("UPDATE node_data SET data = NULL WHERE node = 'positioned-text' AND item_id = ?", ["p7"])
     db.close()
     fs.writeFileSync(configPath, config + fixedConfig)
     await expect(run()).rejects.toThrow(/every active page/)
@@ -271,4 +273,58 @@ describe("Storyboard layout publication", () => {
     try { expect(after.getAllNodeVersions("page-sectioning", "p2")).toEqual(history) }
     finally { after.close() }
   })
+})
+
+it("bounds aggregate missing-input diagnostics while reporting every unavailable page", async () => {
+  const s = store()
+  for (let n = 20; n < 45; n++) {
+    s.putExtractedPage({ pageId: `missing${n}`, pageNumber: n, text: "source", images: [], pageImage: { imageId: `missing${n}_page`, buffer: Buffer.from("unreadable"), hash: "fixture", format: "png", width: 0, height: 0 } })
+  }
+  s.close()
+  const events: Array<{ type: string; message?: string; error?: string }> = []
+  await expect(createStageRunner().run(label, options(), { emit(event) { events.push(event) } })).rejects.toThrow("STORYBOARD_PAGE_INPUT_MISSING")
+  const aggregate = events.find((e) => e.type === "step-error" && e.error?.includes("STORYBOARD_PAGE_INPUT_MISSING"))?.error
+  expect(aggregate).toContain("total=25")
+  expect(aggregate).toContain("missing20")
+  expect(aggregate).toContain("missing39")
+  expect(aggregate).not.toContain("missing40")
+  expect(events.filter((e) => e.type === "step-progress" && e.message?.startsWith("STORYBOARD_PAGE_INPUT_MISSING:"))).toHaveLength(25)
+  const reopened = store()
+  try { expect(reopened.getLatestNodeData("web-rendering", "p2")?.data).toBeTruthy() }
+  finally { reopened.close() }
+})
+
+it.each(["positioned-text", "image-filtering"])("missing %s keeps old fixed output while another page publishes", async (node) => {
+  await run()
+  const s = store()
+  const previous = s.getLatestNodeData("web-rendering", "p2")!
+  s.putNodeData("web-rendering", "p2", { ...(previous.data as object), sections: [{ ...(previous.data as { sections: object[] }).sections[0], html: `<section data-section-id="${(previous.data as { sections: Array<{ sectionId: string }> }).sections[0].sectionId}"><p>Retained authored content</p></section>` }] })
+  const before = s.getLatestNodeData("web-rendering", "p2")
+  const tree = s.getLatestNodeData("fixed-layout-sectioning", "p2")
+  const neighborVersion = s.getSelectedNodeVersion("web-rendering", "p7")!
+  s.putNodeData(node, "p2", null)
+  s.close()
+  const image = fs.readFileSync(path.join(root, label, "images", "p2_page.png"))
+  await expect(run()).rejects.toThrow("STORYBOARD_PAGE_INPUT_MISSING")
+  const after = store()
+  try {
+    expect(after.getLatestNodeData("web-rendering", "p2")).toEqual(before)
+    expect(after.getLatestNodeData("fixed-layout-sectioning", "p2")).toEqual(tree)
+    expect(after.getSelectedNodeVersion("web-rendering", "p7")).toBe(neighborVersion + 1)
+  } finally { after.close() }
+  expect(fs.readFileSync(path.join(root, label, "images", "p2_page.png"))).toEqual(image)
+})
+
+it("a reflowable-to-fixed switch cannot replace readable output with absent extraction", async () => {
+  const s = store()
+  for (const n of [2, 7]) s.putNodeData("web-rendering", `p${n}`, { sections: [{ sectionIndex: 0, sectionId: `p${n}_sec009`, sectionType: "text", reasoning: "retained", html: `<section data-section-id="p${n}_sec009">Retained</section>` }] })
+  const before = [2, 7].map((n) => s.getAllNodeVersions("web-rendering", `p${n}`))
+  s.putNodeData("positioned-text", "p2", null)
+  s.close()
+  await expect(run()).rejects.toThrow("STORYBOARD_PUBLICATION_INCOMPLETE")
+  const after = store()
+  try {
+    expect([2, 7].map((n) => after.getAllNodeVersions("web-rendering", `p${n}`))).toEqual(before)
+    expect(after.getLatestNodeData("fixed-layout-sectioning", "p7")).toBeNull()
+  } finally { after.close() }
 })

@@ -10,7 +10,9 @@ export function sectioningErrorMessage(error?: string, code?: string): string | 
     case "STORYBOARD_INPUT_CHANGED": return i18n._(msg`Storyboard inputs changed or the requested scope is incompatible with this layout. Refresh the saved content and render the affected pages again.`)
     case "STORYBOARD_PUBLICATION_INCOMPLETE": return i18n._(msg`Changing layout requires every active page to render successfully. Run the whole Storyboard stage. Previous output is retained.`)
     case "STORYBOARD_PAGE_INPUT_MISSING": {
-      const pages = error?.split("STORYBOARD_PAGE_INPUT_MISSING:")[1]?.trim() ?? ""
+      const pages = error?.match(/STORYBOARD_PAGE_INPUT_MISSING:\s*([^;]*)/)?.[1]?.trim() ?? ""
+      const total = error?.match(/; total=(\d+)/)?.[1]
+      if (total) return i18n._(msg`Some pages have missing or unreadable input (${total} total; showing up to 20): ${pages}. Other runnable pages remain available.`)
       return i18n._(msg`Some pages have missing or unreadable input: ${pages}. Other runnable pages remain available.`)
     }
     case "SECTIONING_INPUT_UNREADABLE": return i18n._(msg`This page's saved Sectioning is unreadable. Restore a valid historical version before replacing it. History and media are retained.`)

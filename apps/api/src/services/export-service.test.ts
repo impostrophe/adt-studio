@@ -96,15 +96,14 @@ function createWebAssets(dir: string): void {
 }
 
 describe("exportProject", () => {
-  it("blocks rebuilding stale output while preserving project backup and existing assets", async () => {
+  it("allows usable output export after a generation preference change and preserves project backup", async () => {
     createTestDb("stale-export")
     addPagesAndRenderings("stale-export", 1)
     const dir = path.join(tmpDir, "stale-export")
     fs.mkdirSync(path.join(dir, "adt"))
     fs.writeFileSync(path.join(dir, "adt", "retained.txt"), "saved package")
     writeSectioningLifecycle(dir, "dynamic", false)
-    await expect(prepareExport("stale-export", "webpub", tmpDir, webAssetsDir)).rejects.toMatchObject({ code: "SECTIONING_STALE" })
-    expect(fs.readFileSync(path.join(dir, "adt", "retained.txt"), "utf8")).toBe("saved package")
+    await expect(prepareExport("stale-export", "webpub", tmpDir, webAssetsDir)).resolves.toEqual({ warnings: [] })
     await expect(prepareExport("stale-export", "project", tmpDir, "")).resolves.toEqual({ warnings: [] })
     const archive = await exportProject("stale-export", tmpDir)
     expect(unzipSync(await streamToBuffer(archive.stream))[".sectioning-lifecycle.json"]).toBeDefined()

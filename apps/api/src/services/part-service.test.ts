@@ -196,13 +196,13 @@ describe("previewMerge", () => {
 })
 
 describe("mergePart", () => {
-  it("revokes previously current Sectioning after importing a part-local tree", async () => {
+  it("keeps a part-local tree renderable without lifecycle initialization", async () => {
     makeBook("raven")
     addProcessedPage("raven", 1)
     writeSectioningLifecycle(path.join(tmpDir, "raven"), "dynamic", true)
     const zip = await buildCompletedPart("raven-p003-004", 3, 4)
     mergePart("raven", tmpDir, zip, {}, configPath)
-    expect(() => prepareSectioningRun("raven", tmpDir, "storyboard", "storyboard", configPath)).toThrow(/Sectioning has not completed/)
+    expect(() => prepareSectioningRun("raven", tmpDir, "storyboard", "storyboard", configPath)).not.toThrow()
     expect(readSectioningLifecycle(path.join(tmpDir, "raven"))?.sectioningReady).toBe(false)
   })
   it("copies per-page data, carries cache, and marks book-level steps stale", async () => {

@@ -1,3 +1,4 @@
+import { storyboardPackageComplete } from "../services/storyboard-package-coverage.js"
 import { storyboardCoverage, activeSectioningPages } from "@adt/pipeline"
 import fs from "node:fs"
 import path from "node:path"
@@ -15,7 +16,7 @@ import {
   mergeAccessibilityResults,
   isFixedLayoutBook,
   prepareSectioningRun,
-  
+
 } from "@adt/pipeline"
 import type { Storage } from "@adt/storage"
 import type { TaskService } from "../services/task-service.js"
@@ -282,7 +283,7 @@ export function createPackageRoutes(
       const storage = createBookStorage(safeLabel, booksDir)
       try {
         const coverage = storyboardCoverage(storage, activeSectioningPages(storage, loadBookConfig(safeLabel, booksDir, configPath), bookDir).map((page) => page.pageId))
-        status.complete = coverage.complete && coverage.rendered > 0
+        status.complete = storyboardPackageComplete(storage, bookDir, activeSectioningPages(storage, loadBookConfig(safeLabel, booksDir, configPath), bookDir).map((page) => page.pageId))
         status.hasAdt = status.hasAdt && coverage.rendered > 0
       }
       finally { storage.close() }

@@ -70,3 +70,10 @@ it("an incomplete successful attempt does not optimistically mark Storyboard com
   act(() => listeners.get("progress")!({ data: JSON.stringify({ type: "step-complete", step: "web-rendering", outputComplete: false }) }))
   expect(client.getQueryData(["books", "retained", "step-status"])).toMatchObject({ stages: { storyboard: "idle" }, steps: { "web-rendering": "idle" } })
 })
+
+it("maps a persisted run error after reconnect instead of exposing a raw contract code", async () => {
+  client.setQueryData(["books", "retained", "step-status"], { stages: {}, steps: {}, error: "SECTIONING_INPUT_UNREADABLE: saved page" })
+  const { result } = renderHook(() => useBookRunStatus("retained"), { wrapper })
+  expect(result.current.error).toContain("saved Sectioning is unreadable")
+  expect(result.current.error).not.toContain("SECTIONING_INPUT_UNREADABLE")
+})

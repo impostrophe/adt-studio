@@ -598,7 +598,7 @@ export function useBookRunStatus(label: string): BookRunContextValue {
           queryClient.invalidateQueries({ queryKey: bookTasksKey(label) })
         } else if (d.type === "task-error") {
           if (idx !== -1) {
-            tasks[idx] = { ...tasks[idx], status: "failed", error: d.error, completedAt: Date.now() }
+            tasks[idx] = { ...tasks[idx], status: "failed", error: sectioningErrorMessage(d.error), completedAt: Date.now() }
           }
         } else if (d.type === "task-progress") {
           if (idx !== -1) {
@@ -632,8 +632,9 @@ export function useBookRunStatus(label: string): BookRunContextValue {
             ?.tasks.find((t) => t.taskId === d.taskId)?.kind
         announceRef.current(taskCompleteMessage(kind))
       } else if (d.type === "task-error") {
+        const taskError = sectioningErrorMessage(d.error)
         announceRef.current(
-          d.error ? i18n._(msg`Task failed: ${d.error}`) : i18n._(msg`Task failed`),
+          taskError ? i18n._(msg`Task failed: ${taskError}`) : i18n._(msg`Task failed`),
           "assertive",
         )
       }
@@ -893,7 +894,7 @@ export function useBookRunStatus(label: string): BookRunContextValue {
     stepState: stepStateAccessor,
     stepProgress: stepProgressAccessor,
     stepError: stepErrorAccessor,
-    error: data?.error ?? null,
+    error: sectioningErrorMessage(data?.error ?? undefined) ?? null,
     isRunning,
     isCancelling,
     isStatusLoading: isPending,

@@ -767,7 +767,7 @@ describe("POST /books/:label/stages/run", () => {
       expect(verifyStorage.getLatestNodeData("web-rendering", "pg001")).not.toBeNull()
       const runs = new Map(verifyStorage.getStepRuns().map((r) => [r.step, r.status]))
       expect(runs.get("page-sectioning")).toBe("done")
-      expect(runs.get("web-rendering")).toBeUndefined()
+      expect(runs.get("web-rendering")).toBe("done")
     } finally {
       verifyStorage.close()
     }
@@ -1313,7 +1313,7 @@ describe("GET /books/:label/step-status", () => {
     expect(body.stages.extract).toBe("done")
   })
 
-  it("marks preview done when adt directory exists", async () => {
+  it("does not claim preview completion from an empty adt directory", async () => {
     createTestBook("preview-done")
     fs.mkdirSync(path.join(tmpDir, "preview-done", "adt"), { recursive: true })
 
@@ -1321,7 +1321,7 @@ describe("GET /books/:label/step-status", () => {
     const res = await app.request("/books/preview-done/step-status")
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.stages.preview).toBe("done")
+    expect(body.stages.preview).toBeUndefined()
   })
 
   it("returns 400 for invalid book labels", async () => {

@@ -9432,6 +9432,9 @@ msgstr "Një pjesë e përmbajtjes u la jashtë paketës: {0} seksione të paraq
 msgid "Some items could not be updated. The list has been refreshed; completed changes are kept."
 msgstr "Disa elemente nuk mund të përditësoheshin. Lista u rifreskua; ndryshimet e përfunduara ruhen."
 
+msgid "Some pages have missing or unreadable input ({total} total; showing up to 20): {pages}. Other runnable pages remain available."
+msgstr "Disa faqe kanë të dhëna hyrëse që mungojnë ose nuk lexohen ({total} gjithsej; shfaqen deri në 20): {pages}. Faqet e tjera që mund të përpunohen mbeten të disponueshme."
+
 msgid "Some pages have missing or unreadable input: {pages}. Other runnable pages remain available."
 msgstr "Disa faqe kanë të dhëna hyrëse që mungojnë ose janë të palexueshme: {pages}. Faqet e tjera që mund të përpunohen mbeten të disponueshme."
 
@@ -9928,8 +9931,11 @@ msgid "Task failed"
 msgstr "Detyra dështoi"
 
 #. placeholder {0}: d.error
-msgid "Task failed: {0}"
-msgstr "Detyra dështoi: {0}"
+#~ msgid "Task failed: {0}"
+#~ msgstr "Detyra dështoi: {0}"
+
+msgid "Task failed: {taskError}"
+msgstr "Detyra dështoi: {taskError}"
 
 msgid "Task Running"
 msgstr "Detyra po Ekzekutohet"

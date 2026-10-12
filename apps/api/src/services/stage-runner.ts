@@ -8,7 +8,7 @@ import { retainedCoreTts, retainedEasyRead } from "@adt/pipeline"
 import { outputIdentityKey } from "@adt/pipeline"
 import { createHash } from "node:crypto"
 import { speechPageId, reconcileSpeechInputs, translateCatalog, inputSignature, reconcileTextCatalog, readOutputCatalog, buildImageInventory, selectedForGeneration, outputEvidence, assertOutputPublication, timestampInputSignature, deriveOutputStatus } from "@adt/pipeline"
-import { prepareSectioningRun, completeSectioning, storyboardCoverage, createStoryboardPublication, activeSectioningPages } from "@adt/pipeline"
+import { prepareSectioningRun, completeSectioning, storyboardCoverage, missingStoryboardInputMessage, createStoryboardPublication, activeSectioningPages } from "@adt/pipeline"
 import { selectSectioningPages, resetSectioningStoryboard, SectioningSafetyError } from "@adt/pipeline"
 import crypto from "node:crypto"
 import fs from "node:fs"
@@ -1392,8 +1392,11 @@ async function runSectioningStep(
     const pages = selectSectioningPages(storage, allPages, options)
     const unreadable = new Set<string>()
     const previous = new Map(pages.map((page) => {
-      try { return [page.pageId, storage.getLatestNodeData("page-sectioning", page.pageId)] as const }
-      catch (error) {
+      try {
+        const row = storage.getLatestNodeData("page-sectioning", page.pageId)
+        if (storage.getSelectedNodeVersion("page-sectioning", page.pageId) !== null && !PageSectioningOutput.safeParse(row?.data).success) unreadable.add(page.pageId)
+        return [page.pageId, row] as const
+      } catch (error) {
         if (!(error instanceof SyntaxError)) throw error
         unreadable.add(page.pageId)
         return [page.pageId, null] as const
@@ -1680,7 +1683,7 @@ async function runStoryboardStep(
       })
       if (options.signal?.aborted) throw new RunCancelledError()
       publication.publish()
-      if (unavailable.length) throw new StepError("web-rendering", `STORYBOARD_PAGE_INPUT_MISSING: ${unavailable.join(", ")}`)
+      if (unavailable.length) throw new StepError("web-rendering", missingStoryboardInputMessage(unavailable))
       progress.emit({ type: "step-complete", step: "web-rendering" })
       console.log(`[stage-run] ${label}: fixed-layout rendering complete`)
       return
@@ -1911,7 +1914,7 @@ async function runStoryboardStep(
 
     // Only a layout switch requires whole-window success.
     if (publication.layoutSwitch && (failedPages.length || (skippedByStep.get("web-rendering")?.size ?? 0) > 0)) {
-      throw new StepError("web-rendering", "Storyboard was not published because one or more pages did not finish. Previous output is kept.")
+      throw new StepError("web-rendering", "STORYBOARD_PUBLICATION_INCOMPLETE: One or more pages did not finish. Previous output is kept.")
     }
     if (options.signal?.aborted) throw new RunCancelledError()
     publication.publish()

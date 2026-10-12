@@ -16,7 +16,7 @@ const ttsMock = vi.fn((): { data?: import("@/api/client").TTSResponse } => ({}))
 vi.mock("@/hooks/use-tts", () => ({ useTTSData: () => ttsMock() }))
 const outputsMock = vi.fn((): { data?: { summaries: { stages: Record<string, { applicable: number; current: boolean; updates: number; warnings: number; missing: number }> } } } => ({}))
 vi.mock("./components/OutputReview", () => ({ useOutputs: () => outputsMock(), CatalogSummary: () => <div>Selected stage outputs</div> }))
-const packageStatusMock = { hasAdt: false, modeCompatible: true }
+const packageStatusMock = { hasAdt: false, complete: true }
 
 vi.mock("@lingui/core", () => ({
   i18n: {
@@ -140,7 +140,7 @@ vi.mock("@/routes/books.$label", () => ({
 
 beforeEach(() => {
   matchRouteMock.mockReturnValue(true)
-  Object.assign(packageStatusMock, { hasAdt: false, modeCompatible: true })
+  Object.assign(packageStatusMock, { hasAdt: false, complete: true })
 })
 
 afterEach(() => {
@@ -198,14 +198,14 @@ describe("StageSidebar", () => {
     expect(screen.getByTitle("Speech: failed")).toBeTruthy()
     expect(screen.getByRole("button", { name: /Review Speech outputs.*Warnings: 1/ })).toBeTruthy()
   })
-  it("keeps retained mode-incompatible preview and validation from claiming completion", async () => {
+  it("keeps incomplete output from claiming preview and validation completion", async () => {
     stageStateMock.mockImplementation(() => "idle")
-    Object.assign(packageStatusMock, { hasAdt: true, modeCompatible: false })
+    Object.assign(packageStatusMock, { hasAdt: true, complete: false })
     const { StageSidebar } = await import("./components/StageSidebar")
     const { rerender } = render(<StageSidebar bookLabel="demo-book" activeStep="book" />)
     expect(screen.getByTitle("Preview").getAttribute("aria-label")).toBe("Preview: not started")
     expect(screen.getByTitle("Validation").getAttribute("aria-label")).toBe("Validation: not started")
-    packageStatusMock.modeCompatible = true
+    packageStatusMock.complete = true
     rerender(<StageSidebar bookLabel="demo-book" activeStep="book" />)
     expect(screen.getByTitle("Preview").getAttribute("aria-label")).toBe("Preview: done")
   })

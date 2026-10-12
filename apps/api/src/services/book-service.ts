@@ -1,3 +1,4 @@
+import { storyboardPackageComplete } from "./storyboard-package-coverage.js"
 import fs from "node:fs"
 import path from "node:path"
 import yaml from "js-yaml"
@@ -101,7 +102,7 @@ function computeCompletedStages(db: BookDb, bookDir: string, configPath?: string
   try {
     const coverage = storyboardCoverage(storage, activeSectioningPages(storage, loadBookConfig(label, booksDir, configPath), bookDir).map((page) => page.pageId))
     if (!coverage.complete) return completed.filter((stage) => stage !== "storyboard" && stage !== "package")
-    if (coverage.rendered > 0 && fs.existsSync(path.join(bookDir, "adt"))) completed.push("preview")
+    if (storyboardPackageComplete(storage, bookDir, activeSectioningPages(storage, loadBookConfig(label, booksDir, configPath), bookDir).map((page) => page.pageId))) completed.push("preview")
     return completed
   } finally { storage.close() }
 }

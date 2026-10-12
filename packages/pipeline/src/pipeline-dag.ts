@@ -1,3 +1,4 @@
+import { missingStoryboardInputMessage } from "./storyboard-coverage.js"
 import { captureOutputReferences } from "./output-references.js"
 import { publishSpeechOutput } from "@adt/storage"
 import { readOutputCatalog } from "./output-catalog.js"
@@ -25,8 +26,6 @@ import {
 import type { LLMModel, LlmLogEntry, LogLevel, TTSSynthesizer } from "@adt/llm"
 import type {
   StepName,
-  ImageClassificationOutput,
-  PageSectioningOutput,
   QuizGenerationOutput,
   BookMetadata,
   BookSummaryOutput,
@@ -39,7 +38,7 @@ import type {
   VoiceSlot,
   WebRenderingOutput,
 } from "@adt/types"
-import { isTtsExcluded, voiceSlotEntryId, PIPELINE } from "@adt/types"
+import { ImageClassificationOutput, PageSectioningOutput, isTtsExcluded, voiceSlotEntryId, PIPELINE } from "@adt/types"
 import { extractPDF, figureExtractionFlags, resolveFigureExtractionMode } from "./pdf-extraction.js"
 import {
   resolveFontsCacheDir,
@@ -630,9 +629,14 @@ async function runAdmittedFullPipeline(
         // and render from it. Driven off positioned-text + image-filtering; no
         // LLM call. `page-sectioning` (semantic) is left intact.
         const imageUrlPrefix = `/api/books/${label}/images`
-        processFixedLayoutPages(renderingStorage, imageUrlPrefix, undefined, { onPage: (id) => { options.signal?.throwIfAborted(); publication.publishPage(id) } })
+        const unavailable: string[] = []
+        processFixedLayoutPages(renderingStorage, imageUrlPrefix, undefined, {
+          onPage: (id) => { options.signal?.throwIfAborted(); publication.publishPage(id) },
+          onUnavailable: (id) => { unavailable.push(id); p.emit({ type: "step-progress", step: "web-rendering", message: missingStoryboardInputMessage([id]) }) },
+        })
         options.signal?.throwIfAborted()
-        publication.publish(renderingStorage.getPages().map((page) => page.pageId))
+        publication.publish()
+        if (unavailable.length) throw new Error(missingStoryboardInputMessage(unavailable))
         p.emit({ type: "step-progress", step: "web-rendering", message: "fixed-layout pages" })
         return
       }
@@ -652,12 +656,27 @@ async function runAdmittedFullPipeline(
       const totalPages = pages.length
       // Resolve once per book — every page shares the same typography.
       const typography = readTypography(renderingStorage)
+      const unavailable: string[] = []
       await processWithConcurrency(pages, effectiveConcurrency, async (page) => {
-        const structuringRow = renderingStorage.getLatestNodeData("page-sectioning", page.pageId)
-        const imageClassRow = renderingStorage.getLatestNodeData("image-filtering", page.pageId)
-        if (!structuringRow || !imageClassRow) return
-        const sectioning = structuringRow.data as PageSectioningOutput
-        const imageClassification = imageClassRow.data as ImageClassificationOutput
+        options.signal?.throwIfAborted()
+        let sectioning: PageSectioningOutput
+        let imageClassification: ImageClassificationOutput
+        try {
+          const tree = PageSectioningOutput.safeParse(renderingStorage.getLatestNodeData("page-sectioning", page.pageId)?.data)
+          const images = ImageClassificationOutput.safeParse(renderingStorage.getLatestNodeData("image-filtering", page.pageId)?.data)
+          if (!tree.success || !images.success) {
+            unavailable.push(page.pageId)
+            p.emit({ type: "step-progress", step: "web-rendering", message: missingStoryboardInputMessage([page.pageId]) })
+            return
+          }
+          sectioning = tree.data
+          imageClassification = images.data
+        } catch (error) {
+          if (!(error instanceof SyntaxError)) throw error
+          unavailable.push(page.pageId)
+          p.emit({ type: "step-progress", step: "web-rendering", message: missingStoryboardInputMessage([page.pageId]) })
+          return
+        }
         const unprunedImageIds = imageClassification.images
           .filter((img) => !img.isPruned)
           .map((img) => img.imageId)
@@ -701,9 +720,12 @@ async function runAdmittedFullPipeline(
           resolveRenderConfig,
           resolveRenderModel,
           templateEngine,
+          undefined,
+          { signal: options.signal },
         )
         options.signal?.throwIfAborted()
         renderingStorage.putNodeData("web-rendering", page.pageId, result)
+        publication.publishPage(page.pageId)
         p.emit({
           type: "step-progress",
           step: "web-rendering",
@@ -713,7 +735,8 @@ async function runAdmittedFullPipeline(
         })
       })
       options.signal?.throwIfAborted()
-      publication.publish(pages.map((page) => page.pageId))
+      publication.publish()
+      if (unavailable.length) throw new Error(missingStoryboardInputMessage(unavailable))
     })
 
     // ── Quizzes stage ───────────────────────────────────────────

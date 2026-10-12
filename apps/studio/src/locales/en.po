@@ -9430,6 +9430,9 @@ msgstr "Some content was left out of the bundle: {0} rendered section(s) on {pag
 msgid "Some items could not be updated. The list has been refreshed; completed changes are kept."
 msgstr "Some items could not be updated. The list has been refreshed; completed changes are kept."
 
+msgid "Some pages have missing or unreadable input ({total} total; showing up to 20): {pages}. Other runnable pages remain available."
+msgstr "Some pages have missing or unreadable input ({total} total; showing up to 20): {pages}. Other runnable pages remain available."
+
 msgid "Some pages have missing or unreadable input: {pages}. Other runnable pages remain available."
 msgstr "Some pages have missing or unreadable input: {pages}. Other runnable pages remain available."
 
@@ -9926,8 +9929,11 @@ msgid "Task failed"
 msgstr "Task failed"
 
 #. placeholder {0}: d.error
-msgid "Task failed: {0}"
-msgstr "Task failed: {0}"
+#~ msgid "Task failed: {0}"
+#~ msgstr "Task failed: {0}"
+
+msgid "Task failed: {taskError}"
+msgstr "Task failed: {taskError}"
 
 msgid "Task Running"
 msgstr "Task Running"

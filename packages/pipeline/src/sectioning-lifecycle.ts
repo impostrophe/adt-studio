@@ -15,8 +15,8 @@ import { isFixedLayoutBook } from "./fixed-layout-rendering.js"
 import { FIXED_LAYOUT_SECTIONING_NODE } from "./render-sectioning.js"
 
 export class SectioningSafetyError extends Error {
-  constructor(readonly code: "SECTIONING_REGENERATION_BLOCKED" | "STORYBOARD_INPUT_CHANGED" | "STORYBOARD_PUBLICATION_INCOMPLETE", message: string) {
-    super(`${code}: ${message}`)
+  constructor(readonly code: "SECTIONING_REGENERATION_BLOCKED" | "STORYBOARD_INPUT_CHANGED" | "STORYBOARD_PUBLICATION_INCOMPLETE" | "STORYBOARD_PAGE_INPUT_MISSING", message: string) {
+    super(message.startsWith(`${code}:`) ? message : `${code}: ${message}`)
     this.name = "SectioningSafetyError"
   }
 }

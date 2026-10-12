@@ -506,8 +506,6 @@ export function processFixedLayoutPages(
     // extracted image survives except the full-page render itself (which
     // image-filtering always prunes — using it as a background would
     // double-draw the page).
-    const allImages = storage.getPageImages(page.pageId)
-    const pageRender = allImages.find((img) => img.imageId.endsWith("_page"))
     let classRow, posTextRow
     try {
       classRow = storage.getLatestNodeData("image-filtering", page.pageId)
@@ -519,28 +517,21 @@ export function processFixedLayoutPages(
     }
     const classParsed = ImageClassificationSchema.safeParse(classRow?.data)
     const posParsed = PositionedTextSchema.safeParse(posTextRow?.data)
-    if ((classRow?.data != null && !classParsed.success) || (posTextRow?.data != null && !posParsed.success)) {
+    if (!classParsed.success || !posParsed.success) {
       if (!targets || targets.has(page.pageId)) events?.onUnavailable?.(page.pageId)
       continue
     }
-    const classification = classParsed.success ? classParsed.data : null
+    const classification = classParsed.data
     const availableImageIds = new Set(
-      classification
-        ? classification.images.filter((c) => !c.isPruned).map((c) => c.imageId)
-        : []
+      classification.images.filter((c) => !c.isPruned).map((c) => c.imageId)
     )
 
-    const positionedText = posParsed.success ? posParsed.data : null
+    const positionedText = posParsed.data
 
-    // Viewport comes from the positioned-text extraction (authoritative PDF
-    // page dimensions). Fall back to the page render's pixel size only when
-    // no positioned text was extracted at all.
-    const viewport = positionedText
-      ? { width: Math.round(positionedText.pageWidth), height: Math.round(positionedText.pageHeight) }
-      : pageRender
-        ? { width: pageRender.width, height: pageRender.height }
-        : null
-    if (!viewport) {
+    // Absent extraction is not an empty page. Only an explicit validated
+    // positioned result can authorize replacing output, including a blank PDF.
+    const viewport = { width: Math.round(positionedText.pageWidth), height: Math.round(positionedText.pageHeight) }
+    if (!viewport || !Number.isFinite(viewport.width) || !Number.isFinite(viewport.height) || viewport.width <= 0 || viewport.height <= 0) {
       if (!targets || targets.has(page.pageId)) events?.onUnavailable?.(page.pageId)
       continue
     }

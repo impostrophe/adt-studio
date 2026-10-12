@@ -97,7 +97,6 @@ describe("Package routes", () => {
           pageId: "pg001",
           pageNumber: 1,
           sectionId: "pg001_sec001",
-          sectionId: "pg001_sec001",
           sectionIndex: 0,
           sectionType: "content",
           entries: [
@@ -130,7 +129,7 @@ describe("Package routes", () => {
   }
 
   describe("POST /api/books/:label/package-adt", () => {
-    it("rejects stale mode output even when an existing build can be cached", async () => {
+    it("retains usable cached output after a preference change", async () => {
       createRenderedBook("stale-mode")
       createWebAssets()
       const first = await app.request("/api/books/stale-mode/package-adt", { method: "POST" })
@@ -139,8 +138,7 @@ describe("Package routes", () => {
       const hash = fs.readFileSync(path.join(dir, "adt", ".build-hash"), "utf8")
       writeSectioningLifecycle(dir, "dynamic", false)
       const response = await app.request("/api/books/stale-mode/package-adt", { method: "POST" })
-      expect(response.status).toBe(409)
-      expect(await response.json()).toMatchObject({ code: "SECTIONING_STALE" })
+      expect(response.status).toBe(200)
       expect(fs.readFileSync(path.join(dir, "adt", ".build-hash"), "utf8")).toBe(hash)
     })
     it("returns 404 for missing book", async () => {
@@ -385,17 +383,18 @@ describe("Package routes", () => {
       { mode: "dynamic" as const, ready: false, pending: true },
       { mode: "dynamic" as const, ready: true, pending: true },
       { mode: "page" as const, ready: true, pending: false },
-    ])("reports retained mode-incompatible packages without deleting them: %j", async ({ mode, ready, pending }) => {
+    ])("keeps usable packages accessible independently of lifecycle metadata: %j", async ({ mode, ready, pending }) => {
       createRenderedBook("retained")
       const dir = path.join(tmpDir, "retained")
       const pagesPath = path.join(dir, "adt", "content", "pages.json")
       fs.mkdirSync(path.dirname(pagesPath), { recursive: true })
-      const pages = JSON.stringify([{ section_id: "pg001", href: "pg001.html" }])
+      const pages = JSON.stringify([{ section_id: "pg001_sec001", href: "pg001_sec001.html" }])
       fs.writeFileSync(pagesPath, pages)
+      fs.writeFileSync(path.join(dir, "adt", "pg001_sec001.html"), "<p>Retained content</p>")
       writeSectioningLifecycle(dir, mode, ready, pending)
       const response = await app.request("/api/books/retained/package-adt/status")
       expect(response.status).toBe(200)
-      expect(await response.json()).toMatchObject({ hasAdt: true, modeCompatible: false })
+      expect(await response.json()).toMatchObject({ hasAdt: true, complete: true })
       expect(fs.readFileSync(pagesPath, "utf8")).toBe(pages)
 
       // Compatible warning-bearing output remains available under SPEC-0001.
@@ -404,7 +403,7 @@ describe("Package routes", () => {
       const usable = await app.request("/api/books/retained/package-adt/status")
       const usableStatus = await usable.json()
       expect(usableStatus).toMatchObject({ hasAdt: true })
-      expect(usableStatus.modeCompatible).not.toBe(false)
+      expect(usableStatus.complete).toBe(true)
     })
 
     it("returns hasAdt=false when pages.json is missing", async () => {
@@ -412,7 +411,7 @@ describe("Package routes", () => {
 
       const res = await app.request("/api/books/book2/package-adt/status")
       expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({ label: "book2", hasAdt: false })
+      expect(await res.json()).toMatchObject({ label: "book2", hasAdt: false, complete: false })
     })
 
     it("returns hasAdt=false when pages.json is invalid JSON", async () => {
@@ -423,7 +422,7 @@ describe("Package routes", () => {
 
       const res = await app.request("/api/books/book3/package-adt/status")
       expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({ label: "book3", hasAdt: false })
+      expect(await res.json()).toMatchObject({ label: "book3", hasAdt: false, complete: false })
     })
 
     it("returns hasAdt=false when pages.json has no href entries", async () => {
@@ -434,21 +433,22 @@ describe("Package routes", () => {
 
       const res = await app.request("/api/books/book4/package-adt/status")
       expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({ label: "book4", hasAdt: false })
+      expect(await res.json()).toMatchObject({ label: "book4", hasAdt: false, complete: false })
     })
 
-    it("returns hasAdt=true when pages.json has at least one href entry", async () => {
-      createTestBook("book5")
+    it("returns hasAdt=true with current usable rendering and a packaged href", async () => {
+      createRenderedBook("book5")
       const pagesPath = path.join(tmpDir, "book5", "adt", "content", "pages.json")
       fs.mkdirSync(path.dirname(pagesPath), { recursive: true })
       fs.writeFileSync(
         pagesPath,
-        JSON.stringify([{ section_id: "pg001", href: "pg001.html" }]),
+        JSON.stringify([{ section_id: "pg001_sec001", href: "pg001_sec001.html" }]),
       )
 
+      fs.writeFileSync(path.join(tmpDir, "book5", "adt", "pg001_sec001.html"), "<p>Packaged content</p>")
       const res = await app.request("/api/books/book5/package-adt/status")
       expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({ label: "book5", hasAdt: true })
+      expect(await res.json()).toMatchObject({ label: "book5", hasAdt: true, complete: true })
     })
   })
 })

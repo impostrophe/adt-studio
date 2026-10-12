@@ -9432,6 +9432,9 @@ msgstr "Une partie du contenu a été omise du paquet : {0} sections rendues sur
 msgid "Some items could not be updated. The list has been refreshed; completed changes are kept."
 msgstr "Certains éléments n’ont pas pu être mis à jour. La liste a été actualisée ; les modifications terminées sont conservées."
 
+msgid "Some pages have missing or unreadable input ({total} total; showing up to 20): {pages}. Other runnable pages remain available."
+msgstr "Certaines pages ont des données manquantes ou illisibles ({total} au total ; 20 affichées au maximum) : {pages}. Les autres pages pouvant être traitées restent disponibles."
+
 msgid "Some pages have missing or unreadable input: {pages}. Other runnable pages remain available."
 msgstr "Certaines pages ont des données d’entrée manquantes ou illisibles : {pages}. Les autres pages pouvant être traitées restent disponibles."
 
@@ -9928,8 +9931,11 @@ msgid "Task failed"
 msgstr "Échec de la tâche"
 
 #. placeholder {0}: d.error
-msgid "Task failed: {0}"
-msgstr "Échec de la tâche : {0}"
+#~ msgid "Task failed: {0}"
+#~ msgstr "Échec de la tâche : {0}"
+
+msgid "Task failed: {taskError}"
+msgstr "Échec de la tâche : {taskError}"
 
 msgid "Task Running"
 msgstr "Tâche En cours"

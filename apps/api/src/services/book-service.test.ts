@@ -304,12 +304,12 @@ describe("listBooks", () => {
     expect(books[0].completedStages).toEqual([])
   })
 
-  it("includes preview when the adt directory exists", () => {
+  it("does not claim preview completion from an empty adt directory", () => {
     createTestDb("previewable")
     fs.mkdirSync(path.join(tmpDir, "previewable", "adt"))
 
     const books = listBooks(tmpDir)
-    expect(books[0].completedStages).toContain("preview")
+    expect(books[0].completedStages).not.toContain("preview")
   })
 
   it("treats skipped steps as completing the stage", () => {
