@@ -29,6 +29,7 @@ Inbox → Approved → To spec → Specing → Spec review → To do → Doing �
 | the **spec PR is merged** | moves the card to To do (within the hour), crediting the PR's author and approvers |
 | a **PR that closes the issue is merged** | the Project moves the card to Done; the bot credits the PR's approvers and posts the story |
 | a card goes back for changes | reassigns whoever did that stage before |
+| a card is just placed (triage: Inbox → To review) | nothing: nobody finished anything, the people on it stay |
 | work starts on a card with no block | gives it the current block (the Project's Block field only) |
 
 ## How it works

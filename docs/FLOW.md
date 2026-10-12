@@ -26,7 +26,7 @@ Each stage has a column where the card **waits** (To spec, To do, To review) and
 | *(the spec PR is merged)* | moves the card to **To do** within the hour, crediting the PR's author and approvers |
 | *(a PR that closes the issue is merged)* | the Project moves the card to **Done**; the bot adds the story and credits the PR's approvers |
 | move a card to **Done** | comments with the whole story: *Spec @a (approved by @b) · Code @c · Review & test @d* |
-| move a card between waiting columns | unassigns anyone on it, no comment |
+| move a card between waiting columns, or place it (Inbox → To review) | nothing: no comment, the people on it stay |
 
 ## Every case
 
@@ -71,7 +71,9 @@ So assign yourself while you work, or the credit goes to whoever moves the card 
 | a **working** column, skipping the queue (Doing → Reviewing) | **whoever moved it**: the previous stage's people are credited and unassigned |
 | a **working** column, going back (Reviewing → Doing) | **whoever did that stage before** (from the bot's earlier comment); if nobody was credited, whoever was assigned, or else whoever moved it |
 | **Spec review** (or back from it to Specing) | **unchanged**: the writer stays on it while it waits |
-| a **waiting** column, the Inbox, Approved or Done | **nobody**: everyone is unassigned |
+| a **waiting** column, after **finishing** a stage (Doing → To review), **pausing** (Doing → To do) or **sending back** (Reviewing → To review) | **nobody**: everyone is unassigned |
+| a **waiting** column from the Inbox, Approved or another waiting column (triage, catching the board up: Inbox → To review) | **unchanged**: nobody finished anything, so nobody is taken off |
+| **Done** | **nobody**: everyone is unassigned |
 
 "Going forward" and "going back" follow the board's order, left to right.
 

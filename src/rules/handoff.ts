@@ -87,11 +87,16 @@ export function handoff(input: HandoffInput, now = Date.now()): Handoff {
     if (logins.length) credit = { stage: from.stage, logins, at: now }
   }
 
-  // Who should be on the card now: nobody in a queue or in Done; in a column
-  // where work happens, whoever did this stage before (going back), whoever
-  // already took it, or else whoever moved it.
+  // In a column where work happens: whoever did this stage before (going
+  // back), whoever already took it, or else whoever moved it.
+  // Who should be on the card now. People are only taken off when their work
+  // ends: a finished stage, a pause or send-back out of a working column, or
+  // Done. Placing a card (triage, catching the board up: Inbox → To review)
+  // leaves them where they are.
+  const workEnds = leftWork || to.kind === 'done' || ((from.kind === 'active' || from.kind === 'review') && !forward)
   let target: string[] = []
   if (to.kind === 'review') target = input.assignees // waiting for approval: nobody changes
+  else if (to.kind !== 'active' && !workEnds) target = input.assignees
   else if (to.kind === 'active') {
     const before = forward ? undefined : lastCredit(input.credits, to.stage)?.logins
     target = before ?? (leftWork ? [] : input.assignees)

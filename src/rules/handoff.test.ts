@@ -55,9 +55,9 @@ describe('handoff', () => {
     expect(h.comment).toContain('Finished. Spec @ana · Code @bruna · Review & test @caio')
   })
 
-  it('does nothing for moves between waiting columns except clearing owners', () => {
+  it('does nothing for moves between waiting columns: no comment, people stay', () => {
     expect(handoff({ from: 'approved', to: 'to-spec', assignees: [], mover: 'ana', credits: [] }, at)).toEqual({ credit: null, comment: null, assign: [], unassign: [] })
-    expect(handoff({ from: 'to-do', to: 'to-review', assignees: ['bruna'], mover: 'ana', credits: [] }, at).unassign).toEqual(['bruna'])
+    expect(handoff({ from: 'to-do', to: 'to-review', assignees: ['bruna'], mover: 'ana', credits: [] }, at).unassign).toEqual([])
   })
 
   it('ignores a move to the same column', () => {
@@ -131,5 +131,24 @@ describe('moved to Done by GitHub (issue closed by a merged PR)', () => {
     expect(h.comment).toContain('**Reviewed and tested by @dani**, moved from Reviewing to Done.')
     expect(h.comment).toContain('Finished. Code @bruna · Review & test @dani')
     expect(h.unassign).toEqual(['caio'])
+  })
+})
+
+describe('placing a card leaves its people alone', () => {
+  it('triage straight to a later waiting column keeps the assignees', () => {
+    expect(handoff({ from: 'issues', to: 'to-review', assignees: ['nick', 'zig'], mover: 'zig', credits: [] }, at)).toEqual({ credit: null, comment: null, assign: [], unassign: [] })
+    expect(handoff({ from: 'approved', to: 'to-spec', assignees: ['ana'], mover: 'bruna', credits: [] }, at).unassign).toEqual([])
+  })
+
+  it('but finishing, pausing, sending back and Done still take people off', () => {
+    expect(handoff({ from: 'doing', to: 'to-review', assignees: ['bruna'], mover: 'bruna', credits: [] }, at).unassign).toEqual(['bruna'])
+    expect(handoff({ from: 'doing', to: 'to-do', assignees: ['bruna'], mover: 'bruna', credits: [] }, at).unassign).toEqual(['bruna'])
+    expect(handoff({ from: 'to-review', to: 'done', assignees: ['caio'], mover: 'caio', credits: [] }, at).unassign).toEqual(['caio'])
+  })
+
+  it('pulling into a working column keeps whoever is already on it', () => {
+    const h = handoff({ from: 'issues', to: 'specing', assignees: ['ana'], mover: 'bruna', credits: [] }, at)
+    expect(h.assign).toEqual([])
+    expect(h.unassign).toEqual([])
   })
 })
