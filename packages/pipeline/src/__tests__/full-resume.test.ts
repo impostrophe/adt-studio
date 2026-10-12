@@ -99,7 +99,7 @@ it("replaces reviewed protected Storyboard output, but rejects an obsolete decis
   s.putNodeData("web-rendering", "pg001", { ...(row.data as object), sections: [{ sectionIndex: 0, sectionType: "text_only", reasoning: "edit", html: "Manual" }] })
   const reviewed = readGenerationCatalog({ storage: s, config: loadBookConfig(label, options().booksRoot, options().configPath), bookDir: s.bookDir!, promptsDir: options().promptsDir, templatesDir: options().templatesDir }).find((status) => status.identity.kind === "storyboard")!
   s.close()
-  const outputScope = { selection: { identities: [reviewed.identity] }, replace: [{ identity: reviewed.identity, signature: reviewed.signature, contentHash: reviewed.contentHash }] }
+  const outputScope = { selection: { identities: [reviewed.identity] }, replace: [{ identity: reviewed.identity, signature: reviewed.signature, contentHash: reviewed.contentHash, revision: reviewed.revision }] }
   const replaced = await runFullPipeline({ ...options(), fromStage: "storyboard", outputScope })
   expect(errors(replaced)).toEqual([])
   const before = histories(), calls = transport.mock.calls.length
@@ -147,13 +147,13 @@ it("generates quiz and glossary source artifacts at the transport boundary and r
   expect(transport).toHaveBeenCalledTimes(calls)
 })
 
-it("repairs a lifecycle interruption from current evidence without repeating providers or content", { timeout: 60000 }, async () => {
+it("informational lifecycle records never require a bookkeeping rerun", { timeout: 60000 }, async () => {
   expect(errors(await runFullPipeline(options()))).toEqual([])
   const { writeSectioningLifecycle, readSectioningLifecycle } = await import("@adt/storage")
   writeSectioningLifecycle(path.join(options().booksRoot, label), "page", false)
   const before = histories(), calls = transport.mock.calls.length
   expect(errors(await runFullPipeline(options()))).toEqual([])
-  expect(readSectioningLifecycle(path.join(options().booksRoot, label))).toMatchObject({ sectioningReady: true, storyboardPending: false })
+  expect(readSectioningLifecycle(path.join(options().booksRoot, label))).toMatchObject({ sectioningReady: false })
   expect(histories()).toEqual(before)
   expect(transport).toHaveBeenCalledTimes(calls)
 })
@@ -208,7 +208,7 @@ it("the actual full CLI reuses the bundle without calls and exits nonzero for un
 })
 
 
-it("keeps protected glossary content until exact replacement, retaining its previous version", { timeout: 60000 }, async () => {
+it("book regeneration cannot authorize replacement of a protected glossary term", { timeout: 60000 }, async () => {
   const full = { ...options(), toStage: "glossary" as const }
   expect(errors(await runFullPipeline(full))).toEqual([])
   const s = storage()
@@ -219,9 +219,10 @@ it("keeps protected glossary content until exact replacement, retaining its prev
   const blocked = await runFullPipeline(full)
   expect(blocked.resume?.status).toBe("incomplete")
   expect(s.getAllNodeVersions("glossary", "book")).toHaveLength(count)
-  const replaced = await runFullPipeline({ ...full, fromStage: "glossary", outputScope: { replace: [{ identity: status.identity, signature: status.signature, contentHash: status.contentHash }] } })
-  expect(errors(replaced)).toEqual([])
-  expect(s.getLatestNodeData("glossary", "book")?.data).toMatchObject({ items: [] })
+  const replaced = await runFullPipeline({ ...full, fromStage: "glossary", outputScope: { replace: [{ identity: status.identity, signature: status.signature, contentHash: status.contentHash, revision: status.revision }] } })
+  expect(replaced.resume?.status).toBe("incomplete")
+  expect(replaced.resume?.outputs).toContainEqual(expect.objectContaining({ identity: expect.objectContaining({ kind: "glossary", id: "gl001" }), protected: true, state: "blocked" }))
+  expect(s.getLatestNodeData("glossary", "book")?.data).toMatchObject({ items: [expect.objectContaining({ word: "authored", source: "manual" })] })
   expect(s.getAllNodeVersions("glossary", "book")[count - 1].data).toMatchObject({ items: [expect.objectContaining({ word: "authored" })] })
   s.close()
 })
@@ -308,21 +309,16 @@ it("cancellation while packaging retains the prior bundle and assessment history
   s.close()
 })
 
-it("new Sectioning cannot silently validate retained manual rendering or bypass its publication barrier", { timeout: 60000 }, async () => {
-  const { readSectioningLifecycle } = await import("@adt/storage")
+it("changed generation preferences retain existing Sectioning and manual rendering", { timeout: 60000 }, async () => {
   expect(errors(await runFullPipeline(options()))).toEqual([])
   const s = storage(), row = s.getLatestNodeData("web-rendering", "pg001")!
   s.putNodeData("web-rendering", "pg001", { ...(row.data as object), source: "manual" })
   fs.appendFileSync(path.join(root, "prompts/page_sectioning.liquid"), "Changed source generation")
+  const before = histories(), calls = transport.mock.calls.length
   const resumed = await runFullPipeline(options())
-  expect(resumed.resume?.status).toBe("incomplete")
-  expect(readSectioningLifecycle(s.bookDir!)).toMatchObject({ sectioningReady: true, storyboardPending: true })
-  const blockedPackage = await runFullPipeline({ ...options(), fromStage: "package", toStage: "package", webAssetsDir: path.join(repository, "assets/adt") })
-  expect(errors(blockedPackage)[0]).toContain("Storyboard still contains retained output")
-  const output = readGenerationCatalog({ storage: s, config: loadBookConfig(label, options().booksRoot, options().configPath), bookDir: s.bookDir!, promptsDir: options().promptsDir, templatesDir: options().templatesDir }).find((output) => output.identity.kind === "storyboard")!
-  const replaced = await runFullPipeline({ ...options(), fromStage: "storyboard", outputScope: { replace: [{ identity: output.identity, signature: output.signature, contentHash: output.contentHash }] } })
-  expect(errors(replaced)).toEqual([])
-  expect(readSectioningLifecycle(s.bookDir!)).toMatchObject({ sectioningReady: true, storyboardPending: false })
+  expect(resumed.resume?.status).toBe("incomplete") // Unreviewed manual rendering remains protected.
+  expect(histories()).toEqual(before)
+  expect(transport).toHaveBeenCalledTimes(calls)
   s.close()
 })
 

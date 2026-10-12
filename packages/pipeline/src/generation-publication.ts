@@ -55,7 +55,11 @@ export function createGenerationPublication(base: Storage, validate: () => void)
     clearNodesByType() { throw new Error("Generation publication cannot clear retained content") },
     clearExtractedData() { throw new Error("Generation publication cannot clear extraction") },
   }
-  return { storage, hasWritten: (node: string, itemId: string) => nodes.some((row) => row.node === node && row.itemId === itemId), publish() {
+  return { storage, annotate(node: string, itemId: string, data: unknown) {
+    const row = [...nodes].reverse().find((entry) => entry.node === node && entry.itemId === itemId)
+    if (!row) throw new Error("Cannot annotate an unpublished generation")
+    row.data = structuredClone(data)
+  }, hasWritten: (node: string, itemId: string) => nodes.some((row) => row.node === node && row.itemId === itemId), publish() {
     validate()
     base.transaction(() => {
       validate()

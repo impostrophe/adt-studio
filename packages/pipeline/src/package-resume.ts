@@ -1,9 +1,12 @@
 import fs from "node:fs"
+import { outputSkipped, selectedOutput } from "./output-freshness.js"
 import path from "node:path"
 import { newPackageAttempt, publishPackageAttempt, recoverPackagePublication, writePackageInventory } from "./packaging/publication.js"
 import { createBookStorage } from "@adt/storage"
 import { loadBookConfig } from "./config.js"
 import { prepareSectioningRun } from "./sectioning-lifecycle.js"
+import { storyboardPackageComplete } from "./storyboard-package-coverage.js"
+import { activeSectioningPages } from "./sectioning-lifecycle.js"
 import { readGenerationCatalog } from "./generation-catalog.js"
 import { packageAdtWeb, computePackagingInputHash } from "./packaging/web.js"
 import { runAccessibilityAssessment } from "./accessibility-assessment.js"
@@ -22,10 +25,11 @@ export async function runPackageResume(label: string, options: StageRunOptions, 
   prepareSectioningRun(label, options.booksDir, "package", "package", options.configPath)
   const storage = createBookStorage(label, options.booksDir)
   const configDir = options.configDir ?? (options.configPath ? path.join(path.dirname(options.configPath), "config") : path.resolve("config"))
-  const read = () => readGenerationCatalog({ storage, config: loadBookConfig(label, options.booksDir, options.configPath), bookDir, promptsDir: options.promptsDir, templatesDir: options.templatesDir, configPath: options.configPath, webAssetsDir: options.webAssetsDir, configDir }).find((status) => status.identity.kind === "package")!
+  const read = () => readGenerationCatalog({ kinds: ["package"], storage, config: loadBookConfig(label, options.booksDir, options.configPath), bookDir, promptsDir: options.promptsDir, templatesDir: options.templatesDir, configPath: options.configPath, webAssetsDir: options.webAssetsDir, configDir }).find((status) => status.identity.kind === "package")!
 
   try {
     const before = read()
+    if (!selectedOutput(before, options.outputScope?.selection) || outputSkipped(options.outputScope, before.identity)) return
     if (before.current) { progress.emit({ type: "stage-complete", stage: "package" }); return }
     options.signal?.throwIfAborted()
     const attempt = newPackageAttempt(bookDir)
@@ -47,18 +51,20 @@ export async function runPackageResume(label: string, options: StageRunOptions, 
       options.signal?.throwIfAborted()
     } }
     const result = await packageAdtWeb(storage, { ...packageOptions, bundleVersion: hash.slice(0, 16) }, stagedProgress)
-    if (result.warnings.length) throw new Error("Packaging omitted required output; inspect retained source content before retrying")
+    if (!storyboardPackageComplete(storage, attempt, activeSectioningPages(storage, config, bookDir).map((page) => page.pageId))) throw new Error("Packaging omitted required output; inspect retained source content before retrying")
     const assessment = await runAccessibilityAssessment({ bookDir: attempt, config: config.accessibility_assessment }, stagedProgress)
     const directory = path.join(attempt, "adt")
     fs.writeFileSync(path.join(directory, ".build-hash"), hash)
     fs.writeFileSync(path.join(directory, ".build-version"), hash.slice(0, 16))
-    fs.writeFileSync(path.join(directory, ".build-warnings"), "[]")
+    fs.writeFileSync(path.join(directory, ".build-warnings"), JSON.stringify(result.warnings))
     writePackageInventory(directory)
     options.signal?.throwIfAborted()
+    if (outputSkipped(options.outputScope, before.identity)) throw new Error("Package was skipped before publication")
     const current = read()
     if (current.signature !== before.signature || current.contentHash !== before.contentHash) throw new Error("Packaging inputs changed during generation")
     publishPackageAttempt(bookDir, attempt, () => storage.transaction(() => {
       options.signal?.throwIfAborted()
+      if (outputSkipped(options.outputScope, before.identity)) throw new Error("Package was skipped before publication")
       const version = storage.putNodeData("accessibility-assessment", "book", assessment)
       const output = read()
       storage.putNodeData("accessibility-assessment", "book", { ...assessment,

@@ -1034,7 +1034,10 @@ Storyboard publication is per page. Config-based resume preserves the verified
 extraction-time fixed-layout capability when only rendering layout changes;
 explicit extraction-input changes still require a fresh label. Current coverage
 and real package files, not lifecycle history, establish completion. See the
-SPEC-0010 amendment and original acceptance mapping. No approval is implied.
+SPEC-0010 amendment and original acceptance mapping. Review/Keep decisions bind
+exact selected-owner revisions as well as content and input hashes. Collection
+generation consent never authorizes replacement of adjacent authored items.
+No approval is implied.
 
 This ADR is under review with its spec; no implementation acceptance criterion is satisfied by publishing it. The spec owns the acceptance/test mapping and approval questions. Existing invariant-registry checks remain as documented; new enforcement belongs to the implementing change.
 

@@ -9,7 +9,6 @@ import { z } from "zod"
 import { createBookStorage, openBookDb, withBookWriter } from "@adt/storage"
 import type { Storage } from "@adt/storage"
 import { AuthoredRunOptions, OutputSkipRequest, OutputRunScope, StageName, STAGE_ORDER, PIPELINE, parseBookLabel, getStageRerunClearNodes, getStageClearOrder, PageErrorPolicy, DecisionBody, TTSOutput, WordTimestampOutput, parseVoiceSlotEntryId, sectionIdOfAnswerTextId } from "@adt/types"
-import { assertStageRunModelCredentials } from "@adt/llm"
 import {
   loadBookConfig, activeSectioningPages, selectSectioningPages, storyboardCoverage,
   isFixedLayoutBook,
@@ -215,21 +214,8 @@ export function createStageRoutes(
     if (fromStage === "extract" && active?.status !== "running" && active?.status !== "cancelling") assertSafeExtractionRun(label, booksDir, configPath)
     const credentials = readProviderCredentials(c)
 
-    // Fail before beforeRun clears any stage data: a run that cannot make a
-    // single LLM call must not wipe the book. Scoped to the stages being run —
-    // a speech-only rerun must not demand the text default's key, and a
-    // per-step model override must be credentialed too, not just the default.
-    // Keyless providers pass through.
-    const fromIndex = STAGE_ORDER.indexOf(fromStage)
-    const toIndex = STAGE_ORDER.indexOf(toStage)
-    const config = loadBookConfig(label, booksDir, configPath)
-    const requestedStages = fromIndex <= toIndex ? STAGE_ORDER.slice(fromIndex, toIndex + 1) : STAGE_ORDER
-    // Fixed Storyboard uses extracted positioned content, with no model call.
-    // Sectioning and any other requested generative stages still need keys.
-    const modelStages = isFixedLayoutBook(config)
-      ? requestedStages.filter((stage) => stage !== "storyboard") : requestedStages
-    if (!resume && fromStage !== "extract") assertStageRunModelCredentials(config, modelStages, credentials)
-
+    // Credentials are resolved by the selected executor. Current, protected,
+    // template and fixed output can finish without a provider request.
     console.log(
       `[stages] ${label}: ${fromStage}→${toStage}${renderOnly ? " (render-only)" : ""} ` +
       `credentialProviders=${Object.keys(credentials).join(",") || "(none)"}`,
@@ -248,17 +234,6 @@ export function createStageRoutes(
         finally { storage.close() }
       })
     }
-    const prepare = makeBeforeRun(label, fromStage, toStage, booksDir, configPath)
-    const clearData = () => {
-      const storage = createBookStorage(label, booksDir)
-      try {
-          assertAuthoredReplacement(storage, { fromStage, toStage, replaceManual, protectedReplacements })
-          selectSectioningPages(storage, activeSectioningPages(storage, loadBookConfig(label, booksDir, configPath), path.join(path.resolve(booksDir), label)), { replaceManual, protectedReplacements })
-        }
-      finally { storage.close() }
-      prepare()
-    }
-
     const result = stageService.startStageRun(label, {
       booksDir,
       credentials,
@@ -272,8 +247,6 @@ export function createStageRoutes(
       protectedReplacements,
       renderOnly,
       pageErrorPolicy,
-      // Queued jobs clear data when they start executing
-      beforeRun: resume ? undefined : clearData,
     })
 
     return c.json({ status: result.status, label, fromStage, toStage })

@@ -1,9 +1,9 @@
 # Safe extraction and CLI reruns (B1)
 
-> October 12 continuation: historical mode-gate and whole-stage publication claims
-> below are superseded by the [authorized revised contract](specs/SPEC-0010-safe-cli-reruns.md)
-> and [integration audit](verification/spec-0010-oct12-integration.md). New integrated acceptance is in progress;
-> earlier completion/green-CI reports do not certify this continuation.
+Implementation acceptance is being refreshed against revised SPEC-0003. See the
+[authorized contract](specs/SPEC-0010-safe-cli-reruns.md) and
+[integration evidence](verification/spec-0010-oct12-integration.md). Human approval
+remains pending; historical CI does not certify the integrated branch.
 
 The command remains `pnpm pipeline <label> <pdf-file> [options]`. Extracting into
 a new destination is supported. A same-label run first verifies the PDF bytes,
@@ -30,35 +30,56 @@ pnpm pipeline my-book /path/to/unchanged.pdf --books-dir /path/to/books \
 ```
 
 Use `--output-scope /path/to/decisions.json` for the shared `OutputRunScope` JSON
-(selection, skip, retry, and signature/content-bound replacement decisions).
+(selection, skip, retry, and input/content/revision-bound replacement decisions).
 Protected/unknown content is retained by default. A stale replacement decision
 fails before generation. Current output causes no provider call or new content
 version. The CLI prints a `catalog-resume` summary with completed, reused, skipped
 and blocked identities; required unresolved output exits 1. A usable upstream
 freshness warning does not prohibit generation or export, but remains visible in
-the result. Mode-incompatible output is a separate blocking preflight.
+the result. A Sectioning preference change is informational. Only an actual rendering-layout
+switch requires whole-active-window publication; saved section counts never gate rendering.
 
 The HTTP stage endpoint accepts `resume: true` for downstream ranges. Queued
 requests revalidate extraction and replan when they execute. SSE completion,
 error and cancellation events carry the summary; JSON stage/step status also
 exposes the last result in this server session. After restart, the shared catalog
 reassesses persisted outputs. Existing Studio output review controls show the
-new generation units and offer the same exact-content keep/replacement decisions.
+new generation units and offer the same guarded Keep/replacement decisions.
+Ordinary single-stage attempts can finish with usable retained freshness warnings;
+their summary remains incomplete. Explicit resume and multi-stage/full runs remain
+nonzero when required output is unresolved.
 A full-run summary distinguishes newly created extraction from verified reuse.
 
-Unknown or changed content evidence remains protected even when a legacy `source`
-field says AI. A required protected, missing or incompatible scope makes the run
+Unknown or changed page/document content evidence remains protected even when a
+legacy `source` field says AI. Quiz and glossary collection plans separately assess
+eligible AI units and protected manual/unknown units; a protected neighbor does
+not freeze eligible generation. A required protected, missing or incompatible scope makes the run
 incomplete; a skipped unresolved scope is not success. Explicit replacement is
-bound to both reviewed content and effective inputs. Keeping Sectioning requires
-the persisted-mode preflight; a review cannot waive incompatible structure.
+bound to reviewed content, effective inputs and the exact stored owner revision
+returned by `GET /books/:label/outputs`. Old decisions without that revision must
+be refreshed. Bulk Keep validates the entire batch before evidence writes advance
+shared collection versions. Keep cannot supply missing inputs or coverage.
 
-Generation is staged through the Storage interface and published only after
-input/content revalidation. Provider failure, cancellation and conflicting edits
-retain prior active versions and physical assets. Book-level generation units
+Ordinary Sectioning fills only missing records and retains all existing saved
+trees, including deliberately empty trees. To replace it, use the default-off
+Sectioning confirmation or `--protected-replacements` with exact semantic, HTML
+and tree versions. The shared reset commits inactive rendering versions before
+generation. Failure or cancellation afterwards preserves that reset and history;
+it never resurrects the old active Storyboard.
+
+Generation publishes through the shared Storage interface after input/content
+revalidation. Ordinary Storyboard commits each successful page's HTML/tree pair
+immediately, so earlier pages survive later failure, Skip or cancellation. A failed
+same-layout page retains its prior usable output. An actual layout switch alone
+uses all-success publication over the active window. Explicit Sectioning reset is
+already committed before generation, as described above. Book-level generation units
 may rerun their own unit when relevant inputs change; normal ordered-input caches
 still avoid duplicate requests. Other current units and retained pages are not
-rewritten. Manual quiz/glossary replacement requires an explicit reviewed decision
-and still preserves previous versions and retired identities.
+rewritten. A book-level quiz/glossary regeneration decision covers eligible AI content only;
+it does not authorize deleting protected terms/questions. Use the version-guarded
+item editor for a protected replacement, then Keep the resulting authored output
+if accepting it for continuation. Glossary drafts retain their opening version and
+survive stale-save conflicts. All earlier versions and retired identities survive.
 
 Packaging builds a real bundle in a book-local attempt directory. File inventories
 and byte-based input fingerprints invalidate missing or corrupted artifacts.
@@ -68,7 +89,8 @@ Old bundle generations and failed attempts remain in the book as recoverable ass
 No timeout-based deletion of an anonymous SQLite mutex is introduced.
 
 `UNSAFE_RESUME_UNAVAILABLE` remains the fail-closed fallback when a requested
-capability or required upstream rendering is unavailable. Its admission-only
+capability is unsupported. Missing rendering/coverage instead reports the actual
+missing input or incomplete result, allowing unrelated runnable pages to publish. Its admission-only
 summary never claims completed downstream work. Invalid source or asset failures
 never report verified reuse. See [full implementation evidence](verification/spec-0010-full-resume.md).
 

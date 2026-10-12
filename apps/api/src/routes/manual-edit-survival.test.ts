@@ -98,7 +98,7 @@ async function saveProtected() {
   expect((await send("quizzes", { ...quizzes.quizzes, quizzes: [{ ...quizzes.quizzes.quizzes[0], question: "Manual question" }], baseVersion: quizzes.version })).status).toBe(200)
   const page = await json("pages/pg001")
   expect((await send("pages/pg001/image-captioning", { captions: [{ imageId: "pg001_im001", caption: "Manual caption", reasoning: "" }], baseVersion: 0, sourceSignature: page.captionSourceSignature })).status).toBe(200)
-  expect((await send("glossary", { items: [{ id: "gl001", word: "Term", definition: "Manual definition", variations: [], emojis: [], source: "manual" }], pageCount: 3, generatedAt: "fixture" })).status).toBe(200)
+  expect((await send("glossary", { baseVersion: 0, items: [{ id: "gl001", word: "Term", definition: "Manual definition", variations: [], emojis: [], source: "manual" }], pageCount: 3, generatedAt: "fixture" })).status).toBe(200)
   const catalog = await json("text-catalog")
   expect((await send("text-catalog-translation/fr", { entries: catalog.entries.map((e: { id: string }) => ({ id: e.id, text: `Manual French ${e.id}` })), baseVersion: 0, sourceVersion: catalog.version, sourceSignature: catalog.translations.fr.sourceSignature })).status).toBe(200)
 }
@@ -115,7 +115,7 @@ it("saves, runs real admission/preparation/workers, reads history, previews and 
   // The stub returns an alternative for the protected group. Publication must
   // reject it too, even if an adapter supplies a retained/generated candidate.
   expect((await json("quizzes")).quizzes.quizzes).toHaveLength(1)
-  expect((await run("sectioning", { toStage: "translate" })).status).toBe("completed")
+  expect(await run("sectioning", { toStage: "translate" })).toMatchObject({ status: "failed", error: expect.stringContaining("RESUME_INCOMPLETE") })
   expect(read("image-captioning", "pg001")!.data).toMatchObject({ captions: [expect.objectContaining({ source: "manual", caption: "Manual caption" })] })
   expect(read("glossary")!.data).toMatchObject({ items: [expect.objectContaining({ source: "manual", definition: "Manual definition" })] })
   for (const [node, itemId] of [["page-sectioning", "pg001"], ["toc-generation", "book"], ["quiz-generation", "book"], ["text-catalog-translation", "fr"], ["image-captioning", "pg001"], ["glossary", "book"]]) {
@@ -198,10 +198,12 @@ it("requires versions, returns the current version on conflict, rejects a concur
   expect((await send("versions/toc-generation/book/restore", { version: 1, baseVersion: 2 }, "POST")).status).toBe(200)
   expect((await json("toc")).source).toBe("ai")
   expect((await run("toc")).status).toBe("completed")
-  expect(generateToc).toHaveBeenCalledTimes(1)
+  // The old AI tag lacks verifiable generation evidence; restoration must
+  // not silently authorize regeneration of that legacy document.
+  expect(generateToc).not.toHaveBeenCalled()
 
   // Restoring protected content must not convert it to AI or authorize a rerun.
-  expect((await send("versions/toc-generation/book/restore", { version: 2, baseVersion: 3 }, "POST")).status).toBe(200)
+  expect((await send("versions/toc-generation/book/restore", { version: 2, baseVersion: 1 }, "POST")).status).toBe(200)
   generateToc.mockClear()
   expect((await run("toc")).status).toBe("completed")
   expect((await json("toc"))).toMatchObject({ source: "manual", version: 2 })
@@ -351,8 +353,8 @@ it.each(["manual", "unknown"] as const)("AC-4: repeated HTTP reruns skip the %s 
     expect(current).toHaveLength(2)
     expect(current[0]).toEqual(protectedQuiz)
     expect(current[1]).toMatchObject({ source: "ai", pageIds: ["pg009", "pg010", "pg011"] })
-    expect(generateObject).toHaveBeenCalledTimes(1)
-    expect(generateObject.mock.calls[0][0].context.page_texts.map((page: { pageId: string }) => page.pageId)).toEqual(["pg009", "pg010", "pg011"])
+    expect(generateObject).toHaveBeenCalledTimes(attempt === 0 ? 1 : 0)
+    if (attempt === 0) expect(generateObject.mock.calls[0][0].context.page_texts.map((page: { pageId: string }) => page.pageId)).toEqual(["pg009", "pg010", "pg011"])
   }
   const history = await json("debug/versions/quiz-generation/book?includeData=true")
   expect(JSON.stringify(history)).toContain('"qz003"')
@@ -452,7 +454,7 @@ it("stamps only changed translations and rejects stale, missing and running-step
   expect((await send("versions/text-catalog-translation/fr/restore", { version: 1, baseVersion: 2 }, "POST")).status).toBe(409)
   const stopped = book(); stopped.markStepCompleted("text-catalog-translation"); stopped.close()
   expect(read("text-catalog-translation", "fr")!.version).toBe(2)
-  expect((await run("translate")).status).toBe("completed")
+  expect(await run("translate")).toMatchObject({ status: "failed", error: expect.stringContaining("RESUME_INCOMPLETE") })
   expect((read("text-catalog-translation", "fr")!.data as { entries: object[] }).entries).toEqual(expect.arrayContaining([expect.objectContaining({ id: "pg001_t001", text: "Corrected", source: "manual" }), { id: "pg002_t001", text: "Legacy" }]))
 })
 
@@ -711,7 +713,7 @@ it("F4: combined confirmed Sectioning to TOC replaces the consented document aft
   await vi.waitFor(() => expect(release).toBeDefined())
   expect((await send("toc", { ...before.data as object, baseVersion: before.version })).status).toBe(409)
   release()
-  expect((await running).status).toBe("completed")
+  expect(await running).toMatchObject({ status: "failed", error: expect.stringContaining("RESUME_INCOMPLETE") })
   expect(generateToc).toHaveBeenCalledTimes(1)
   expect(read("toc-generation")!.data).toMatchObject({ source: "ai", entries: [expect.objectContaining({ title: "New chapter", sectionId: "pg001_sec002" })] })
   const history = await json("debug/versions/toc-generation/book?includeData=true")

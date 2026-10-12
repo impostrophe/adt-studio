@@ -1,6 +1,5 @@
 import { assertSafeExtractionRun } from "@adt/pipeline"
 import { STAGE_ORDER, type OutputRunScope, type OutputIdentity, type ProgressEvent } from "@adt/types"
-import { prepareSectioningRun } from "@adt/pipeline"
 import type { StageName, StepName, PageErrorPolicy, PageErrorAction } from "@adt/types"
 import { assertExtractionReadable, createBookStorage, resolveBookPaths, withBookWriter } from "@adt/storage"
 import type { ResolvedCredentials } from "@adt/llm"
@@ -111,12 +110,21 @@ export function createStageService(
 
     try {
       await withBookWriter(resolveBookPaths(label, options.booksDir).bookDir, async () => {
+        let enteredRunner = false
+        try {
         job.controller.signal.throwIfAborted()
         if (options.fromStage === "extract") assertSafeExtractionRun(label, options.booksDir, options.configPath)
         else assertExtractionReadable(resolveBookPaths(label, options.booksDir).bookDir)
-        if (!options.resume && options.fromStage !== "extract") prepareSectioningRun(label, options.booksDir, options.fromStage as StageName, options.toStage as StageName, options.configPath)
-        if (!options.resume && options.fromStage !== "extract") options.beforeRun?.()
+        enteredRunner = true
         await runner.run(label, effectiveOptions, progress)
+        } catch (error) {
+          // The same writer still owns the book while cancellation unwinds.
+          if (job.controller.signal.aborted && enteredRunner) {
+            const storage = createBookStorage(label, options.booksDir)
+            try { storage.clearRunningStepRuns() } finally { storage.close() }
+          }
+          throw error
+        }
       })
       // Resolved: either a real completion, or a cancel that landed after the
       // last checkpoint so all remaining work finished. Both are "completed" —
@@ -129,14 +137,6 @@ export function createStageService(
         // Cancel branch — runs only here, after runner.run() has settled, so the
         // runner is no longer touching step_runs. Return in-flight steps to idle
         // (deliberate action, not a failure) and announce completion of the cancel.
-        try {
-          withBookWriter(resolveBookPaths(label, options.booksDir).bookDir, () => {
-            const storage = createBookStorage(label, options.booksDir)
-            try { storage.clearRunningStepRuns() } finally { storage.close() }
-          })
-        } catch (cleanupErr) {
-          console.error(`[stage-run] ${label} cancel cleanup failed:`, cleanupErr)
-        }
         job.status = "cancelled"
         job.completedAt = Date.now()
         eventBus.emit(label, { type: "stage-run-cancelled", label, ...(job.summary ? { summary: job.summary } : {}) })

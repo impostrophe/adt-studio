@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useLingui } from "@lingui/react/macro"
 import { RefreshCw } from "lucide-react"
-import { GENERATION_OUTPUT_KINDS, OUTPUT_KIND_TO_STAGE, STAGE_ORDER, type OutputStatus } from "@adt/types"
+import { OUTPUT_KIND_TO_STAGE, STAGE_ORDER, type OutputStatus } from "@adt/types"
 import { api } from "@/api/client"
 import { useApiKey } from "@/hooks/use-api-key"
 import { useBookRun } from "@/hooks/use-book-run"
@@ -30,16 +30,14 @@ export function ReviewActions({ bookLabel, outputs, catalog, filtered, heading, 
     mutationFn: async (action: "keep" | "update" | "replace") => {
       if (dirty || isRunning) return
       if (action === "keep") {
-        for (const output of plan.keep) {
-          await api.reviewOutput(bookLabel, { ...reviewGuard(output), action: output.protected ? "keep" : "checked" })
-        }
+        await api.reviewOutputs(bookLabel, plan.keep.map((output) => ({ ...reviewGuard(output), action: output.protected ? "keep" : "checked" })))
         return
       }
       const targets = action === "replace" ? plan.replacement : plan.update
       for (const stage of STAGE_ORDER) {
         const work = targets.filter((output) => OUTPUT_KIND_TO_STAGE[output.identity.kind] === stage)
         if (!work.length) continue
-        await api.runStages(bookLabel, apiKey, { fromStage: stage, toStage: stage, resume: work.some((output) => GENERATION_OUTPUT_KINDS.some((kind) => kind === output.identity.kind)), outputScope: {
+        await api.runStages(bookLabel, apiKey, { fromStage: stage, toStage: stage, outputScope: {
           selection: { identities: work.map((output) => output.identity) },
           retry: work.filter(hasFallback).map((output) => output.identity),
           ...(action === "replace" ? { replace: work.filter((output) => output.protected).map(reviewGuard) } : {}),

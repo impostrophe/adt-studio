@@ -66,6 +66,13 @@ verification or silently declare those criteria passed.
   output may be previewed/exported under SPEC-0001 without being certified current.
   Full-run unresolved required work still reports incomplete/nonzero. Keep cannot
   manufacture usable inputs, coverage, freshness or AI authorship.
+- **AC-8/12/13, R3/5/10:** output decisions bind input/content hashes and exact
+  selected stored-owner revisions, including identical-content edit/restore cases.
+  Bulk Keep validates all requested decisions before any evidence write. Quiz and
+  glossary book-level generation regenerates only eligible AI content; authored
+  items use their exact-version editor replacement path and explicit acceptance.
+  Ordinary single-stage attempts may finish with usable retained warnings, but
+  their unresolved freshness summary remains incomplete. Full resume stays strict.
 - **AC-8/18 compatibility:** unverifiable/contradictory rendered ownership remains
   in raw data/history/assets but is omitted preview/export with a warning. Missing
   authorship alone does not justify omission. Never infer an owner by position.
@@ -176,7 +183,7 @@ Legacy books without manifests are not automatically backfilled from today's PDF
 | SPEC-0003 | Reuse the current saved tree, missing-only Sectioning, exact scoped reset, per-page publication and ownership/coverage checks. Mode preferences never gate rendering. |
 | Stable IDs/retained media | No rerun retirement or allocator reset on reuse; preserve historical asset bytes, recordings and video assignments. |
 
-The proposed decision is recorded in [ADR 026](../DECISIONS.md#026-existing-books-require-verified-extraction-reuse). It remains proposed until this spec's blocking review questions are resolved. The implementation in this PR extends the published SPEC-0001/0002/0003 stack with shared full-run resume, staged generation publication and artifact recovery. The documented `UNSAFE_RESUME_UNAVAILABLE` fallback remains for unavailable capabilities. See [the current implementation and acceptance evidence](../verification/spec-0010-full-resume.md) and [operator guidance](../SAFE_EXTRACTION.md); implementation does not approve this proposed decision.
+The proposed decision is recorded in [ADR 026](../DECISIONS.md#026-existing-books-require-verified-extraction-reuse). It remains proposed until this spec's blocking review questions are resolved. The implementation in this PR extends the published SPEC-0001/0002/0003 stack with shared full-run resume, per-page Storyboard publication, staged collection publication and artifact recovery. The documented `UNSAFE_RESUME_UNAVAILABLE` fallback remains for unavailable capabilities. See [the current implementation and acceptance evidence](../verification/spec-0010-full-resume.md) and [operator guidance](../SAFE_EXTRACTION.md); implementation does not approve this proposed decision.
 
 ## Acceptance criteria
 

@@ -3,7 +3,6 @@ import { runPackageResume } from "./package-resume.js"
 import { extractionOptionsFromConfig, prepareExtractionAdmission } from "./extraction-admission.js"
 import { runGenerationStage } from "./generation-execution.js"
 import { runCatalogResume } from "./catalog-resume.js"
-import { assertSafeExtractionRun } from "@adt/pipeline"
 import { PageSectioningOutput } from "@adt/types"
 import { retainedTranslation, isProtectedContent, createSectionIdFactory, retireSectionIds } from "@adt/pipeline"
 import { AuthoredReplacementError } from "./authored-output.js"
@@ -22,7 +21,7 @@ import { selectSectioningPages, resetSectioningStoryboard, SectioningSafetyError
 import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
-import { publishSpeechOutput, assertExtractionReadable, createBookStorage, withBookWriter, ownsBookWriter, resolveBookPaths } from "@adt/storage"
+import { publishSpeechOutput, createBookStorage, withBookWriter, ownsBookWriter, resolveBookPaths } from "@adt/storage"
 import type { Storage } from "@adt/storage"
 import {
   AiProviderError,
@@ -937,6 +936,7 @@ export function createStageRunner(): StageRunner {
   const runner = createAdmittedStageRunner()
   return {
     run(label, options, progress) {
+      options = { ...options, protectedReplacements: options.protectedReplacements?.map((record) => ({ ...record })) }
       const { bookDir } = resolveBookPaths(label, options.booksDir)
       return withBookWriter(bookDir, async () => {
         if (!STAGE_ORDER.includes(options.fromStage as StageName) || !STAGE_ORDER.includes(options.toStage as StageName) || STAGE_ORDER.indexOf(options.fromStage as StageName) > STAGE_ORDER.indexOf(options.toStage as StageName)) throw new Error("Invalid stage range")
@@ -963,19 +963,10 @@ export function createStageRunner(): StageRunner {
             if (!storage.getStepRuns().some((step) => step.step === "extract" && step.status === "done")) storage.markStepCompleted("extract")
           } finally { storage.close() }
         }
-        if (options.resume || options.fromStage === "extract") return runCatalogResume(label, { ...options, extractionCreated }, progress, (stage) =>
+        return runCatalogResume(label, { ...options, extractionCreated }, progress, (stage) =>
           (stage === "extract" || stage !== "package" && isGenerationKind(stage))
-            ? runGenerationStage(label, options, stage, progress, (admitted, publicationProgress) => runner.run(label, { ...admitted, resume: false, fromStage: stage, toStage: stage, beforeRun: undefined }, publicationProgress))
-            : runner.run(label, { ...options, resume: false, fromStage: stage, toStage: stage, beforeRun: undefined }, progress))
-        if (options.fromStage === "extract") assertSafeExtractionRun(label, options.booksDir, options.configPath)
-        else assertExtractionReadable(resolveBookPaths(label, options.booksDir).bookDir)
-        prepareSectioningRun(label, options.booksDir, options.fromStage as StageName, options.toStage as StageName, options.configPath)
-        const storage = createBookStorage(label, options.booksDir)
-        try {
-          assertAuthoredReplacement(storage, options)
-          selectSectioningPages(storage, activeSectioningPages(storage, loadBookConfig(label, options.booksDir, options.configPath), bookDir), options)
-        } finally { storage.close() }
-        return runner.run(label, options, progress)
+            ? runGenerationStage(label, options, stage, progress, (admitted, publicationProgress) => runner.run(label, { ...admitted, resume: false, fromStage: stage, toStage: stage, replacementRange: { fromStage: options.fromStage, toStage: options.toStage }, beforeRun: undefined }, publicationProgress))
+            : runner.run(label, { ...options, resume: false, fromStage: stage, toStage: stage, replacementRange: { fromStage: options.fromStage, toStage: options.toStage }, beforeRun: undefined }, progress))
       })
     },
   }
@@ -992,7 +983,6 @@ function createAdmittedStageRunner(): StageRunner {
       if (!ownsBookWriter(bookDir)) return withBookWriter(bookDir, () => createStageRunner().run(label, options, progress))
       // Consent belongs to this invocation. Only an exact, committed retirement
       // below can advance it; never mutate the caller's queued request snapshot.
-      options = { ...options, protectedReplacements: options.protectedReplacements?.map((record) => ({ ...record })) }
       const { fromStage, toStage, booksDir } = options
       console.log(`[stage-run] ${label}: starting ${fromStage}→${toStage}`)
 
@@ -1449,7 +1439,7 @@ async function runSectioningStep(
     }))
     const previousVersions = new Map(pages.map((page) => [page.pageId, storage.getSelectedNodeVersion("page-sectioning", page.pageId)]))
     options.signal?.throwIfAborted()
-    resetSectioningStoryboard(storage, options)
+    resetSectioningStoryboard(storage, { ...options, ...options.replacementRange })
     const outputVersions = new Map(pages.map(({ pageId }) => [pageId, [
       storage.getSelectedNodeVersion("web-rendering", pageId),
       storage.getSelectedNodeVersion("fixed-layout-sectioning", pageId),
@@ -2514,7 +2504,7 @@ async function runTocStep(
 
 function readRunOutputs(label: string, options: StageRunOptions, storage: Storage) {
   const config = loadBookConfig(label, options.booksDir, options.configPath)
-  if (options.fromStage === "easy-read" && options.toStage === "easy-read") config.easy_read = { ...config.easy_read, enabled: true }
+  if ((options.replacementRange ?? options).fromStage === "easy-read" && (options.replacementRange ?? options).toStage === "easy-read") config.easy_read = { ...config.easy_read, enabled: true }
   return readOutputCatalog({ storage, config,
     bookDir: path.join(path.resolve(options.booksDir), label), promptsDir: options.promptsDir,
     configDir: options.configPath ? path.join(path.dirname(options.configPath), "config") : path.resolve("config") })
@@ -2587,12 +2577,12 @@ async function runEasyReadStep(
     progress.emit({ type: "step-complete", step: "text-catalog" })
 
     const baseEasyReadConfig = buildEasyReadConfig(config, language)
-    const explicitEasyReadRun = options.fromStage === "easy-read" && options.toStage === "easy-read"
+    const explicitEasyReadRun = (options.replacementRange ?? options).fromStage === "easy-read" && (options.replacementRange ?? options).toStage === "easy-read"
     const easyReadConfig = {
       ...baseEasyReadConfig,
       enabled: explicitEasyReadRun || baseEasyReadConfig.enabled,
     }
-    easyReadConfig.promptSignature = promptEngine.fingerprint(easyReadConfig.promptName, { modelId: easyReadConfig.modelId })
+    if (easyReadConfig.enabled) easyReadConfig.promptSignature = promptEngine.fingerprint(easyReadConfig.promptName, { modelId: easyReadConfig.modelId })
     let easyReadEntries: TextCatalogEntry[] = []
 
     if (!easyReadConfig.enabled) {

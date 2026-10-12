@@ -66,7 +66,7 @@ export type ExtractionManifest = z.infer<typeof ExtractionManifest>
 /** Observed persisted outputs, never a claim that unassessed stages are current. */
 export const PipelineResumeSummary = z.object({
   kind: z.literal("catalog-resume"),
-  extraction: z.enum(["created", "verified-reusable"]),
+  extraction: z.enum(["created", "verified-reusable", "not-requested"]),
   status: z.enum(["complete", "incomplete", "failed", "cancelled"]),
   stages: z.array(StageName),
   outputs: z.array(z.object({

@@ -515,3 +515,7 @@ export { readGenerationCatalog, GENERATION_NODES, isGenerationKind } from "./gen
 export { assertPackageReadable, recoverPackagePublication } from "./packaging/publication.js"
 
 export { writePackageInventory, packageInventoryValid } from "./packaging/publication.js"
+
+export { storyboardPackageComplete } from "./storyboard-package-coverage.js"
+
+export { annotateGeneration } from "./generation-catalog.js"

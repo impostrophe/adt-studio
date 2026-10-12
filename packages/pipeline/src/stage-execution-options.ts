@@ -6,6 +6,7 @@ export interface StageRunOptions {
   resume?: boolean
   /** Internal admitted generation publication; never accepted from HTTP. */
   extractionCreated?: boolean
+  replacementRange?: { fromStage: string; toStage: string }
   generationStorage?: import("@adt/storage").Storage
   generationPageIds?: string[]
   generationReplaceProtected?: boolean

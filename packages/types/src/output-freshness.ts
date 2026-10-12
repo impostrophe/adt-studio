@@ -63,6 +63,8 @@ export const OutputLocation = z.object({
 export type OutputLocation = z.infer<typeof OutputLocation>
 
 export const OutputStatus = z.object({
+  /** Required for decisions on a projected persisted output. */
+  revision: z.string().min(1).optional(),
   blocked: z.boolean().optional(),
   included: z.boolean().optional(),
   text: z.string().optional(),
@@ -72,6 +74,7 @@ export const OutputStatus = z.object({
   contentHash: z.string(),
   usable: z.boolean(),
   current: z.boolean(),
+  capabilityUnavailable: z.boolean().optional(),
   protected: z.boolean(),
   manual: z.boolean(),
   excluded: z.boolean(),
@@ -98,12 +101,15 @@ export const OutputSelection = z.object({
 export type OutputSelection = z.infer<typeof OutputSelection>
 
 export const OutputReviewRequest = z.object({
+  /** Required for decisions on a projected persisted output. */
+  revision: z.string().min(1).optional(),
   identity: OutputIdentity,
   signature: z.string(),
   contentHash: z.string(),
   action: z.enum(["keep", "checked"]),
 }).strict()
 export type OutputReviewRequest = z.infer<typeof OutputReviewRequest>
+export const OutputReviewBatchRequest = z.object({ reviews: z.array(OutputReviewRequest).min(1).max(1000) }).strict()
 
 export const OutputSummary = z.object({
   updates: z.number().int().nonnegative(),
@@ -135,6 +141,8 @@ export type BookWriterOwner = z.infer<typeof BookWriterOwner>
 
 /** Explicit replacement is bound to the content and inputs shown during review. */
 export const OutputReplacement = z.object({
+  /** Required for decisions on a projected persisted output. */
+  revision: z.string().min(1).optional(),
   identity: OutputIdentity,
   signature: z.string(),
   contentHash: z.string(),

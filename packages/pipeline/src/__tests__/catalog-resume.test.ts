@@ -115,7 +115,7 @@ it("uses an exact replacement decision and rejects it when reviewed content chan
   const s = storage()
   s.putNodeData("text-catalog-translation", "fr-FR", { entries: [{ id: "a", text: "Legacy" }, { id: "b", text: "Manual", source: "manual" }], generatedAt: "old" }); s.close()
   const a = catalog().find((output) => output.identity.kind === "translation" && output.identity.id === "a")!
-  const outputScope = { selection: { identities: [a.identity] }, replace: [{ identity: a.identity, signature: a.signature, contentHash: a.contentHash }] }
+  const outputScope = { selection: { identities: [a.identity] }, replace: [{ identity: a.identity, signature: a.signature, contentHash: a.contentHash, revision: a.revision }] }
   const result = await runFullPipeline({ ...options(), outputScope })
   expect(result.resume?.status).toBe("complete")
   expect(transport).toHaveBeenCalledTimes(1)
@@ -169,14 +169,15 @@ it("does not call an empty unknown selection current", async () => {
   expect(histories()).toEqual(before)
 })
 
-it("validates persisted By Page semantics even when catalog output was current", async () => {
+it("mode preference alone preserves current catalog output without providers", async () => {
   await runFullPipeline(options())
   transport.mockClear()
   fs.appendFileSync(path.join(bookDir(), "config.yaml"), "page_sectioning:\n  mode: page\n")
   writeSectioningLifecycle(bookDir(), "page", true, false)
   const before = histories()
   const result = await runFullPipeline(options())
-  expect([...result.stages.errors.values()][0]).toMatchObject({ code: "SECTIONING_PREFLIGHT_FAILED" })
+  expect([...result.stages.errors.values()]).toEqual([])
+  expect(result.resume?.status).toBe("complete")
   expect(transport).not.toHaveBeenCalled()
   expect(histories()).toEqual(before)
 })

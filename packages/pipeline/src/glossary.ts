@@ -76,9 +76,9 @@ export function mergeGeneratedGlossaryWithManualItems(
   generated: GlossaryOutput,
   existingItems: GlossaryItem[],
 ): GlossaryOutput {
-  const manualItems = existingItems.filter(isManualGlossaryItem)
+  const manualItems = existingItems.filter((item) => item.source !== "ai")
   const prunedItems = existingItems.filter(
-    (item) => isPrunedGlossaryItem(item) && !isManualGlossaryItem(item),
+    (item) => isPrunedGlossaryItem(item) && item.source === "ai",
   )
   const prunedWords = new Set(prunedItems.map((item) => normalizeGlossaryWord(item.word)))
 
@@ -102,14 +102,14 @@ export function mergeGeneratedGlossaryWithManualItems(
         ...generatedItem,
         ...manualItem,
         id: manualItem.id ?? generatedItem.id,
-        source: "manual",
+        source: manualItem.source,
       }
       continue
     }
 
     mergedItems.push({
       ...manualItem,
-      source: "manual",
+      source: manualItem.source,
     })
   }
 

@@ -1880,6 +1880,7 @@ export const api = {
 
   getOutputDisclosure: (label: string, features: OutputDisclosureOptions = {}) => request<{ outputs: OutputStatus[]; summary: OutputSummary; summaries?: import("@adt/types").OutputSummaries; conflicts?: import("@adt/types").CatalogConflict[]; ownershipWarnings?: import("@adt/types").PackagingWarning[] }>(`/books/${label}/outputs/disclosure?features=${encodeURIComponent(JSON.stringify(features))}`),
   getOutputs: (label: string) => request<{ outputs: OutputStatus[]; summary: OutputSummary; summaries?: import("@adt/types").OutputSummaries; conflicts?: import("@adt/types").CatalogConflict[]; ownershipWarnings?: import("@adt/types").PackagingWarning[] }>(`/books/${label}/outputs`),
+  reviewOutputs: (label: string, reviews: OutputReviewRequest[]) => request<{ versions: number[] }>(`/books/${label}/outputs/review`, { method: "POST", body: JSON.stringify({ reviews }) }),
   reviewOutput: (label: string, review: OutputReviewRequest) => request<{ version: number }>(`/books/${label}/outputs/review`, { method: "POST", body: JSON.stringify(review) }),
 
   getTextCatalog: (label: string) =>

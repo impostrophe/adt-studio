@@ -41,7 +41,7 @@ it("HTTP full Extract and a duplicate queued request share current-output reuse"
   expect(histories()).toEqual(before)
 })
 
-it("Studio keep decisions are content-bound and cannot waive a pending Storyboard publication", { timeout: 60000 }, async () => {
+it("Studio keep decisions are content-bound; informational preferences do not gate usable content", { timeout: 60000 }, async () => {
   const { Hono } = await import("hono")
   const { createOutputRoutes } = await import("./outputs.js")
   const { bookWriterMiddleware } = await import("../middleware/book-writer.js")
@@ -57,11 +57,8 @@ it("Studio keep decisions are content-bound and cannot waive a pending Storyboar
   app.route("/", createOutputRoutes(full.booksRoot, full.promptsDir, full.configPath))
   const read = async () => (await (await app.request("/books/book/outputs")).json()).outputs.find((output: { identity: { kind: string } }) => output.identity.kind === "storyboard")
   const output = await read(), history = s.getAllNodeVersions("web-rendering", "pg001")
-  const keep = () => app.request("/books/book/outputs/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identity: output.identity, signature: output.signature, contentHash: output.contentHash, action: "keep" }) })
+  const keep = () => app.request("/books/book/outputs/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identity: output.identity, signature: output.signature, contentHash: output.contentHash, revision: output.revision, action: "keep" }) })
   writeSectioningLifecycle(s.bookDir!, "page", true, true)
-  expect((await keep()).status).toBe(409)
-  expect(s.getAllNodeVersions("web-rendering", "pg001")).toEqual(history)
-  writeSectioningLifecycle(s.bookDir!, "page", true, false)
   expect((await keep()).status).toBe(200)
   expect(await read()).toMatchObject({ current: true, protected: true, manual: true })
   s.putNodeData("web-rendering", "pg001", { ...(row.data as object), source: "manual", correction: "Newer edit" })

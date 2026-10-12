@@ -78,3 +78,22 @@ unpacked Desktop bundled API/resources. Separate unavailable GUI/signed/platform
 release checks. Preserve original failing evidence where feasible. Publish only
 after material findings are resolved; exact-head hosted test/Docker/i18n then
 new review comment and elasticsounds request, without editing PR title/body.
+
+## Integration verification checkpoints (not final acceptance)
+
+- Full suite at the initial integrated state: 4,267 passed / 78 failed.
+- Second built full suite: 4,341 passed / 19 failed (365 files, 442.68 seconds).
+  Failures exposed obsolete unconditional-rerun fixtures and a known-AI duplicate
+  quiz-ID repair gap; fixes are being verified. No green full-suite claim yet.
+- The obsolete `pipeline-dag-publication.test.ts` mocked a removed legacy executor
+  and invalid extraction admission. Its assertion is replaced by
+  `apps/api/src/routes/resume-incremental.test.ts`: real PDF/SQLite, transport gate,
+  first-page API visibility while page two waits, and success/failure/cancellation.
+- Copied-book real API acceptance completed preference change → missing-only
+  Sectioning → explicit reset → split → Storyboard → preview/package in both
+  layouts. Reflowable manifest: three sections; fixed: two pages. All 13 immutable
+  source PDF/image hashes per book remained unchanged.
+- Real Studio: while `slow` page two waited inside the stubbed transport, page one
+  was available at version 1, its second section clickable and rendered, Storyboard
+  showed in progress and one missing page. Releasing page two changed the sidebar
+  to done. This is development browser evidence, not packaged/release certification.

@@ -121,6 +121,11 @@ export function saveQuizOutput(
     const prior = mode === "replace" ? protectedQuizzes : priorRow ? withResolvedQuizIds(priorRow.data as QuizGenerationOutput).quizzes : []
     const quizzes = stamped.quizzes.map((quiz, quizIndex) => {
       const old = prior.find((item) => item.quizId === quiz.quizId)
+      if (mode === "edit") {
+        // Review and generation evidence are server-owned, never client input.
+        const { generationEvidence: _untrusted, ...content } = quiz
+        quiz = { ...content, ...(old?.generationEvidence ? { generationEvidence: old.generationEvidence } : {}) }
+      }
       if (mode === "replace" && old && isProtectedContent(old)) return { ...old, quizIndex }
       const claimed = new Set(quiz.options.flatMap((option) => option.optionId ? [option.optionId] : []))
       const options = quiz.options.map((option, index) => {
@@ -143,7 +148,9 @@ export function saveQuizOutput(
       authored.sort((a, b) => (pageOrder.get(a.afterPageId) ?? 0) - (pageOrder.get(b.afterPageId) ?? 0))
     }
     const normalized = withResolvedQuizIds({ ...stamped, quizzes: authored.map((quiz, quizIndex) => ({ ...quiz, quizIndex })) })
-    const version = storage.putNodeData("quiz-generation", "book", normalized)
+    const evidence = (priorRow?.data as { generationEvidence?: unknown } | undefined)?.generationEvidence
+    const persisted = { ...normalized, ...(mode === "edit" && evidence ? { generationEvidence: evidence } : {}) }
+    const version = storage.putNodeData("quiz-generation", "book", persisted)
     return { output: normalized, version }
   })
 }

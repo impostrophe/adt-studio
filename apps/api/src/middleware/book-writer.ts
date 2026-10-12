@@ -18,7 +18,7 @@ export function bookWriterMiddleware(booksDir: string): MiddlewareHandler {
     let bookDir: string
     try { bookDir = resolveBookPaths(label, booksDir).bookDir }
     catch { throw new HTTPException(400, { message: "Invalid book label" }) }
-    if (!fs.existsSync(bookDir)) return next()
+    if (!fs.existsSync(bookDir)) throw new HTTPException(404, { message: "Book not found" })
     // Part exports write a ledger; all archives need a consistent file set.
     const archiveRead = /^(GET|HEAD)$/.test(c.req.method) && /^\/export-[^/]+$/.test(suffix)
     if ((c.req.method === "GET" || c.req.method === "HEAD") && !archiveRead) {

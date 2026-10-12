@@ -127,9 +127,9 @@ export function parseCliArgs(args: string[]): ParsedCliArgs {
   const { fromStage, toStage, protectedReplacementsFile, outputScopeFile } = parsed.data
   if ((fromStage === undefined) !== (toStage === undefined)
     || (fromStage && toStage && STAGE_ORDER.indexOf(fromStage) > STAGE_ORDER.indexOf(toStage))
-    || (protectedReplacementsFile && fromStage !== "sectioning")
-    || (outputScopeFile && (!fromStage || fromStage === "sectioning" || fromStage === "storyboard"))) {
-    throw new Error("Specify an ordered --from-stage and --to-stage range; protected replacements require Sectioning")
+    || (protectedReplacementsFile && !fromStage)
+    || (outputScopeFile && !fromStage)) {
+    throw new Error("Specify an ordered --from-stage and --to-stage range for scoped output or protected replacement decisions")
   }
 
   return {

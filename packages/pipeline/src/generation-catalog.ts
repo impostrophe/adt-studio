@@ -1,3 +1,6 @@
+import { bindOutputRevisions } from "./output-revision.js"
+import { storyboardCoverage } from "./storyboard-coverage.js"
+import { storyboardPackageComplete } from "./storyboard-package-coverage.js"
 import { FIXED_LAYOUT_SECTIONING_NODE } from "./render-sectioning.js"
 import { isFixedLayoutBook } from "./fixed-layout-rendering.js"
 import { collectReferencedImageIds } from "./web-rendering.js"
@@ -10,16 +13,16 @@ import { computePackagingInputHash } from "./packaging/web.js"
 import fs from "node:fs"
 import path from "node:path"
 import { createPromptEngine } from "@adt/llm"
-import { readExtractionManifest, ExtractionAdmissionError, type Storage } from "@adt/storage"
-import { BookMetadata, BookSummaryOutput, BookOutlineOutput, WebRenderingOutput, GlossaryOutput, QuizGenerationOutput, TocGenerationOutput, PageSectioningOutput, OutputMetadata, type AppConfig, type OutputStatus, type StageName } from "@adt/types"
-import { deriveOutputStatus, inputSignature } from "./output-freshness.js"
+import { readExtractionManifest, type Storage } from "@adt/storage"
+import { BookMetadata, BookSummaryOutput, BookOutlineOutput, WebRenderingOutput, GlossaryOutput, QuizGenerationOutput, TocGenerationOutput, PageSectioningOutput, OutputMetadata, withResolvedQuizIds, type AppConfig, type OutputStatus, type StageName } from "@adt/types"
+import { deriveOutputStatus, inputSignature, outputEvidence } from "./output-freshness.js"
 import { buildMetadataConfig } from "./metadata-extraction.js"
 import { buildBookSummaryConfig } from "./book-summary.js"
 import { buildBookOutlineConfig } from "./book-outline.js"
 import { buildPageSectioningConfig } from "./page-sectioning.js"
 import { buildTranslationConfig } from "./translation.js"
-import { extractTextFromHtml, buildQuizGenerationConfig } from "./quiz-generation.js"
-import { buildGlossaryConfig } from "./glossary.js"
+import { extractTextFromHtml, buildQuizGenerationConfig, batchPages } from "./quiz-generation.js"
+import { buildGlossaryConfig, getGlossaryItemTextId } from "./glossary.js"
 import { buildTocGenerationConfig, collectHeadingsAndToc } from "./toc-generation.js"
 import { activeSectioningPages } from "./sectioning-lifecycle.js"
 import { normalizeLocale } from "./language-context.js"
@@ -52,6 +55,7 @@ export function directoryContent(directory: string): unknown {
 }
 
 export interface GenerationCatalogOptions {
+  kinds?: GenerationKind[]
   storage: Storage; config: AppConfig; bookDir: string; promptsDir: string; templatesDir?: string; webAssetsDir?: string; configDir?: string; configPath?: string
 }
 
@@ -69,15 +73,24 @@ export function readGenerationCatalog(options: GenerationCatalogOptions): Output
   const metadata = read("metadata") as { language_code?: string } | undefined
   const language = normalizeLocale(config.editing_language ?? metadata?.language_code ?? "en")
   const engine = createPromptEngine([path.join(bookDir, "prompts"), promptsDir], { basePromptModelId: config.base_prompt_model })
+  let unavailablePrompt = false
   const promptConfig = (value: unknown): unknown => {
     if (!value || typeof value !== "object") return value
     const c = value as { promptName?: string; modelId?: string; refinementPromptName?: string }
-    let prompt: string | undefined
-    if (c.promptName) { try { prompt = engine.fingerprint(c.promptName, { modelId: c.modelId }) } catch (error) { if (error instanceof Error && error.message.includes("Dynamic prompt includes")) throw new ExtractionAdmissionError("UNSAFE_RESUME_UNAVAILABLE"); prompt = "missing" } }
-    let refinement: string | undefined
-    if (c.refinementPromptName) { try { refinement = engine.fingerprint(c.refinementPromptName, { modelId: c.modelId }) } catch (error) { if (error instanceof Error && error.message.includes("Dynamic prompt includes")) throw new ExtractionAdmissionError("UNSAFE_RESUME_UNAVAILABLE"); refinement = "missing" } }
-    return { ...c, prompt, refinement }
+    const fingerprint = (name?: string): string | undefined => {
+      if (!name) return undefined
+      try { return engine.fingerprint(name, { modelId: c.modelId }) }
+      catch (error) {
+        if (error instanceof Error && error.message.includes("Dynamic prompt includes")) { unavailablePrompt = true; return "unsupported-dynamic-include" }
+        return "missing"
+      }
+    }
+    // Resolve only when the consuming kind is projected. An unrelated dynamic
+    // prompt must not block a current/template/fixed output's ordinary run.
+    return { ...c, get prompt() { return fingerprint(c.promptName) }, get refinement() { return fingerprint(c.refinementPromptName) } }
   }
+  const wants = (kind: GenerationKind) => !options.kinds || options.kinds.includes(kind)
+
   const image = (id: string) => { try { return inputSignature(storage.getImageBase64(id)) } catch { return null } }
   const pageImages = (id: string) => {
     const filtered = read("image-filtering", id) as { images?: Array<{ imageId: string }> } | undefined
@@ -88,21 +101,36 @@ export function readGenerationCatalog(options: GenerationCatalogOptions): Output
     read("page-sectioning", page.pageId)])
   const statuses: OutputStatus[] = []
   const add = (kind: GenerationKind, id: string, inputs: unknown, content: unknown, excluded = false, usable = content != null, blocked = false) => {
+    if (!wants(kind)) return
     let raw: { generationEvidence?: unknown } | undefined
     try { raw = storage.getLatestNodeData(GENERATION_NODES[kind], id)?.data as typeof raw }
     catch (error) { if (!(error instanceof SyntaxError)) throw error }
     const parsed = OutputMetadata.safeParse(raw?.generationEvidence)
     const data = raw as { source?: string; items?: Array<{ source?: string }>; quizzes?: Array<{ source?: string }> } | undefined
-    const manual = data?.source === "manual" || [...(Array.isArray(data?.items) ? data.items : []), ...(Array.isArray(data?.quizzes) ? data.quizzes : [])].some((entry) => entry.source === "manual")
+    const collection = (kind === "quizzes" || kind === "glossary") && id === "book"
+    const manual = !collection && (data?.source === "manual" || [...(Array.isArray(data?.items) ? data.items : []), ...(Array.isArray(data?.quizzes) ? data.quizzes : [])].some((entry) => entry.source === "manual"))
     const evidence = parsed.success ? { ...parsed.data, ...(manual ? { source: "manual" as const } : {}) } : manual ? { source: "manual" as const } : undefined
-    const status = deriveOutputStatus({ identity: { kind, id }, signature: inputSignature({ contract: 1, kind, inputs }), content,
+    const savedSectioning = kind === "sectioning" && storage.getSelectedNodeVersion("page-sectioning", id) !== null
+    unavailablePrompt = false
+    const signature = inputSignature({ contract: 1, kind, inputs: savedSectioning ? "saved-tree" : inputs })
+    const capabilityUnavailable = unavailablePrompt
+    blocked ||= capabilityUnavailable
+    const status = deriveOutputStatus({ identity: { kind, id }, signature, content,
       metadata: evidence, usable, excluded })
-    if (kind === "sectioning" && storage.getSelectedNodeVersion("page-sectioning", id) !== null) {
+    if (collection || kind === "package") {
+      // The book facet represents generated eligible content only. Authored
+      // units are projected separately below, never implicitly accepted here.
+      status.protected = false
+      status.manual = false
+      status.updateNeeded = !status.current && usable
+      status.warnings = []
+    }
+    if (savedSectioning) {
       statuses.push({ ...status, current: usable, protected: true, updateNeeded: false,
         warnings: usable ? [] : [{ reason: "upstream" }], blocked: !usable, pageIds: [id] })
       return
     }
-    statuses.push({ ...status, current: status.current && !blocked, ...(blocked ? { blocked: true, warnings: [...status.warnings, { reason: "upstream" as const }] } : {}), pageIds: id === "book" ? pages.map((page) => page.pageId) : [id] })
+    statuses.push({ ...status, ...(capabilityUnavailable ? { capabilityUnavailable: true } : {}), current: status.current && !blocked, ...(blocked ? { blocked: true, warnings: [...status.warnings, { reason: "upstream" as const }] } : {}), pageIds: id === "book" ? pages.map((page) => page.pageId) : [id] })
   }
   // Source inputs are immutable extraction data, not the current derived images.
   const manifest = readExtractionManifest(bookDir)
@@ -142,13 +170,41 @@ export function readGenerationCatalog(options: GenerationCatalogOptions): Output
       config: renderConfig, styleguide: fixed ? undefined : loadStyleguideContent(config.styleguide, options.configPath, path.dirname(bookDir), path.basename(bookDir)),
       templates: renderConfig.some((entry) => entry.renderType === "template") ? templateInputs() : undefined,
       fontAssets: directoryContent(path.join(bookDir, "fonts")), fonts: read("font-registry"), assignments: read("font-assignment"), typography: read("typography"), typeScale: read("type-scale"),
-    }, read("web-rendering", page.pageId) ? { html: read("web-rendering", page.pageId), positioned: read(FIXED_LAYOUT_SECTIONING_NODE, page.pageId) } : undefined, false, WebRenderingOutput.safeParse(read("web-rendering", page.pageId)).success && (!isFixedLayoutBook(config) || !!read(FIXED_LAYOUT_SECTIONING_NODE, page.pageId)), !semantic.success || [...referenced, ...sourcePages].some(([, hash]) => hash === null))
+    }, read("web-rendering", page.pageId) ? { html: read("web-rendering", page.pageId), positioned: read(FIXED_LAYOUT_SECTIONING_NODE, page.pageId) } : undefined, false, storyboardCoverage(storage, [page.pageId]).complete && WebRenderingOutput.safeParse(read("web-rendering", page.pageId)).success && (!isFixedLayoutBook(config) || !!read(FIXED_LAYOUT_SECTIONING_NODE, page.pageId)), !semantic.success || [...referenced, ...sourcePages].some(([, hash]) => hash === null))
   }
   const quiz = buildQuizGenerationConfig(config, language)
-  add("quizzes", "book", { pages: rendered, config: promptConfig(quiz) }, read("quiz-generation"), !quiz, QuizGenerationOutput.safeParse(read("quiz-generation")).success)
-  add("glossary", "book", { pages: rendered, config: promptConfig(buildGlossaryConfig(config, language)) }, read("glossary"), false, GlossaryOutput.safeParse(read("glossary")).success)
-  add("toc", "book", { headings: collectHeadingsAndToc(storage, pages), config: promptConfig(buildTocGenerationConfig(config, language)) }, read("toc-generation"), false, TocGenerationOutput.safeParse(read("toc-generation")).success)
-  if (options.webAssetsDir) {
+  const quizOutput = QuizGenerationOutput.safeParse(read("quiz-generation"))
+  let quizItems = quizOutput.success ? quizOutput.data.quizzes : []
+  let quizIdentityValid = true
+  try { if (quizOutput.success) quizItems = withResolvedQuizIds(quizOutput.data).quizzes } catch { quizIdentityValid = false }
+  const quizPages = pages.flatMap((page) => {
+    const rendering = WebRenderingOutput.safeParse(read("web-rendering", page.pageId))
+    const sectioning = PageSectioningOutput.safeParse(read("page-sectioning", page.pageId))
+    return rendering.success && sectioning.success ? [{ pageId: page.pageId, rendering: rendering.data, sectioning: sectioning.data }] : []
+  })
+  const eligibleQuizPages = new Set(quiz ? batchPages(quizPages, quiz.pagesPerQuiz, quiz.quizSectionTypes,
+    quizItems.filter((item) => item.source !== "ai").map((item) => item.pageIds)).flatMap((group) => group.map((page) => page.pageId)) : [])
+  const quizInputs = { pages: rendered.filter(([id]) => eligibleQuizPages.has(id as string)), config: promptConfig(quiz) }
+  const quizContent = quizOutput.success ? { ...quizOutput.data, quizzes: quizItems.filter((item) => item.source === "ai").map(generationContent) } : undefined
+  add("quizzes", "book", quizInputs, quizContent, !quiz || !eligibleQuizPages.size && !!quizItems.length && quizItems.every((item) => item.source !== "ai"), quizOutput.success && quizIdentityValid, !quizIdentityValid && quizItems.some((item) => item.source !== "ai") || storage.getSelectedNodeVersion("quiz-generation", "book") !== null && !quizOutput.success)
+  const glossaryOutput = GlossaryOutput.safeParse(read("glossary"))
+  const glossaryItems = glossaryOutput.success ? glossaryOutput.data.items.map((item, index) => ({ ...item, id: getGlossaryItemTextId(item, index) })) : []
+  const glossaryIdentityValid = new Set(glossaryItems.map((item) => item.id)).size === glossaryItems.length
+  const glossaryInputs = { pages: rendered, config: promptConfig(buildGlossaryConfig(config, language)) }
+  const glossaryContent = glossaryOutput.success ? { ...glossaryOutput.data, items: glossaryItems.filter((item) => item.source === "ai").map(generationContent) } : undefined
+  add("glossary", "book", glossaryInputs, glossaryContent, false, glossaryOutput.success, !glossaryIdentityValid || storage.getSelectedNodeVersion("glossary", "book") !== null && !glossaryOutput.success)
+  for (const [kind, items, inputs] of [["quizzes", quizItems, { pages: rendered, config: promptConfig(quiz) }], ["glossary", glossaryItems, glossaryInputs]] as const) {
+    if (!wants(kind)) continue
+    for (const item of items.filter((item) => item.source !== "ai")) {
+      const id = "quizId" in item ? item.quizId : "id" in item ? item.id : undefined
+      if (!id) continue // Invalid identities block the collection above.
+      const status = deriveOutputStatus({ identity: { kind, id }, signature: inputSignature({ contract: 1, kind, inputs }),
+        content: generationContent(item), metadata: { ...item.generationEvidence, source: item.source }, usable: true, excluded: kind === "quizzes" ? !quiz : "pruned" in item && item.pruned === true })
+      statuses.push({ ...status, pageIds: "pageIds" in item ? item.pageIds : pages.map((page) => page.pageId), group: kind })
+    }
+  }
+  if (wants("toc")) add("toc", "book", { headings: collectHeadingsAndToc(storage, pages), config: promptConfig(buildTocGenerationConfig(config, language)) }, read("toc-generation"), false, TocGenerationOutput.safeParse(read("toc-generation")).success)
+  if (options.webAssetsDir && wants("package")) {
     const hash = computePackagingInputHash({ storage, bookDir, label: path.basename(bookDir), language,
       outputLanguages: [...new Set([language, ...(config.output_languages ?? []).map(normalizeLocale)])],
       title: (read("metadata") as { title?: string })?.title ?? path.basename(bookDir),
@@ -156,9 +212,20 @@ export function readGenerationCatalog(options: GenerationCatalogOptions): Output
       applyBodyBackground: config.apply_body_background,
     })
     const assessment = read("accessibility-assessment"), files = directoryContent(path.join(bookDir, "adt"))
-    add("package", "book", hash, assessment && files ? { assessment, files } : undefined)
+    add("package", "book", hash, assessment && files ? { assessment, files } : undefined, false, !!assessment && !!files && storyboardPackageComplete(storage, bookDir, pages.map((page) => page.pageId)))
   }
-  return statuses
+  return bindOutputRevisions(storage, statuses)
 }
 
 export function generationStage(kind: GenerationKind): StageName { return kindStage(kind) }
+
+/** Stamp trusted generation in the same content version, including targeted
+ * whole-page rendering. Custom instructions/partial authored merges cannot
+ * claim the ordinary generation fingerprint. */
+export function annotateGeneration(options: GenerationCatalogOptions, kind: GenerationKind, id: string, data: object): object {
+  const node = GENERATION_NODES[kind]
+  const storage = { ...options.storage, getLatestNodeData: (n: string, item: string) => n === node && item === id ? { version: 0, data } : options.storage.getLatestNodeData(n, item) }
+  const output = readGenerationCatalog({ ...options, kinds: [kind], storage }).find((status) => status.identity.kind === kind && status.identity.id === id)
+  if (!output) throw new Error("Generated output is outside the active scope")
+  return { ...data, generationEvidence: { source: "ai", input: { ...outputEvidence(output.signature, null), contentHash: output.contentHash } } }
+}

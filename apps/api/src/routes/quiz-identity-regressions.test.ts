@@ -198,10 +198,11 @@ describe("quiz identity across API edits and exports", () => {
   })
 })
 
-async function runStage(stage: "quizzes" | "speech") {
+async function runStage(stage: "quizzes" | "speech", retry = false) {
   await createStageRunner().run(label, {
     booksDir: root, promptsDir: path.resolve("prompts"), configPath,
     credentials: { openai: { apiKey: "test-fixture" } }, fromStage: stage, toStage: stage,
+    ...(retry ? { outputScope: { retry: [{ kind: "quizzes" as const, id: "book" }] } } : {}),
   }, { emit: () => {} })
 }
 
@@ -340,13 +341,17 @@ describe("quiz identity validation and legacy compatibility", () => {
 })
 
 describe("full-stage quiz regeneration", () => {
-  it("allocates fresh IDs on each full rerun and after rollback, even for identical model output", async () => {
+  it("reuses unchanged quizzes and allocates fresh IDs for explicit regeneration and after rollback", async () => {
     seed([quiz("Legacy one"), quiz("Legacy two")])
     makeBeforeRun(label, "quizzes", "quizzes", root)()
     await runStage("quizzes")
     expect(stored().quizzes.map((q) => q.quizId)).toEqual(["qz003"])
-    makeBeforeRun(label, "quizzes", "quizzes", root)()
+    const currentHistory = history()
+    const calls = generateObjectMock.mock.calls.length
     await runStage("quizzes")
+    expect(history()).toEqual(currentHistory)
+    expect(generateObjectMock).toHaveBeenCalledTimes(calls)
+    await runStage("quizzes", true)
     expect(stored().quizzes.map((q) => q.quizId)).toEqual(["qz004"])
     useStorage((s) => expect(s.setCurrentNodeVersion("quiz-generation", "book", 1)).toBe(true))
     expect(stored().quizzes[0].question).toBe("Legacy one")
@@ -380,8 +385,7 @@ describe("full-stage quiz regeneration", () => {
     await runStage("quizzes")
     expect(history()).toHaveLength(2)
     expect(stored().quizzes[0].quizId).toBe("qz1000")
-    makeBeforeRun(label, "quizzes", "quizzes", root)()
-    await runStage("quizzes")
+    await runStage("quizzes", true)
     expect(stored().quizzes[0].quizId).toBe("qz1001")
     expect(history()).toHaveLength(3)
   })

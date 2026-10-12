@@ -1,45 +1,34 @@
 # SPEC-0010 downstream integration requirements
 
-> October 12 continuation: historical mode-gate and whole-stage publication claims
-> below are superseded by the [authorized revised contract](../specs/SPEC-0010-safe-cli-reruns.md)
-> and [integration audit](../verification/spec-0010-oct12-integration.md). New integrated acceptance is in progress;
-> earlier completion/green-CI reports do not certify this continuation.
+Status: integrated implementation under verification; human review remains pending.
+The authoritative contract is [SPEC-0010](SPEC-0010-safe-cli-reruns.md), reconciled
+with the October 12 SPEC-0003 product decisions. The [original requirement map](../verification/spec-0010-oct12-integration.md)
+records every AC and R1–R10 before runtime edits. Historical refusal-only and
+mode-gate reports are retained in Git history and the dated verification documents;
+they do not describe the current execution path or establish fresh acceptance.
 
-Historical checkpoint: the current implementation and acceptance status is in [full resume evidence](../verification/spec-0010-full-resume.md). Statements below about unavailable full-book resume describe the earlier delivery, not the current continuation. Approval remains pending.
+## Shared execution and truthful outcomes
 
-Status: proposed coordination requirements; human review remains pending.
+API, queued work and CLI/DAG use the same stage executor under the shared book
+writer. Direct extraction enforces the same extraction admission boundary.
+Extraction reuse never authorizes downstream overwrites. Generated Extract steps,
+missing-only Sectioning, Storyboard, quizzes, glossary, TOC, catalog consumers and
+packaging each use the shared freshness/protection and publication policies.
 
-2026-10-11 implementation update: [published-stack continuation evidence](../verification/spec-0010-stack.md)
-and [operator guidance](../SAFE_EXTRACTION.md) supersede the historical delivery
-assessment below. Catalog-scoped API/CLI resume now shares execution and result
-reporting, in addition to SPEC-0003's bounded Sectioning–Storyboard path. R1–R10
-are no longer uniformly blocked; full-book coverage remains unavailable for the
-output families excluded from the published shared policies. This update does
-not approve the spec or broaden another spec's scope.
-This document clarifies the handoff required by SPEC-0010, not an implemented
-planner API or an approval/amendment of SPEC-0001/0002/0003. It does not change
-their acceptance criteria. The dependency assessment is based on the heads
-recorded in [the independent review](../verification/spec-0010-review.md).
+Full resume returns completed, reused, skipped or blocked scopes. Required
+unresolved work is incomplete and exits nonzero. An ordinary single-stage attempt
+may finish with retained usable warnings under SPEC-0001; its resume summary still
+reports incomplete freshness. Neither attempt success nor a manifest establishes
+book completion. Unsupported capabilities alone use `UNSAFE_RESUME_UNAVAILABLE`;
+missing content uses its concrete input/coverage error and preserves unrelated
+successful page commits.
 
-## Admission reporting delivered now
-
-AC-12/13 require honest reporting when safe execution is unavailable. Verified
-extraction followed by refusal now produces an admission-only result: extraction
-is verified reusable, downstream execution is blocked, no output was generated
-and no content was changed by this attempt. Current/stale/protected scopes are
-**not assessed**, not zero. This result does not claim pipeline completion.
-
-HTTP retains status 409, `code: UNSAFE_RESUME_UNAVAILABLE` and the existing
-`error` text, adding `summary` validated by `ExtractionResumeBlockedSummary` in
-`@adt/types`. The CLI prints the same facts and exits 1. Other admission failures
-carry no reuse summary. Studio's existing translated guidance remains accurate;
-queued jobs retain their existing error contract.
-
-Verification: the real HTTP route checks the structured response and absence of
-transport/content writes; the actual CLI subprocess checks the summary, exit
-code, unchanged book bytes and an intercepted fetch boundary. Changed source or
-damaged snapshot cases must never report verified reuse. This improves AC-13's
-refusal path; successful resume under AC-12/13 remains blocked.
+Review decisions carry the selected stored-owner revision as well as input and
+content hashes. A new version with identical bytes invalidates old consent. Bulk
+Keep validates every decision against one snapshot and publishes atomically.
+Per-item authored quiz/glossary replacement uses the existing version-bound editor,
+not consent to regenerate the collection's eligible AI portion. Keep preserves
+authorship and cannot make missing or unusable content complete.
 
 ## Required shared handoff
 
@@ -63,32 +52,21 @@ decision, reacquire and revalidate both extraction and planned input versions.
 A queued request must likewise be reassessed when it actually starts. Do not
 persist a claim of completed work merely because admission succeeded.
 
-## Proposed amendments needing reconciliation
+## Reconciled contract
 
-1. **Legacy provenance:** replace SPEC-0002's missing-`source` means AI rule for
-   ordinary resume with protected unknown provenance, consistent with
-   SPEC-0001/0010. Example: an older hand-corrected translation without a tag
-   cannot safely be selected for automatic regeneration. An explicit adoption
-   or replacement decision needs its own version-bound policy; no silent backfill.
-2. **Coverage:** assign freshness and preservation policy to every scope that a
-   requested full run can reach, including Storyboard and the output families
-   excluded from SPEC-0001's section-level V1 scope. This does not mandate
-   section-level granularity everywhere: conservative book/page scopes may be
-   acceptable if they prove currentness and preserve manual work. Otherwise
-   report the scope as blocked. SPEC-0002's Storyboard exclusion needs an explicit
-   owner/design before automatic Storyboard regeneration can be enabled.
-3. **Entry-path parity:** require the same planning, protection and publication
-   decisions for API, CLI, queued and direct full-run paths. UI-only preservation
-   or a CLI implementation of separate rules cannot satisfy this handoff.
-
-These proposals identify the decisions needed; this branch does not silently
-resolve them by weakening another spec or treating its proposal as approved.
+Unknown authorship is protected. Every requested output family has a shared
+policy; unsupported prompt/resource capabilities fail closed. Entry-path parity
+uses the same executor rather than a second CLI scheduler. SPEC-0003's saved tree,
+missing-only Sectioning, exact reset and incremental Storyboard publication replace
+older lifecycle/cardinality gates. Actual layout switches alone publish the full
+active window atomically. These are implementation clarifications authorized by
+the owner; they do not imply formal approval of any specification.
 
 ## Integration acceptance map
 
-The rows below are **not run / blocked by shared implementation**. Existing
-admission tests are not substitutes. Execute against the real shared planner and
-real filesystem/SQLite storage; use stubs only at external transport boundaries.
+The rows below preserve the original integration scenarios. Fresh results belong
+in the dated integration/acceptance evidence. Admission-only tests are not
+substitutes: use real filesystem/SQLite storage and stub external transports.
 
 | ID / AC | Scenario | Required observable evidence |
 |---|---|---|
@@ -100,7 +78,7 @@ real filesystem/SQLite storage; use stubs only at external transport boundaries.
 | R6 / 7,8,12,13 | Partial provider failure, cancellation, process termination and restart | Retain history/media and durably completed scopes; report partial result honestly; next run reassesses persisted state without assuming completion or duplicating completed work. |
 | R7 / 10,11,13 | Duplicate queued requests | Second request replans after its predecessor; no unnecessary provider call or duplicate version; API and CLI decisions agree. |
 | R8 / 12,14 | Invalid cache entry, valid cache entry and retry | Count actual stubbed transport calls, validate cache output, preserve ordered-input keys; never reuse invalid output or clear unrelated cache entries. |
-| R9 / 8,12 | Sectioning/layout/Storyboard dependencies | Shared rendering preflight blocks unsupported transitions; supported publication retains stable references, version history and physical assets; verify resulting read model/export. |
+| R9 / 8,12 | Sectioning/layout/Storyboard dependencies | Saved-tree and extraction capability checks identify genuine missing inputs; preference alone does not gate rendering; supported publication retains stable references, version history and physical assets; verify resulting read model/export. |
 | R10 / 12,13 | Explicit replacement/acceptance decision | Only authorized scopes and versions change; concurrent edit invalidates the decision; retained histories/media remain recoverable. |
 
 Enable successful resume only for fully supported requested work. Keep
