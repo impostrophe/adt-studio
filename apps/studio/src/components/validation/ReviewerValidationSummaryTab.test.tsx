@@ -193,3 +193,6 @@ it("does not relabel historical answers from an edited live catalog when the ses
   expect(screen.queryByText("New unrelated criterion meaning")).toBeNull()
   expect(screen.getByText("text-matches-original-reading-order")).toBeTruthy()
 })
+
+// Phase A routing remains independent of paid repair; the action has its own integration suite.
+vi.mock("./ValidationRepairAction", () => ({ ValidationRepairAction: () => null }))

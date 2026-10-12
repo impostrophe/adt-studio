@@ -44,7 +44,7 @@ vi.mock("@/hooks/use-reviewer-validation", () => ({
   useSaveReviewerPageValidationRecord: () => ({ mutateAsync: (...args: unknown[]) => save(...args), isPending: false }),
 }))
 
-const initialPreviewPage = { pageId: "pg001", pageNumber: 1, sectionId: "stable", href: "stable.html", title: "Page", hasImages: false, hasActivity: false, signLanguageEnabled: false }
+const initialPreviewPage = { artifactId: "11111111-1111-4111-8111-111111111111", pageId: "pg001", pageNumber: 1, sectionId: "stable", href: "stable.html", title: "Page", hasImages: false, hasActivity: false, signLanguageEnabled: false }
 let previewPage = initialPreviewPage
 
 function Surface() {
@@ -176,12 +176,12 @@ it("does not redirect or notify after the originating view unmounts", async () =
 it("keeps an unsaved review bound to its source when the Preview iframe changes page", async () => {
   const router = await setup("preview")
   fireEvent.change(await screen.findByLabelText("Overall page note"), { target: { value: "Note for original page" } })
-  previewPage = { ...initialPreviewPage, pageId: "pg002", sectionId: "second", href: "second.html", title: "Second page" }
+  previewPage = { ...initialPreviewPage, artifactId: "22222222-2222-4222-8222-222222222222", pageId: "pg002", sectionId: "second", href: "second.html", title: "Second page" }
   await act(async () => { await router.navigate({ to: "/books/$label/$step", params: { label: "book", step: "preview" }, search: { changed: true } }) })
   expect((screen.getByLabelText("Overall page note") as HTMLTextAreaElement).value).toBe("Note for original page")
   fireEvent.click(screen.getByRole("button", { name: "Save page review" }))
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
-  expect(save.mock.calls[0][0]).toMatchObject({ page_id: "pg001", section_id: "stable", overall_comment: "Note for original page" })
+  expect(save.mock.calls[0][0]).toMatchObject({ page_id: "pg001", section_id: "stable", artifact_id: "11111111-1111-4111-8111-111111111111", overall_comment: "Note for original page" })
 })
 
 it("shares an in-flight save with Save & leave and prevents edits until it settles", async () => {

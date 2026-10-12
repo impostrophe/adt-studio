@@ -53,6 +53,7 @@ import {
 } from "@/hooks/use-reviewer-validation"
 
 interface PreviewValidationPageContext {
+  artifactId?: string
   pageId: string | null
   pageNumber: number | null
   sectionId: string | null
@@ -553,6 +554,7 @@ export function PreviewValidationCard({
     setReviewSaveError(null)
 
     const record: ReviewerPageValidationRecord = {
+      artifact_id: currentPage.artifactId,
       session_id: activeSession.session.session_id,
       page_id: currentPage.pageId,
       section_id: currentPage.sectionId ?? undefined,

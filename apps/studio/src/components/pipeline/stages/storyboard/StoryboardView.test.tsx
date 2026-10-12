@@ -161,3 +161,6 @@ describe("StoryboardView validation section focus", () => {
 })
 
 vi.mock("./components/BookOutlineAudit", () => ({ BookOutlineAudit: () => <div>outline</div> }))
+
+vi.mock("../../components/OutputReview", () => ({ OutputReview: () => null }))
+vi.mock("@/hooks/use-fixed-layout", () => ({ useIsFixedLayout: () => false }))

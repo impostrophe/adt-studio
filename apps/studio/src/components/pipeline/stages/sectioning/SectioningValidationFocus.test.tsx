@@ -79,6 +79,7 @@ vi.mock("@/components/ui/dialog", () => ({
 
 const page = {
   pageId: "pg001",
+  versions: { sectioning: 1, rendering: 1 },
   sectioningTree: {
     reasoning: "",
     sections: [

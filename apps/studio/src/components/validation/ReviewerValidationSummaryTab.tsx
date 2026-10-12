@@ -1,3 +1,4 @@
+import { ValidationRepairAction } from "./ValidationRepairAction"
 import { useEffect, useMemo, useState } from "react"
 import { Trans, useLingui } from "@lingui/react/macro"
 import { useQueries } from "@tanstack/react-query"
@@ -373,6 +374,8 @@ export function ReviewerValidationSummaryTab({
           const meta = activeSession?.session.catalog_snapshot ? criterionMeta.get(result.criterion_id) : undefined
           return {
             criterionId: result.criterion_id,
+            recordVersion: entry.version,
+            recordItemId: [entry.record.session_id, entry.record.page_id, entry.record.language ?? "default"].join(":"),
             pageId: entry.record.page_id,
             sectionId: entry.record.section_id,
             pageNumber: entry.record.page_number,
@@ -663,6 +666,12 @@ export function ReviewerValidationSummaryTab({
                             <span className="font-medium text-foreground"><Trans>Suggested modification:</Trans></span> {entry.suggestedModification}
                           </div>
                         ) : null}
+                        {entry.sectionId && activeSessionId ? <ValidationRepairAction
+                          key={JSON.stringify([label, entry.recordItemId, entry.recordVersion, entry.criterionId])}
+                          label={label} pageId={entry.pageId} target={{ sectionId: entry.sectionId, finding: { kind: "reviewer",
+                            sessionId: activeSessionId, recordItemId: entry.recordItemId, recordVersion: entry.recordVersion, criterionId: entry.criterionId } }}
+                          onOpenEditor={() => void fixNavigation.open({ stage: "storyboard", pageId: entry.pageId, sectionId: entry.sectionId, href: entry.href },
+                            { tab: "reviewer-validation", sessionId: activeSessionId, pageId: entry.pageId, findingId: entry.criterionId })} /> : null}
                         <div className="mt-3 flex justify-end gap-2">
                           <ValidationDestinationSelect
                             value={routeOverrides[`${activeSessionId}:${entry.pageId}:${entry.criterionId}`] ?? entry.fixStage}

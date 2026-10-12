@@ -1,3 +1,5 @@
+import { ValidationRepairAction } from "./ValidationRepairAction"
+import type { ValidationFindingReference } from "@adt/types"
 import { useEffect, useMemo, useState } from "react"
 import type { I18n } from "@lingui/core"
 import { msg } from "@lingui/core/macro"
@@ -155,10 +157,13 @@ function formatFindingPageLabel(i18n: I18n, page: { pageNumber: number | null; t
 }
 
 function FindingPageLinks({
+  label, findingReference,
   pages,
   fixStage,
   onOpenPage,
 }: {
+  label: string
+  findingReference?: ValidationFindingReference
   pages: AccessibilityFindingPageSummary[]
   fixStage: ValidationFixStage
   onOpenPage: (page: AccessibilityFindingPageSummary, stage: ValidationFixStage) => void
@@ -177,8 +182,8 @@ function FindingPageLinks({
       </div>
       <div className="flex flex-wrap gap-2">
         {visiblePages.map((page) => (
+          <div key={page.sectionId} className="space-y-2">
           <Button
-            key={page.sectionId}
             variant="outline"
             size="sm"
             className="h-7 px-2.5 text-[11px]"
@@ -190,6 +195,11 @@ function FindingPageLinks({
             {page.count > 1 ? <span className="ml-1 text-muted-foreground">({page.count})</span> : null}
             <ArrowRight className="ml-1.5 h-3 w-3" />
           </Button>
+          {findingReference && page.pageId && page.sectionId ? <ValidationRepairAction
+            key={JSON.stringify([label, page.pageId, page.sectionId, findingReference])}
+            label={label} pageId={page.pageId} target={{ sectionId: page.sectionId, finding: findingReference }}
+            onOpenEditor={() => onOpenPage(page, "storyboard")} /> : null}
+          </div>
         ))}
         {pages.length > 6 ? (
           <Button
@@ -207,11 +217,14 @@ function FindingPageLinks({
 }
 
 function FrequentFindingCard({
+  label, assessmentVersion,
   finding,
   onOpenPage,
   onFilterSeverity,
   onFilterCategory,
 }: {
+  label: string
+  assessmentVersion: number | null
   finding: ReturnType<typeof buildFrequentAccessibilityFindings>[number]
   onOpenPage: (page: AccessibilityFindingPageSummary, stage: ValidationFixStage) => void
   onFilterSeverity: (severity: AccessibilitySeverity) => void
@@ -289,7 +302,7 @@ function FrequentFindingCard({
         </div>
       </div>
 
-      <FindingPageLinks pages={finding.pages} fixStage={fixStage} onOpenPage={onOpenPage} />
+      <FindingPageLinks label={label} findingReference={assessmentVersion ? { kind: finding.reviewOnly ? "incomplete" : "violation", assessmentVersion, ruleId: finding.id } : undefined} pages={finding.pages} fixStage={fixStage} onOpenPage={onOpenPage} />
     </div>
   )
 }
@@ -300,7 +313,7 @@ export function AccessibilityOverviewTab({ label }: AccessibilityTabProps) {
   const { t, i18n } = useLingui()
   const fixNavigation = useValidationFixNavigation(label)
   const { validationContext } = useSearch({ strict: false }) as BookStepSearch
-  const { data, isLoading, error } = useAccessibilityAssessment(label)
+  const { data, isLoading, error } = useAccessibilityAssessment(label, validationContext?.assessment)
   const [severityFilter, setSeverityFilter] = useState<AccessibilitySeverity | null>(validationContext?.severity ?? null)
   const [categoryFilter, setCategoryFilter] = useState<AccessibilityCategoryKey | null>(validationContext?.category ?? null)
 
@@ -510,6 +523,7 @@ export function AccessibilityOverviewTab({ label }: AccessibilityTabProps) {
           visibleFindings.map((finding) => (
             <FrequentFindingCard
               key={`${finding.reviewOnly ? "review" : "violation"}:${finding.id}`}
+              label={label} assessmentVersion={data.version}
               finding={finding}
               onOpenPage={(page, stage) => openFindingFix(finding, page, stage)}
               onFilterSeverity={(severity) => setSeverityFilter(severity)}

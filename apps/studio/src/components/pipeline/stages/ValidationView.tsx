@@ -1,7 +1,9 @@
+import type { BookStepSearch } from "@/lib/book-step-search"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { RotateCcw, ShieldCheck } from "lucide-react"
 import { LoadingState } from "@/components/pipeline/components/LoadingState"
 import { useAllPagesPruned } from "@/hooks/use-all-pages-pruned"
+import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useSearch } from "@tanstack/react-router"
 import { Trans, useLingui } from "@lingui/react/macro"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -29,6 +31,7 @@ function normalizeValidationTab(value: string | undefined) {
 export function ValidationView({ bookLabel }: { bookLabel: string }) {
   const { t, i18n } = useLingui()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const search = useSearch({ strict: false }) as { tab?: string }
   const { stageState, isStatusLoading } = useBookRun()
   const { isTaskRunning, getTask } = useBookTasks(bookLabel)
@@ -45,22 +48,33 @@ export function ValidationView({ bookLabel }: { bookLabel: string }) {
     return reviewerValidationEnabled ? normalized : "accessibility-summary"
   }, [reviewerValidationEnabled, search.tab])
 
+  const showFreshAssessment = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["debug", "accessibility", bookLabel] })
+    void navigate({ to: "/books/$label/$step", params: { label: bookLabel, step: "validation" },
+      search: (previous) => {
+        const context = (previous as BookStepSearch).validationContext
+        return { ...previous, validationContext: context ? { ...context, assessment: undefined } : undefined }
+      },
+      hash: true, replace: true })
+  }, [navigate, bookLabel, queryClient])
+
   const runPackage = useCallback(async () => {
     if (!canPackage) return
     setIsSubmittingPackage(true)
     setError(null)
     let taskId: string | undefined
     try {
-      const result = await api.packageAdt(bookLabel)
+      const result = await api.packageAdt(bookLabel, true)
       taskId = result.taskId
       if (taskId) {
         setPendingPackagingTaskId(taskId)
         return
       }
-      // Packaged inline (cache hit). Validation reports on the bundle, so
+      // Packaged inline. Validation reports on the bundle, so
       // anything left out of it has to be said out loud here too — otherwise a
       // clean validation reads as "the book is fine" over a short bundle.
       toastPackagingWarnings(result, i18n)
+      showFreshAssessment()
     } catch (e) {
       setError(e instanceof Error ? e.message : t`Packaging failed`)
     } finally {
@@ -68,7 +82,7 @@ export function ValidationView({ bookLabel }: { bookLabel: string }) {
         setIsSubmittingPackage(false)
       }
     }
-  }, [bookLabel, canPackage, t, i18n])
+  }, [bookLabel, canPackage, t, i18n, showFreshAssessment])
 
   // Track task completion/failure to update local loading/error state.
   // Query invalidation is handled by the SSE task-complete handler in use-book-run.ts.
@@ -80,12 +94,13 @@ export function ValidationView({ bookLabel }: { bookLabel: string }) {
       setPendingPackagingTaskId(null)
       setIsSubmittingPackage(false)
       toastPackagingWarnings(task.result, i18n)
-    } else if (task.status === "failed") {
+      showFreshAssessment()
+    } else if (task.status === "failed" || task.status === "cancelled") {
       setError(task.error ?? t`Packaging failed`)
       setPendingPackagingTaskId(null)
       setIsSubmittingPackage(false)
     }
-  }, [getTask, pendingPackagingTaskId, t, i18n])
+  }, [getTask, pendingPackagingTaskId, t, i18n, showFreshAssessment])
 
   if (isStatusLoading || prunedLoading) {
     return <LoadingState stageSlug="validation" label={<Trans>Loading validation...</Trans>} />

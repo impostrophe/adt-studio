@@ -269,3 +269,6 @@ it("explains a deleted original assessment without implying that its findings pa
   expect(screen.getByText(/original assessment is no longer available/).textContent).toContain("no finding has been marked resolved")
   expect(navigateMock).not.toHaveBeenCalled()
 })
+
+// Phase A routing remains independent of paid repair; the action has its own integration suite.
+vi.mock("./ValidationRepairAction", () => ({ ValidationRepairAction: () => null }))

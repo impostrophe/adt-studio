@@ -40,3 +40,6 @@ it.each([null, { sections: [] }])("consumes a vanished target after load, includ
   view.rerender(<SectioningView bookLabel="book" selectedPageId="pg001" />)
   expect(warning).toHaveBeenCalledTimes(1)
 })
+
+vi.mock("../../components/OutputReview", () => ({ OutputReview: () => null }))
+vi.mock("@/hooks/use-fixed-layout", () => ({ useIsFixedLayout: () => false }))
