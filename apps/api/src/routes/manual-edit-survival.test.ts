@@ -38,17 +38,23 @@ const send = (url: string, body: unknown, method = "PUT") => app.request(`/books
 async function json(url: string) { const response = await app.request(`/books/${label}/${url}`); expect(response.status, await response.clone().text()).toBe(200); return response.json() }
 function read(node: string, itemId = "book") { const db = book(); try { return db.getLatestNodeData(node, itemId) } finally { db.close() } }
 async function run(stage: string, extra = {}) {
-  let done: { status: string; error?: string } | undefined
-  const dispose = bus.addListener(label, (event) => {
-    if (event.type === "stage-run-complete") done = { status: "completed" }
-    if (event.type === "stage-run-error") done = { status: "failed", error: event.error }
-    if (event.type === "stage-run-cancelled") done = { status: "cancelled" }
+  let dispose = () => {}
+  const done = new Promise<{ status: string; error?: string }>((resolve) => {
+    dispose = bus.addListener(label, (event) => {
+      if (event.type === "stage-run-complete") resolve({ status: "completed" })
+      if (event.type === "stage-run-error") resolve({ status: "failed", error: event.error })
+      if (event.type === "stage-run-cancelled") resolve({ status: "cancelled" })
+    })
   })
-  const response = await send("stages/run", { fromStage: stage, toStage: stage, ...extra }, "POST")
-  expect(response.status, await response.clone().text()).toBe(200)
-  await vi.waitFor(() => expect(done).toBeDefined(), { timeout: 5000 })
-  dispose()
-  return done!
+  try {
+    const response = await send("stages/run", { fromStage: stage, toStage: stage, ...extra }, "POST")
+    expect(response.status, await response.clone().text()).toBe(200)
+    const result = await done
+    // In-memory Hono requests can run before the outer admission promise has
+    // settled. Cross the same event-loop boundary as a subsequent HTTP request.
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    return result
+  } finally { dispose() }
 }
 
 beforeEach(() => {
@@ -547,7 +553,7 @@ it("rolls retirement and reference writes back if publishing a replacement page 
   expect((await json("debug/versions/page-sectioning/pg001?includeData=true")).versions).toHaveLength(2)
 })
 
-it("cancels section replacement before publication and rejects a queued stale confirmation", async () => {
+it("cancels section replacement before publication while preserving saved semantics", async () => {
   await saveProtected()
   const db = book()
   for (const stage of PIPELINE.filter((s) => s.name === "extract")) for (const step of stage.steps) db.markStepCompleted(step.name)
@@ -586,21 +592,33 @@ it("cancels section replacement before publication and rejects a queued stale co
   for (const id of ["pg001", "pg002", "pg003"]) expect(read("page-sectioning", id)!.version).toBe(2)
   expect((await json("toc")).entries[0].sectionId).toBe("pg001_sec001")
 
+})
+
+it("rejects a queued stale confirmation after the preceding TOC run publishes", async () => {
+  await saveProtected()
   // Queue a TOC replacement behind another run of the same document. Admission
   // must check again after the first run publishes, before preparation/model work.
-  let finish!: () => void
-  generateToc.mockImplementationOnce(async () => { await new Promise<void>((resolve) => { finish = resolve }); return { entries: [], pageCount: 3, generatedAt: "new" } })
+  let finish: (() => void) | undefined
+  let started!: () => void
+  const providerStarted = new Promise<void>((resolve) => { started = resolve })
+  generateToc.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => { finish = resolve; started() })
+    return { entries: [], pageCount: 3, generatedAt: "new" }
+  })
   const body = { fromStage: "toc", toStage: "toc", replaceManual: true, protectedReplacements: [{ node: "toc-generation", itemId: "book", version: 2 }] }
-  const errors: string[] = []
-  const dispose = bus.addListener(label, (event) => { if (event.type === "stage-run-error") errors.push(event.error) })
-  expect((await send("stages/run", body, "POST")).status).toBe(200)
-  await vi.waitFor(() => expect(finish).toBeDefined())
-  expect((await send("stages/run", body, "POST")).status).toBe(200)
-  finish()
-  await vi.waitFor(() => expect(errors.join(" ")).toContain("Content changed"))
-  dispose()
-  expect(generateToc).toHaveBeenCalledTimes(1)
-  expect(read("toc-generation")!.version).toBe(3)
+  let dispose = () => {}
+  const failed = new Promise<string>((resolve) => {
+    dispose = bus.addListener(label, (event) => { if (event.type === "stage-run-error") resolve(event.error) })
+  })
+  try {
+    expect((await send("stages/run", body, "POST")).status).toBe(200)
+    await Promise.race([providerStarted, failed.then((error) => { throw new Error(error) })])
+    expect((await send("stages/run", body, "POST")).status).toBe(200)
+    finish!()
+    expect(await failed).toContain("Content changed")
+    expect(generateToc).toHaveBeenCalledTimes(1)
+    expect(read("toc-generation")!.version).toBe(3)
+  } finally { finish?.(); dispose() }
 })
 
 it("keeps every existing page on an ordinary run and replaces only explicitly named AI neighbors", async () => {
