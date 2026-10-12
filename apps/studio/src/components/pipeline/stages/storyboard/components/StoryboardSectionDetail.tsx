@@ -3232,6 +3232,7 @@ export function StoryboardSectionDetail({
                 isContainer: selectedInfo.isContainer,
                 textType: selectedInfo.textType,
                 isPruned: selectedInfo.isPruned,
+                ancestorPruned: selectedInfo.ancestorPruned,
                 textTypes,
                 imageSrc: selectedInfo.imageSrc,
                 segmenting,
