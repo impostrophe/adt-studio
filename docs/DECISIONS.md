@@ -1017,7 +1017,7 @@ This decision remains proposed, with human review pending.
 
 ### Context
 
-CLI and API extraction entry points can clear the existing page graph and historical entities; retained LLM caches do not restore user edits. A same-label run currently does not distinguish compatible reuse from changed-source replacement.
+At drafting, CLI and API extraction entry points could clear the existing page graph and historical entities; retained LLM caches did not restore user edits. A same-label run did not distinguish compatible reuse from changed-source replacement. Current implementation evidence is recorded in the [revised-stack acceptance report](verification/spec-0010-oct12-acceptance.md), separately from product approval.
 
 ### Decision
 

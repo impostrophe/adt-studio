@@ -1,6 +1,6 @@
 # SPEC-0010 implementation review — 2026-09-25
 
-Historical checkpoint: the current implementation and acceptance status is in [full resume evidence](spec-0010-full-resume.md). Statements below about unavailable full-book resume describe the earlier delivery, not the current continuation. Approval remains pending.
+Historical checkpoint: the current implementation and acceptance status is in [revised-stack acceptance](spec-0010-oct12-acceptance.md). Statements below about unavailable full-book resume describe the earlier delivery, not the current continuation. Approval remains pending.
 
 Historical review checkpoint: publication was subsequently authorized on
 2026-09-26. See [the implementation evidence](../specs/SPEC-0010-implementation-evidence.md)

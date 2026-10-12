@@ -2,7 +2,7 @@
 
 > October 12 continuation: historical mode-gate and whole-stage publication claims
 > below are superseded by the [authorized revised contract](../specs/SPEC-0010-safe-cli-reruns.md)
-> and [integration audit](../verification/spec-0010-oct12-integration.md). New integrated acceptance is in progress;
+> and [integration audit](../verification/spec-0010-oct12-integration.md). See [current acceptance](spec-0010-oct12-acceptance.md) and [fresh delegated review](spec-0010-independent-review-2026-10-12.md);
 > earlier completion/green-CI reports do not certify this continuation.
 
 This extends the shared SPEC-0001/0002 mechanisms in PR #886, as authorized by

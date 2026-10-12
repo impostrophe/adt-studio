@@ -1,6 +1,6 @@
 # SPEC-0010 revised-stack integration — 2026-10-12
 
-Status: preparation and implementation in progress; no acceptance or approval claimed.
+Status: historical pre-edit requirement map and integration checkpoints. See [current acceptance](spec-0010-oct12-acceptance.md) and [fresh delegated review](spec-0010-independent-review-2026-10-12.md). Human approval remains pending.
 Original published target: `3a7ad4a33b18db8aac851c093712ce4d5112ec4d`.
 Revised prerequisite: SPEC-0003 `c71605454126c29f8f6e5dab56ee90385012b886`,
 including SPEC-0002 `09f0d1c7c9d63662f621db4dcdb6ded8dc2cca89` and

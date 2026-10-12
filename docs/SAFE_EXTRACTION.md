@@ -89,10 +89,13 @@ Old bundle generations and failed attempts remain in the book as recoverable ass
 No timeout-based deletion of an anonymous SQLite mutex is introduced.
 
 `UNSAFE_RESUME_UNAVAILABLE` remains the fail-closed fallback when a requested
-capability is unsupported. Missing rendering/coverage instead reports the actual
+capability is unsupported. Custom Liquid prompts with dynamic include/render/layout
+targets cannot yet establish a safe dependency fingerprint and are refused; use
+literal targets for resumable prompts. Unrelated supported scopes remain runnable.
+Missing rendering/coverage instead reports the actual
 missing input or incomplete result, allowing unrelated runnable pages to publish. Its admission-only
 summary never claims completed downstream work. Invalid source or asset failures
-never report verified reuse. See [full implementation evidence](verification/spec-0010-full-resume.md).
+never report verified reuse. See [revised-stack acceptance](verification/spec-0010-oct12-acceptance.md).
 
 ## New-source workflow
 

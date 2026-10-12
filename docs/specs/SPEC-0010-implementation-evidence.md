@@ -2,10 +2,10 @@
 
 > October 12 continuation: historical mode-gate and whole-stage publication claims
 > below are superseded by the [authorized revised contract](../specs/SPEC-0010-safe-cli-reruns.md)
-> and [integration audit](../verification/spec-0010-oct12-integration.md). New integrated acceptance is in progress;
+> and [integration audit](../verification/spec-0010-oct12-integration.md). See [current acceptance](../verification/spec-0010-oct12-acceptance.md) and [fresh delegated review](../verification/spec-0010-independent-review-2026-10-12.md);
 > earlier completion/green-CI reports do not certify this continuation.
 
-Historical checkpoint: the current implementation and acceptance status is in [full resume evidence](../verification/spec-0010-full-resume.md). Statements below about unavailable full-book resume describe the earlier delivery, not the current continuation. Approval remains pending.
+Historical checkpoint: the current implementation and acceptance status is in [revised-stack acceptance](../verification/spec-0010-oct12-acceptance.md). Statements below about unavailable full-book resume describe the earlier delivery, not the current continuation. Approval remains pending.
 
 Current continuation: see [the 2026-10-11 stack evidence](../verification/spec-0010-stack.md). The results below are the earlier admission-only delivery, not the current scoped-resume coverage.
 
