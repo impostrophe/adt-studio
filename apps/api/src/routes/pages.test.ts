@@ -107,6 +107,23 @@ describe("Page routes", () => {
   })
 
   describe("GET /api/books/:label/pages", () => {
+    it("does not resurrect invalidated rendering or its activity flags, and respects a restored pointer", async () => {
+      const storage = createBookStorage(label, tmpDir)
+      const pageId = `${label}_p1`
+      const version = storage.putNodeData("web-rendering", pageId, { sections: [{ sectionIndex: 0, sectionType: "content", html: "<p>Old activity</p>", activityAnswers: { answer: "old" } }] })
+      storage.clearNodesByType(["web-rendering"])
+      storage.close()
+      const pages = await (await app.request(`/api/books/${label}/pages`)).json()
+      expect(pages[0].hasRendering).toBe(false)
+      expect(pages[0].sections[0].isActivity).toBe(false)
+      const restore = createBookStorage(label, tmpDir)
+      restore.setCurrentNodeVersion("web-rendering", pageId, version)
+      restore.close()
+      const restored = await (await app.request(`/api/books/${label}/pages`)).json()
+      expect(restored[0].hasRendering).toBe(true)
+      expect(restored[0].sections[0].isActivity).toBe(true)
+    })
+
     it("returns list of pages", async () => {
       const res = await app.request(`/api/books/${label}/pages`)
 

@@ -14,9 +14,19 @@ export const TextCatalogEntry = z.object({
 })
 export type TextCatalogEntry = z.infer<typeof TextCatalogEntry>
 
+/** A legacy identity collision is visible without making reads destructive. */
+export const CatalogConflict = z.object({
+  id: z.string(),
+  texts: z.array(z.string()),
+  pageIds: z.array(z.string()),
+  sectionIds: z.array(z.string()),
+})
+export type CatalogConflict = z.infer<typeof CatalogConflict>
+
 export const TextCatalogOutput = z.object({
   entries: z.array(TextCatalogEntry),
   generatedAt: z.string(),
+  conflicts: z.array(CatalogConflict).optional(),
 })
 export type TextCatalogOutput = z.infer<typeof TextCatalogOutput>
 

@@ -31,12 +31,12 @@ function output(id: string, overrides: Partial<OutputStatus> = {}): OutputStatus
     warnings: [], pageIds: [], sectionIds: [], ...overrides }
 }
 
-function setup(outputs: OutputStatus[], catalog = outputs, disclosure = false) {
+function setup(outputs: OutputStatus[], catalog = outputs, disclosure = false, conflicts: import("@adt/types").CatalogConflict[] = []) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   clients.push(client)
   const refresh = vi.spyOn(client, "invalidateQueries")
   const view = render(<QueryClientProvider client={client}>
-    <OutputReviewPanel bookLabel="book" outputs={outputs} catalog={catalog} disclosure={disclosure} renderDetail={(item) => <p>{item.identity.id}</p>} />
+    <OutputReviewPanel bookLabel="book" outputs={outputs} catalog={catalog} conflicts={conflicts} disclosure={disclosure} renderDetail={(item) => <p>{item.identity.id}</p>} />
   </QueryClientProvider>)
   return { ...view, refresh }
 }
@@ -204,4 +204,15 @@ it("deduplicates cyclic source references, retries fallbacks, and skips excluded
   expect(plan.update).toEqual([first, second])
   expect(plan.keep).toEqual([first])
   expect(plan.replace).toEqual([])
+})
+
+
+it("shows one legacy source-conflict warning without offering keep or generation for the source", () => {
+  setup([], [], false, [{ id: "pg001_tx001", texts: ["First", "Legacy copy"], pageIds: ["pg001"], sectionIds: [] }])
+  expect(screen.getByText("Items needing attention: 1")).toBeTruthy()
+  fireEvent.click(screen.getByRole("button", { name: "Review items" }))
+  expect(screen.getAllByRole("alert")).toHaveLength(1)
+  expect(screen.getByText("Duplicate source ID: pg001_tx001")).toBeTruthy()
+  expect(screen.queryByRole("button", { name: "Update all", exact: true })).toBeNull()
+  expect(screen.queryByRole("button", { name: "Keep all existing content", exact: true })).toBeNull()
 })

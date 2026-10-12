@@ -3285,6 +3285,9 @@ msgstr "Diff"
 msgid "Diff against fallback"
 msgstr "Diff avec le repli"
 
+msgid "Different texts share this ID. The first text in reading order is used. Give different content distinct IDs in the source."
+msgstr "Plusieurs textes partagent cet identifiant. Le premier dans l’ordre de lecture est utilisé. Attribuez des identifiants distincts aux contenus différents dans la source."
+
 msgid "Direction"
 msgstr "Direction"
 
@@ -3410,6 +3413,9 @@ msgstr "Dupliquer"
 
 msgid "Duplicate section"
 msgstr "Dupliquer la section"
+
+msgid "Duplicate source ID: {id}"
+msgstr "Identifiant source en double : {id}"
 
 msgid "duplicate this section"
 msgstr "dupliquer cette section"

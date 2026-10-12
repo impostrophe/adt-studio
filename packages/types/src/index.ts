@@ -315,6 +315,7 @@ export {
 export {
   TextCatalogEntry,
   TextCatalogOutput,
+  CatalogConflict,
   TextCatalogCategory,
   getTextCatalogCategory,
   ANSWER_ID_SEPARATOR,

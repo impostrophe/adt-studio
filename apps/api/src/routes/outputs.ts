@@ -3,12 +3,13 @@ import path from "node:path"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { createBookStorage, publishSpeechOutput, publishSpeechTimings } from "@adt/storage"
-import { OutputReviewRequest, OutputDisclosureOptions, parseBookLabel, type OutputStatus } from "@adt/types"
+import { OutputReviewRequest, OutputDisclosureOptions, parseBookLabel, type OutputStatus, type CatalogConflict } from "@adt/types"
 import { loadBookConfig, readOutputCatalog, outputIdentityKey, summarizeOutputs, buildTextCatalogSnapshot, reconcileSpeechInputs, loadCoreTtsProfiles } from "@adt/pipeline"
 
 export function createOutputRoutes(booksDir: string, promptsDir: string, configPath?: string): Hono {
   const app = new Hono()
-  const read = (label: string, storage: ReturnType<typeof createBookStorage>) => readOutputCatalog({
+  const read = (label: string, storage: ReturnType<typeof createBookStorage>, onConflicts?: (conflicts: CatalogConflict[]) => void) => readOutputCatalog({
+    onConflicts,
     storage, config: loadBookConfig(label, booksDir, configPath),
     bookDir: path.join(path.resolve(booksDir), label), promptsDir,
     configDir: configPath ? path.join(path.dirname(configPath), "config") : path.resolve("config"),
@@ -18,8 +19,9 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
     if (!fs.existsSync(path.join(path.resolve(booksDir), label, `${label}.db`))) throw new HTTPException(404, { message: "Book not found" })
     const storage = createBookStorage(label, booksDir)
     try {
-      const outputs = read(label, storage)
-      return c.json({ outputs, summary: summarizeOutputs(outputs) })
+      let conflicts: CatalogConflict[] = []
+      const outputs = read(label, storage, (items) => { conflicts = items })
+      return c.json({ outputs, summary: summarizeOutputs(outputs), conflicts })
     } finally { storage.close() }
   })
   app.get("/books/:label/outputs/disclosure", (c) => {
@@ -41,7 +43,7 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
         (!["audio", "preparation", "timestamps"].includes(output.identity.kind) || features.readAloud !== false) &&
         (output.identity.kind !== "caption" || captionConsumers.has(output.identity.id)))
         .map((output) => ({ ...output, included: output.usable }))
-      return c.json({ outputs, summary: summarizeOutputs(outputs) })
+      return c.json({ outputs, summary: summarizeOutputs(outputs), conflicts: catalog.conflicts ?? [] })
     } finally { storage.close() }
   })
   app.post("/books/:label/outputs/review", async (c) => {

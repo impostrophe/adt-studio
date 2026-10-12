@@ -8,7 +8,9 @@ import { outputEvidence, authoredImageAlts } from "@adt/pipeline"
 export function saveAuthoredImageAlts(storage: Storage, pageId: string, rendering: WebRenderingOutput, outputs: OutputStatus[]): void {
   const previous = WebRenderingOutput.safeParse(storage.getLatestNodeData("web-rendering", pageId)?.data)
   const oldAlts = previous.success ? authoredImageAlts(previous.data) : new Map<string, string>()
-  const changed = [...authoredImageAlts(rendering)].filter(([id, alt]) => oldAlts.get(id) !== alt)
+  const changed = [...authoredImageAlts(rendering, (id) => {
+    throw new HTTPException(409, { message: `Conflicting captions for shared image: ${id}. Use one caption for this image before saving.` })
+  })].filter(([id, alt]) => oldAlts.get(id) !== alt)
   const byOwner = new Map<string, ImageCaptioningOutput>()
   for (const [id, alt] of changed) {
     const owner = storage.getImageMeta(id)?.pageId

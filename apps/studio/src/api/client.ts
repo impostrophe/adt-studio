@@ -1839,8 +1839,8 @@ export const api = {
   getTocSections: (label: string) =>
     request<TocSection[]>(`/books/${label}/toc/sections`),
 
-  getOutputDisclosure: (label: string, features: OutputDisclosureOptions = {}) => request<{ outputs: OutputStatus[]; summary: OutputSummary }>(`/books/${label}/outputs/disclosure?features=${encodeURIComponent(JSON.stringify(features))}`),
-  getOutputs: (label: string) => request<{ outputs: OutputStatus[]; summary: OutputSummary }>(`/books/${label}/outputs`),
+  getOutputDisclosure: (label: string, features: OutputDisclosureOptions = {}) => request<{ outputs: OutputStatus[]; summary: OutputSummary; conflicts?: import("@adt/types").CatalogConflict[] }>(`/books/${label}/outputs/disclosure?features=${encodeURIComponent(JSON.stringify(features))}`),
+  getOutputs: (label: string) => request<{ outputs: OutputStatus[]; summary: OutputSummary; conflicts?: import("@adt/types").CatalogConflict[] }>(`/books/${label}/outputs`),
   reviewOutput: (label: string, review: OutputReviewRequest) => request<{ version: number }>(`/books/${label}/outputs/review`, { method: "POST", body: JSON.stringify(review) }),
 
   getTextCatalog: (label: string) =>

@@ -27,8 +27,13 @@ export function captionInputSignature(options: { assetHash: string | null; pageI
  * which no successful output exists. The caller owns storage and admission. */
 export function readOutputCatalog(options: {
   storage: Storage; config: AppConfig; bookDir: string; promptsDir: string; configDir: string
+  onConflicts?: (conflicts: import("@adt/types").CatalogConflict[]) => void
 }): OutputStatus[] {
   const { storage, config, bookDir, promptsDir, configDir } = options
+  // Request-local only: verify bytes again on the next projection/publication.
+  const assetHashes = new Map<string, string | null>()
+  const readAssetHash = (relativePath: string) => assetContentHash(bookDir, relativePath, assetHashes)
+  const pageImages = new Map<string, string | null>()
   const sourceLanguage = normalizeLocale(config.editing_language ?? (storage.getLatestNodeData("metadata", "book")?.data as { language_code?: string })?.language_code ?? "en")
   const languages = [...new Set([sourceLanguage, ...(config.output_languages ?? []).map(normalizeLocale)])]
   const engine = createPromptEngine([path.join(bookDir, "prompts"), promptsDir], { basePromptModelId: config.base_prompt_model })
@@ -48,8 +53,12 @@ export function readOutputCatalog(options: {
   for (const image of inventory) {
     const previous = image.pageId ? (storage.getLatestNodeData("image-captioning", image.pageId)?.data as ImageCaptioningOutput | undefined)?.captions.find((entry) => entry.imageId === image.id) : undefined
     if (previous?.decorative) decorativeImages.add(image.id)
-    let pageImage: string | null = null
-    try { if (image.pageId) pageImage = inputSignature(storage.getPageImageBase64(image.pageId)) } catch { /* This input alone is unavailable. */ }
+    if (image.pageId && !pageImages.has(image.pageId)) {
+      let hash: string | null = null
+      try { hash = inputSignature(storage.getPageImageBase64(image.pageId)) } catch { /* This input alone is unavailable. */ }
+      pageImages.set(image.pageId, hash)
+    }
+    const pageImage = image.pageId ? pageImages.get(image.pageId) ?? null : null
     const status = deriveOutputStatus({ identity: { kind: "caption", id: image.id },
       signature: captionInputSignature({ assetHash: image.assetHash, pageImage, language: sourceLanguage, summary, config: captionConfig, prompt: prompt(captionConfig.promptName, captionConfig.modelId) }),
       content: previous ? { caption: previous.caption, decorative: previous.decorative === true } : undefined,
@@ -63,14 +72,16 @@ export function readOutputCatalog(options: {
     const previous = storage.getLatestNodeData("image-translation", itemId)?.data as TranslatedImageAsset | undefined
     const legacy = storage.getImageMeta(itemId)
     const relativePath = previous?.relativePath ?? legacy?.relativePath
-    const hash = previous?.hash ?? (relativePath ? assetContentHash(bookDir, relativePath) ?? undefined : undefined)
+    const actual = relativePath ? readAssetHash(relativePath) : null
+    const hash = previous?.hash ?? actual ?? undefined
     add({ ...deriveOutputStatus({ identity: { kind: "image-translation", id: image.id, language },
       signature: inputSignature({ image: image.assetHash, sourceLanguage, language, model: imageConfig.modelId, prompt: prompt(config.image_translation?.prompt ?? "image_translation", imageConfig.modelId) }),
-      content: hash, metadata: previous, usable: !!relativePath && usableAsset(bookDir, relativePath, hash),
+      content: hash, metadata: previous, usable: !!actual && (!hash || actual.startsWith(hash)),
       excluded: !imageConfig.enabled || !imageConfig.selectedImageIds.includes(image.id),
     }), pageIds: image.pageIds, sectionIds: image.sectionIds, group: image.glossary ? "glossary" : undefined })
   }
   const snapshot = buildTextCatalogSnapshot(storage, storage.getPages())
+  options.onConflicts?.(snapshot.conflicts ?? [])
   const hasAuthored = storage.getPages().some((page) => storage.getLatestNodeData("web-rendering", page.pageId)) || storage.getLatestNodeData("glossary", "book") || storage.getLatestNodeData("quiz-generation", "book")
   const catalog = hasAuthored ? snapshot : (storage.getLatestNodeData("text-catalog", "book")?.data as TextCatalogOutput | undefined) ?? snapshot
   // Missing captions still imply expected dependent work for actual consumers.
@@ -162,7 +173,7 @@ export function readOutputCatalog(options: {
         let actualAudioHash: string | undefined
         if (prior && path.basename(prior.fileName) === prior.fileName) {
           const file = path.join(bookDir, "audio", language, prior.fileName)
-          actualAudioHash = assetContentHash(bookDir, path.relative(bookDir, file)) ?? assetContentHash(bookDir, path.join("audio", language.replace("-", "_"), prior.fileName)) ?? undefined
+          actualAudioHash = readAssetHash(path.relative(bookDir, file)) ?? readAssetHash(path.join("audio", language.replace("-", "_"), prior.fileName)) ?? undefined
           usable = !!actualAudioHash && (!prior.audioHash || actualAudioHash === prior.audioHash)
         }
         const audioMetadata = prior ? { ...prior, source: prior.provider === "manual" ? "manual" as const : prior.source,
@@ -215,17 +226,16 @@ export function timestampInputSignature(audioHash: string | null, language: stri
 
 /** Read-only physical verification. A path or cached database hash is not proof
  * that the retained bytes are usable. Never follow an asset outside the book. */
-function usableAsset(bookDir: string, relativePath: string, hash?: string): boolean {
-  const actual = assetContentHash(bookDir, relativePath)
-  return !!actual && (!hash || actual.startsWith(hash))
-}
-function assetContentHash(bookDir: string, relativePath: string): string | null {
+function assetContentHash(bookDir: string, relativePath: string, hashes: Map<string, string | null>): string | null {
   try {
     const root = fs.realpathSync(bookDir)
     const file = fs.realpathSync(path.resolve(root, relativePath))
     const relative = path.relative(root, file)
     if (relative.startsWith("..") || path.isAbsolute(relative)) return null
+    if (hashes.has(file)) return hashes.get(file)!
     const bytes = fs.readFileSync(file)
-    return bytes.length ? createHash("sha256").update(bytes).digest("hex") : null
+    const hash = bytes.length ? createHash("sha256").update(bytes).digest("hex") : null
+    hashes.set(file, hash)
+    return hash
   } catch { return null }
 }

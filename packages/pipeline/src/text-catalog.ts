@@ -275,12 +275,23 @@ export function buildTextCatalogSnapshot(storage: Storage, pages: PageData[]): T
   const byId = new Map<string, TextCatalogEntry>()
   for (const entry of entries) {
     const previous = byId.get(entry.id)
-    if (previous && previous.text !== entry.text) throw new Error(`Conflicting catalog data ID: ${entry.id}`)
     if (previous) previous.locations = [...(previous.locations ?? []), ...(entry.locations ?? [])]
     else byId.set(entry.id, entry)
   }
+  const texts = new Map<string, Set<string>>()
+  for (const entry of entries) {
+    const values = texts.get(entry.id) ?? new Set<string>()
+    values.add(entry.text)
+    texts.set(entry.id, values)
+  }
+  const conflicts = [...texts].filter(([, values]) => values.size > 1).map(([id, values]) => ({
+    id, texts: [...values],
+    pageIds: [...new Set(byId.get(id)!.locations?.flatMap((location) => location.pageId ? [location.pageId] : []) ?? [])],
+    sectionIds: [...new Set(byId.get(id)!.locations?.flatMap((location) => location.sectionId ? [location.sectionId] : []) ?? [])],
+  }))
   return {
     entries: [...byId.values()],
     generatedAt: new Date().toISOString(),
+    ...(conflicts.length ? { conflicts } : {}),
   }
 }

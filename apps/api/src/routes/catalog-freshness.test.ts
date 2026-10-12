@@ -42,6 +42,78 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); fs.rmSync(root, { recursive: true, force: true }) })
 
 describe("catalog freshness through real API/storage boundaries", () => {
+  it("reads each shared page/audio asset once per projection and detects changed bytes on the next read", async () => {
+    const db = storage()
+    db.putExtractedPage({ pageId: "pg001", pageNumber: 1, text: "Hello", pageImage: { imageId: "pg001_page", buffer: Buffer.from("page"), format: "png", hash: "page", width: 100, height: 100 }, images: [1, 2, 3].map((i) => ({ imageId: `pg001_im00${i}`, buffer: Buffer.from(`image ${i}`), format: "png", hash: `image-${i}`, width: 20, height: 20 })) })
+    const next = rendering()
+    next.sections[0].html += '<img data-id="pg001_im002"/><img data-id="pg001_im003"/>'
+    db.putNodeData("web-rendering", "pg001", next)
+    const pageFile = path.join(db.bookDir!, db.getImageMeta("pg001_page")!.relativePath)
+    const asset = storeImmutableAsset(db.bookDir!, ["audio", "fr"], "shared", "mp3", Buffer.from("shared recording"))
+    const audioFile = path.join(db.bookDir!, "audio", "fr", asset.fileName)
+    publishSpeechOutput(db, "fr", { entries: ["pg001_t001", "pg001_t002"].map((textId) => ({ textId, language: "fr", fileName: asset.fileName, audioHash: asset.contentHash, source: "manual", provider: "manual", model: "manual", voice: "manual", cached: false })), generatedAt: "before" })
+    db.close()
+    const reads = vi.spyOn(fs, "readFileSync")
+    try {
+      const before = await outputs()
+      const count = (file: string) => reads.mock.calls.filter(([input]) => String(input) === file || String(input) === fs.realpathSync(file)).length
+      expect(count(pageFile)).toBe(1)
+      expect(count(audioFile)).toBe(1)
+      fs.writeFileSync(pageFile, "changed page")
+      fs.writeFileSync(audioFile, "corrupt recording")
+      const after = await outputs()
+      expect(after.find((item) => item.identity.kind === "caption")?.signature).not.toBe(before.find((item) => item.identity.kind === "caption")?.signature)
+      expect(after.filter((item) => item.identity.kind === "audio" && item.identity.language === "fr").every((item) => !item.usable)).toBe(true)
+    } finally { reads.mockRestore() }
+  })
+
+  it("opens legacy conflicting IDs with one warning, permits an unchanged save and rejects a new conflict atomically", async () => {
+    const legacy = rendering()
+    legacy.sections.push({ ...legacy.sections[0], sectionIndex: 1, html: '<p data-id="pg001_t001">A different legacy copy</p>' })
+    const db = storage()
+    db.putNodeData("web-rendering", "pg001", legacy)
+    const retained = db.getLatestNodeData("text-catalog-translation", "fr")
+    db.close()
+    expect((await app.request(`/books/${label}/pages/pg001`)).status).toBe(200)
+    const projected = await (await app.request(`/books/${label}/outputs`)).json()
+    expect(projected.conflicts).toHaveLength(1)
+    expect(projected.conflicts[0].id).toBe("pg001_t001")
+    expect((await app.request(`/books/${label}/text-catalog`)).status).toBe(200)
+    expect((await send("pages/pg001/rendering", legacy)).status).toBe(200)
+    const changed = structuredClone(legacy)
+    changed.sections[1].html = '<p data-id="pg001_t002">New conflicting copy</p>'
+    const rejected = await send("pages/pg001/rendering", changed)
+    expect(rejected.status).toBe(409)
+    expect(await rejected.text()).toContain("pg001_t002")
+    const verify = storage()
+    expect(verify.getLatestNodeData("web-rendering", "pg001")?.data).toEqual(legacy)
+    expect(verify.getLatestNodeData("text-catalog-translation", "fr")).toEqual(retained)
+    verify.close()
+  })
+
+  it("reports conflicting shared-image alt edits as 409 and leaves rendering/captions unchanged", async () => {
+    const db = storage()
+    const before = db.getLatestNodeData("web-rendering", "pg001")
+    const captions = db.getLatestNodeData("image-captioning", "pg001")
+    db.close()
+    const changed = rendering()
+    changed.sections[0].html = '<img data-id="pg001_im001" alt="First"/><img data-id="pg001_im001" alt="Second"/>'
+    const response = await send("pages/pg001/rendering", changed)
+    expect(response.status).toBe(409)
+    expect(await response.text()).toContain("pg001_im001")
+    const verify = storage()
+    expect(verify.getLatestNodeData("web-rendering", "pg001")).toEqual(before)
+    expect(verify.getLatestNodeData("image-captioning", "pg001")).toEqual(captions)
+    verify.close()
+  })
+
+  it("a stale save to a deleted book returns 404 without recreating its directory", async () => {
+    fs.rmSync(path.join(root, label), { recursive: true })
+    const response = await send("pages/pg001/rendering", rendering())
+    expect(response.status).toBe(404)
+    expect(fs.existsSync(path.join(root, label))).toBe(false)
+  })
+
   it("does not count translation or speech as missing for a decorative image with no caption text", async () => {
     const page = await (await app.request(`/books/${label}/pages/pg001`)).json()
     const response = await send("pages/pg001/image-captioning", { captions: [{ imageId: "pg001_im001", caption: "", decorative: true, reasoning: "" }], baseVersion: page.versions.imageCaptioning, sourceSignature: page.captionSourceSignature })

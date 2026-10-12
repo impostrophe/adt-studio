@@ -110,7 +110,7 @@ export function assignActivitySectionIds(section: SectionRendering, allocate: (o
   return { ...section, html, ...(section.activityAnswers ? { activityAnswers: Object.fromEntries(Object.entries(section.activityAnswers).map(([key, value]) => [mapping.get(key) ?? key, value])) } : {}) }
 }
 
-export function authoredImageAlts(rendering: WebRenderingOutput): Map<string, string> {
+export function authoredImageAlts(rendering: WebRenderingOutput, onConflict?: (id: string) => void): Map<string, string> {
   const values = new Map<string, string>()
   for (const section of rendering.sections) {
     const doc = parseDocument(section.html)
@@ -118,7 +118,7 @@ export function authoredImageAlts(rendering: WebRenderingOutput): Map<string, st
       const id = element.attribs["data-id"]
       const alt = element.attribs.alt
       if (alt === undefined) continue
-      if (values.has(id) && values.get(id) !== alt) throw new Error(`Conflicting captions for shared image: ${id}`)
+      if (values.has(id) && values.get(id) !== alt) { onConflict?.(id); continue }
       values.set(id, alt)
     }
   }

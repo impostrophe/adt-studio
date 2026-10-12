@@ -127,6 +127,6 @@ export function CatalogSummary({ bookLabel, stage, disclosure = false, features 
   const outputs = (data?.outputs ?? []).filter((output) => !output.excluded && (!stage || OUTPUT_KIND_TO_STAGE[output.identity.kind] === stage) &&
     (disclosure || stage !== "translate" || output.identity.kind !== "preparation"))
   if (error) return <p className="text-xs text-red-700">{error.message}</p>
-  return <OutputReviewPanel bookLabel={bookLabel} outputs={outputs} catalog={data?.outputs ?? []} disclosure={disclosure}
+  return <OutputReviewPanel bookLabel={bookLabel} outputs={outputs} catalog={data?.outputs ?? []} conflicts={data?.conflicts} disclosure={disclosure}
     renderDetail={(output) => <OutputReviewItem bookLabel={bookLabel} output={output} outputs={data?.outputs ?? []} disclosure={disclosure} detail inline />} />
 }

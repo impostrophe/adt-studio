@@ -5,7 +5,7 @@ import { catalogOutputs, editSourceSignature, assertEditSource, assertEditVersio
 import { OutputEditGuard } from "@adt/types"
 import { outputEvidence } from "@adt/pipeline"
 import { restoreSpeechOutput } from "@adt/storage"
-import { reconcileTextCatalog, assignActivityIds } from "@adt/pipeline"
+import { reconcileTextCatalog, assignActivityIds, buildTextCatalogSnapshot, inputSignature } from "@adt/pipeline"
 import { randomUUID } from "node:crypto"
 import crypto from "node:crypto"
 import fs from "node:fs"
@@ -652,12 +652,16 @@ function saveStoryboardNode(
 ): number {
   if (node === "page-sectioning") assertNoActivePipelineRun(storage)
   const version = storage.transaction(() => {
+    const conflictsBefore = buildTextCatalogSnapshot(storage, storage.getPages()).conflicts ?? []
     const parsed = node === "web-rendering" ? WebRenderingOutput.safeParse(data) : null
     const saved = parsed?.success ? {
       ...parsed.data,
       sections: parsed.data.sections.map((section) => scopeLegacyActivityIds(section, getRenderSectioning(storage, itemId)?.sections[section.sectionIndex]?.sectionId ?? itemId)),
     } : data
     const nextVersion = storage.putNodeData(node, itemId, saved)
+    const conflictsAfter = buildTextCatalogSnapshot(storage, storage.getPages()).conflicts ?? []
+    const introduced = conflictsAfter.find((conflict) => !conflictsBefore.some((previous) => inputSignature(previous) === inputSignature(conflict)))
+    if (introduced) throw new HTTPException(409, { message: `Conflicting catalog data ID: ${introduced.id}. Give different content distinct IDs before saving.` })
     reconcileTextCatalog(storage)
     return nextVersion
   })
@@ -840,10 +844,14 @@ export function createPageRoutes(
          WHERE nd.node = ?
          ORDER BY nd.item_id, ${CURRENT_VERSION_ORDER}`,
         ["web-rendering"]
-      ) as Array<{ item_id: string; version: number; data: string }>
+      ) as Array<{ item_id: string; version: number; data: string | null }>
+      const seenRenderings = new Set<string>()
       for (const row of renderRows) {
+        if (seenRenderings.has(row.item_id)) continue
+        seenRenderings.add(row.item_id)
+        // The selected NULL row invalidates output; history is not a fallback.
+        if (row.data === null) continue
         rendered.add(row.item_id)
-        if (renderingByPage.has(row.item_id)) continue
         try {
           const parsed = JSON.parse(row.data) as {
             sections?: Array<{

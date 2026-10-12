@@ -16,3 +16,10 @@ copied. The published dependency PRs and their checkouts are not modified.
 Merged PR #737's Storyboard save policy and the current section/quiz identity
 factories remain the starting implementation. Catalog freshness supersedes
 destructive downstream clearing, not their identity allocation rules.
+
+The October 12 feedback follow-up also adapts the absent-book admission guard
+from #886 at `3a7ad4a33b18db8aac851c093712ce4d5112ec4d`. The local regression
+showed that merely calling the next handler was insufficient: the rendering
+handler itself opens creating storage. This adapter returns 404 before either
+admission or the handler can recreate a deleted book. Collection import routes
+keep their existing exemption. No other #886 code or history is imported.
