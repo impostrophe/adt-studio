@@ -1,3 +1,4 @@
+import { readValidationArtifact, validationArtifactHash } from "./validation-artifact.js"
 import fs from "node:fs"
 import path from "node:path"
 import { JSDOM } from "jsdom"
@@ -222,6 +223,8 @@ export async function runAccessibilityAssessment(
     ? [...options.config.disabled_rules]
     : [...DEFAULT_DISABLED_AXE_RULES]
   const adtDir = path.join(bookDir, "adt")
+  const artifact = readValidationArtifact(adtDir)
+  const artifactHash = validationArtifactHash(adtDir)
   const pageEntries = getUniquePackagedPageEntries(bookDir)
 
   const axeSource = getAxeSource(await import("axe-core"))
@@ -240,6 +243,7 @@ export async function runAccessibilityAssessment(
   }
 
   const output: AccessibilityAssessmentOutputType = {
+    artifact, artifactHash,
     generatedAt: new Date().toISOString(),
     tool: "axe-core",
     runOnlyTags,
@@ -255,5 +259,6 @@ export async function runAccessibilityAssessment(
   }
 
   progress.emit({ type: "step-complete", step: STEP })
+  if (validationArtifactHash(adtDir) !== artifactHash) throw new Error("Packaged artifact changed during assessment; no evidence was published")
   return AccessibilityAssessmentOutput.parse(output)
 }

@@ -515,3 +515,7 @@ export { writePackageInventory, packageInventoryValid } from "./packaging/public
 export { classifySectioningSynchronization } from "./sectioning-sync.js"
 export { classifyStoredSectioning, renderedSectionId, sectionRenderingContent, generatedSectionEvidence, stampGeneratedRendering } from "./sectioning-sync-evidence.js"
 export type { GenerationCatalogOptions } from "./generation-catalog.js"
+
+export { createRenderCachePublication, recoverRenderCachePublication } from "./render-cache-publication.js"
+
+export { readValidationArtifact, validationArtifactHash } from "./validation-artifact.js"

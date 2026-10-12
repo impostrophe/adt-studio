@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { ValidationArtifactSnapshot } from "./validation-repair.js"
 
 export const ReviewerValidationStatus = z.enum([
   "not-reviewed",
@@ -69,6 +70,7 @@ export type ReviewerValidationCatalogSnapshot = z.infer<typeof ReviewerValidatio
 
 export const ReviewerValidationSession = z
   .object({
+    artifact: ValidationArtifactSnapshot.optional(),
     session_id: z.string().min(1),
     reviewer_name: z.string().min(1),
     institution: z.string().min(1).optional(),

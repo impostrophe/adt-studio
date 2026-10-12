@@ -1,3 +1,4 @@
+import { writeValidationArtifact } from "../validation-artifact.js"
 import { renderedSectionId } from "../sectioning-sync-evidence.js"
 import { buildImageInventory } from "../catalog-reconciliation.js"
 import { resolveQuizOptionId } from "@adt/types"
@@ -1100,6 +1101,7 @@ export async function packageAdtWeb(
 
   progress.emit({ type: "step-complete", step })
 
+  writeValidationArtifact(storage, adtDir, pageList)
   return { warnings: orphanedRenderings }
 }
 

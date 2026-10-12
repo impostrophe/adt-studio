@@ -67,12 +67,12 @@ export function publishPackageAttempt(bookDir: string, attempt: string, commit: 
   if (!fs.existsSync(previous)) fs.rmSync(attempt, { recursive: true })
 }
 
-export function packageFilesHash(directory: string): string {
+export function packageFilesHash(directory: string, ignoredRootFiles: readonly string[] = []): string {
   const hash = createHash("sha256")
   if (!fs.lstatSync(directory).isDirectory()) throw new Error("Invalid package directory")
   const walk = (dir: string): void => {
     for (const name of fs.readdirSync(dir).sort()) {
-      if (dir === directory && name === ".build-inventory") continue
+      if (dir === directory && (name === ".build-inventory" || ignoredRootFiles.includes(name))) continue
       const file = path.join(dir, name), stat = fs.lstatSync(file)
       if (stat.isSymbolicLink()) throw new Error("Invalid package asset")
       hash.update(path.relative(directory, file))

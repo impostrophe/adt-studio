@@ -1,3 +1,4 @@
+import { recoverRenderCachePublication } from "./render-cache-publication.js"
 import fs from "node:fs"
 import path from "node:path"
 import {
@@ -78,6 +79,7 @@ export function prepareSectioningRun(label: string, booksRoot: string, from: Sta
     const config = loadBookConfig(label, booksRoot, configPath)
     const storage = createBookStorage(label, booksRoot)
     try {
+      recoverRenderCachePublication(storage)
       const stages = STAGE_ORDER.slice(STAGE_ORDER.indexOf(from), STAGE_ORDER.indexOf(to) + 1)
       if (from === "extract") assertSectioningReplacementSafe(storage)
       if (from === "extract" && storage.getPages().length) {
@@ -113,9 +115,10 @@ export function completeSectioning(label: string, booksRoot: string, config: App
 /** Stage rendering versions in memory, then publish together in the existing
  * SQLite transaction. Provider failures/cancellation/conflicts keep the prior
  * active versions. Debug logs/screenshots are attempt evidence, not output. */
-export function createStoryboardPublication(storage: Storage, label: string, booksRoot: string, configPath?: string, selectedPageIds?: string[], stampOutput = true) {
+export function createStoryboardPublication(storage: Storage, label: string, booksRoot: string, configPath?: string, selectedPageIds?: string[], stampOutput = true, invalidateConsumers?: () => import("@adt/types").StepName[]) {
   const { bookDir } = resolveBookPaths(label, booksRoot)
   recoverSectioningTransition(bookDir)
+  recoverRenderCachePublication(storage)
   assertExtractionReadable(bookDir)
   const config = loadBookConfig(label, booksRoot, configPath)
   assertSectioningCurrent(storage, config, bookDir)
@@ -176,7 +179,7 @@ export function createStoryboardPublication(storage: Storage, label: string, boo
         }
         const downstream = getStageDependents("storyboard")
         reconcileTextCatalog(storage, { preserveRendering: true })
-        storage.clearStepRuns(PIPELINE.filter((stage) => downstream.includes(stage.name)).flatMap((stage) => stage.steps.map((step) => step.name)))
+        storage.clearStepRuns(invalidateConsumers ? invalidateConsumers() : PIPELINE.filter((stage) => downstream.includes(stage.name)).flatMap((stage) => stage.steps.map((step) => step.name)))
       })
       // Clear the conservative mode-change barrier only after the entire active
       // rendering set commits. A crash or metadata-write failure leaves it
