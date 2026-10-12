@@ -1958,6 +1958,7 @@ export const api = {
       stepMessages: Record<string, string> | null
       runStatus: "idle" | "running" | "cancelling" | "cancelled" | "completed" | "failed"
       pendingDecisions: PendingDecision[]
+      coverage?: import("@adt/types").StoryboardCoverage
       protectedWork?: Array<import("@adt/types").AuthoredReplacement & { pageNumber?: number }>
     }>(`/books/${label}/step-status`),
 

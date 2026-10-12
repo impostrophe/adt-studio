@@ -63,6 +63,7 @@ interface StepStatusResponse {
   stepMessages?: Record<string, string> | null
   runStatus?: "idle" | "running" | "cancelling" | "cancelled" | "completed" | "failed"
   pendingDecisions?: PendingDecision[]
+  coverage?: import("@adt/types").StoryboardCoverage
 }
 
 // ---------------------------------------------------------------------------
@@ -70,6 +71,8 @@ interface StepStatusResponse {
 // ---------------------------------------------------------------------------
 
 export interface BookRunContextValue {
+  /** Actual saved-output coverage, independent of the last attempt. */
+  storyboardCoverage?: import("@adt/types").StoryboardCoverage
   /** Stage state: idle / queued / running / done / error */
   stageState(stage: string): StageState
   /** Step state: idle / running / done / error */
@@ -890,6 +893,7 @@ export function useBookRunStatus(label: string): BookRunContextValue {
   }, [polledDecisions])
 
   return {
+    storyboardCoverage: data?.coverage,
     stageState,
     stepState: stepStateAccessor,
     stepProgress: stepProgressAccessor,

@@ -7015,6 +7015,9 @@ msgstr "Fora de sincronia"
 msgid "Outline ID:"
 msgstr "ID da estrutura:"
 
+msgid "output available"
+msgstr "conteúdo disponível"
+
 msgid "Output languages"
 msgstr "Idiomas de saída"
 
@@ -8967,8 +8970,8 @@ msgstr "Seccionamento"
 #~ msgid "Sectioning and later stages will need to run again. Saved versions are kept."
 #~ msgstr "Será necessário executar novamente a divisão em seções e as etapas posteriores. As versões salvas serão mantidas."
 
-msgid "Sectioning has changed since these pages were rendered. Re-run Storyboard to regenerate them."
-msgstr "O seccionamento mudou desde que estas páginas foram renderizadas. Execute o Storyboard novamente para regenerá-las."
+#~ msgid "Sectioning has changed since these pages were rendered. Re-run Storyboard to regenerate them."
+#~ msgstr "O seccionamento mudou desde que estas páginas foram renderizadas. Execute o Storyboard novamente para regenerá-las."
 
 msgid "Sectioning mode"
 msgstr "Modo de seccionamento"
@@ -9438,6 +9441,9 @@ msgstr "Algumas páginas têm dados de entrada ausentes ou ilegíveis: {pages}. 
 
 msgid "Some pages have no embedded text layer — text was recovered from the page image. Prefer a text-based PDF."
 msgstr "Algumas páginas não têm camada de texto incorporada — o texto foi recuperado a partir da imagem da página. Prefira um PDF baseado em texto."
+
+msgid "Some pages or sections are missing Storyboard output. Existing pages remain available."
+msgstr "Algumas páginas ou seções não têm conteúdo de Storyboard. As páginas existentes continuam disponíveis."
 
 msgid "Some rendered sections on {ownershipPages} have no verified section owner and are omitted from preview and export. Their content and history are retained. Review their section identities in Storyboard."
 msgstr "Algumas seções renderizadas em {ownershipPages} não têm uma seção de origem verificada e são omitidas da prévia e da exportação. O conteúdo e o histórico foram preservados. Revise as identidades das seções no Storyboard."
