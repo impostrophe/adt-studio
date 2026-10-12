@@ -151,3 +151,39 @@ no approval checkbox was changed by this reviewer. No missing implementation spe
 was identified as a remaining functional prerequisite on the published SPEC-0012
 stack. Third-party Claude backends outside the registered adapter manifest are
 explicitly rejected, not silently routed or claimed as supported.
+
+## Final compressed-response follow-up
+
+After the first published head `bb67b9ae` passed hosted CI, the implementation
+owner identified a further concrete classification risk and delegated its
+reproduction to this reviewer. Two additional P1 findings were reproduced with
+both real installed CLIs:
+
+8. **Compressed permanent errors lost their structured code.** A gzip HTTP 429
+   `insufficient_quota` response caused three actual requests instead of one.
+   The gate had inspected compressed bytes as UTF-8. Commit `ff07bf60` decodes
+   only a bounded diagnostic copy, leaving forwarded bytes and Content-Encoding
+   unchanged. It supports gzip/deflate/br, identity and native zstd where
+   available; capture and each decoded result are limited to 64 KiB and at most
+   four encoding layers. Unsupported advertised encodings are removed according
+   to runtime capability. Malformed/oversized evidence remains unknown.
+9. **Explicit provider no-retry guidance was discarded.** HTTP 503 with
+   `x-should-retry:false` also caused three actual requests in both CLIs. The gate
+   now preserves explicit false as typed non-retryability. A true header cannot
+   override permanent quota/authentication classification.
+
+The reviewer implemented these focused gate corrections and regression tests;
+the implementation owner independently reviewed the production diff, bounded
+allocation, wire preservation, cancellation precedence and classification order.
+Both real-CLI cases now make exactly one actual provider request. The reviewer
+ran 54 passing tests: 25 actual-executable cases and 29 gate/mTLS/capability cases,
+including a feature-mocked older runtime without native zstd. Package TypeScript
+build passed. Logs: `review/{compressed-quota-before,explicit-no-retry-before,
+compressed-wire-and-gate-final}.log`. A syntax omission in a new test helper was
+corrected before the final passing run; it was not a production finding.
+
+The final review therefore contains **nine material findings, all fixed and
+rechecked**, with no unresolved material concern. The owner's final whole-suite,
+packaged builds and corrected-head hosted results are recorded in the current
+acceptance matrix and PR summary. The earlier green CI is not reused as evidence
+for a later untested commit.

@@ -297,7 +297,9 @@ Codex and Claude structured-output attempts use an ephemeral loopback forwarding
 gate. It reserves one provider request before upstream egress, so executable tool,
 token or transport continuations cannot multiply the facade budget. Authentication
 headers remain owned by the executable; the gate preserves configured upstream
-routing, proxy and Claude mTLS. Unsupported alternate Claude backend selectors
+routing, proxy and Claude mTLS. Bounded diagnostic decoding preserves compressed
+error classification and explicit provider no-retry guidance without changing
+response bytes delivered to the CLI. Unsupported alternate Claude backend selectors
 fail before spawn. Real installed-executable probes are opt-in and must be run
 separately from the default suite; see [provider evidence](verification/spec-0013-provider-wire.md).
 

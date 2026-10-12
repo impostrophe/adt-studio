@@ -66,7 +66,7 @@ preservation subsystem. Retry is restricted to Image Meaningfulness.
 
 Evidence keys are repository-relative:
 
-- **W**: `packages/llm/src/__tests__/{client-retry-integration,claude-wire-budget,codex-wire-budget,cli-request-budget,cli-request-budget-mtls}.test.ts`; see [wire evidence](spec-0013-provider-wire.md).
+- **W**: `packages/llm/src/__tests__/{client-retry-integration,claude-wire-budget,codex-wire-budget,cli-request-budget,cli-request-budget-legacy,cli-request-budget-mtls}.test.ts`; see [wire evidence](spec-0013-provider-wire.md).
 - **C**: LLM classifier/client/cache/cancellation suites, including real filesystem cache and stubbed transport counts.
 - **P**: `packages/pipeline/src/__tests__/{page-recovery,generation-publication}.test.ts` — real SQLite, three source pages, history and asset comparisons; includes compiled CLI subprocess.
 - **D**: API `page-error-decisions`, `stages-decision`, decision restart and stage-service tests; authoritative state and timers.
@@ -77,7 +77,7 @@ Evidence keys are repository-relative:
 | AC | Status | Concrete evidence |
 |---|---|---|
 | 1 | Passed | W/C: actual transport DNS/socket/timeout/408/429/5xx rounds stay within N+1, bounded Retry-After/backoff. |
-| 2 | Passed | W/I: auth/model permanent cases fast-fail; both real CLIs reproduce structured quota 429 at exactly one request after correction. |
+| 2 | Passed | W/I: auth/model permanent cases fast-fail; both real CLIs stop at one request for plain/compressed quota 429 and explicit no-retry 503 after correction. |
 | 3 | Passed | W/C: malformed/schema/semantic and unknown failures retain bounded feedback; real CLI token/tool continuations cannot escape. |
 | 4 | Passed | W/C/P: request/backoff/admission abort sends no next attempt or dialog; staged output remains unpublished. |
 | 5 | Passed | W/I: forwarding slot reserved before upstream egress; actual Claude 12→3 and Codex 2→1 historical reproductions fixed. |
@@ -97,10 +97,11 @@ Evidence keys are repository-relative:
 
 ### Review and compatibility corrections
 
-The fresh separate reviewer found seven material issues and rechecked their fixes:
+The fresh separate reviewer found nine material issues and rechecked their fixes:
 structured CLI quota classification, alternate Claude backend bypass, mTLS forwarding,
 image-pass reuse/provenance, durable recovery qualification, headless dependent
-admission and retained manual filtering provenance. See I for reproductions.
+admission, retained manual filtering provenance, compressed error decoding and
+explicit provider no-retry guidance. See I for reproductions.
 
 The published base passed 361 files / 4,385 tests before integration. The initial
 integrated full runs exposed defects and fixture assumptions; those failures are
@@ -138,8 +139,9 @@ publication summary and exact-head CI belong in a PR comment.
 | Command/check | Result |
 |---|---|
 | Published SPEC-0012 baseline `pnpm test --maxWorkers=2` | Passed: 361 files / 4,385 tests; isolated checkout, frozen offline install. |
-| Final `pnpm test --maxWorkers=2` (including pretest build) | Passed: 371 files / 4,508 tests; 2 executable-only files / 21 tests skipped by default and explicitly passed below. |
-| Final opt-in Claude/Codex and gate/mTLS command in W | Passed: 37 tests (21 real-executable cases + 16 gate/proxy/mTLS cases), Claude 2.1.260 and Codex 0.159.2. |
+| First published head `bb67b9ae`: `pnpm test --maxWorkers=2` (including pretest build) | Passed: 371 files / 4,508 tests; 2 executable-only files / 21 tests skipped by default and explicitly passed below. |
+| Final runtime head `ff07bf60`: `pnpm test --maxWorkers=2` (including pretest build) | Passed: 372 files / 4,521 tests in 484.93 seconds; 2 files / 25 external-executable cases skipped by default and explicitly passed below. |
+| Final opt-in Claude/Codex and gate/mTLS command in W | Passed: 54 tests (25 real-executable cases + 29 gate/proxy/mTLS/capability cases), Claude 2.1.260 and Codex 0.159.2. |
 | `pnpm typecheck`; `pnpm --filter @adt/runtime typecheck` | Passed. |
 | `pnpm lint` | Passed: zero errors, eight unused-suppression warnings; not claimed warning-free. |
 | `pnpm lint:invariants` | Passed: implemented SPEC-0010 extraction reset check. Other listed planned invariants are not executable checks. |
@@ -148,7 +150,7 @@ publication summary and exact-head CI belong in a PR comment.
 | Real Chrome `spec-0013-browser-smoke.mjs` | Passed with committed portable fixture: decision/reconnect/two-tab flows, durable warnings/diagnostics, geometry, zero page errors, unchanged SQLite bytes. |
 | Compiled CLI and archive/import | Passed in P/R; CLI independently rechecked. |
 | Electron packaged API and Docker `app` recreation | Passed: 20 pages, durable warnings/interruption, unchanged page data/current versions and 43 asset hashes; [scope and reproduction](spec-0013-platform-acceptance.md). |
-| Independent reviewer | Seven material fixes rechecked; no unresolved material finding; final 18-AC audit passed. |
+| Independent reviewer | Nine material fixes rechecked; no unresolved material finding; final 18-AC audit passed. |
 | PR metadata and recovered drafts | Original title/body equal byte-for-byte; all 101 original draft/evidence hashes unchanged. |
 
 Local logs are retained under `tmp/spec0013-oct12`. Exact pushed-head hosted CI

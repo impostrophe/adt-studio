@@ -1,7 +1,7 @@
 # SPEC-0013 platform acceptance
 
-Verified 2026-10-12 against production runtime commit `95888f62` and the subsequent
-probe/fixture-only commits. All tests use disposable copies of the SPEC-0012
+Verified 2026-10-12 against production runtime commit `ff07bf60`, including bounded compressed-error
+decoding and explicit no-retry guidance. All tests use disposable copies of the SPEC-0012
 representative acceptance books. Original books and preserved historical drafts
 are not modified. No paid provider request is made.
 
@@ -24,10 +24,10 @@ resource-file hashes remain unchanged. This is not a signed/notarized installer,
 full Desktop renderer acceptance, Windows/Linux Desktop or release certification.
 
 Docker builds the actual combined `app` target from a clean Git archive of
-`b779f3d0` (runtime unchanged from `95888f62`). Nginx serves the Studio root and
+`ff07bf60`. Nginx serves the Studio root and
 `/assets/index-BMm_nP6x.js`; both return 200. The container is removed/recreated
 against the same disposable book volume. Image:
-`sha256:86d839366a3f27e0e4c8027c7fa7ba1db398867a9643890d1d8e4a9e133f7b4c`.
+`sha256:b20b4802fbb44eb1c17242bdb8efaa38da90d5b62412e8df901ee78daf4a4952`.
 No credentials were explicitly supplied and no provider work was requested. The
 Desktop adapter inherits the launching environment; credential isolation is not
 a claim of this packaged-runtime probe. Full historical-row preservation is
@@ -75,7 +75,7 @@ Use the build/unpack commands in
 ```sh
 pnpm --filter @adt/desktop exec electron /path/to/desktop-smoke.cjs \
   /path/to/unpacked/Contents/Resources /new/recovery-books /new/desktop-profile --recovery
-node scripts/probes/spec-0012-docker-smoke.mjs adt-spec0013:review \
+node scripts/probes/spec-0012-docker-smoke.mjs adt-spec0013:final \
   /new/recovery-books /new/docker-evidence --recovery
 ```
 
