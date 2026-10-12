@@ -7,12 +7,12 @@ This page lists every case. The rules are in [`src/rules/handoff.ts`](../src/rul
 ## The board
 
 ```
-Intake              Spec                  Build               Review & test             Done
-Inbox → Approved → To spec → Specing → To do → Doing → To review → Reviewing → Done
-                    (wait)    (work)    (wait)  (work)  (wait)      (work)
+Intake              Spec                                Build               Review & test             Done
+Inbox → Approved → To spec → Specing → Spec review → To do → Doing → To review → Reviewing → Done
+                    (wait)    (write)   (approve)      (wait)  (work)  (wait)      (work)
 ```
 
-Each stage has a column where the card **waits** (To spec, To do, To review) and a column where someone is **working on it** (Specing, Doing, Reviewing). Only the working columns have people on them.
+Each stage has a column where the card **waits** (To spec, To do, To review) and a column where someone is **working on it** (Specing, Doing, Reviewing). Spec has one more lane, **Spec review**: the finished spec waits there for its approval, so everyone can see which specs need approving. The people on a card do not change in Spec review.
 
 ## The short version
 
@@ -21,7 +21,11 @@ Each stage has a column where the card **waits** (To spec, To do, To review) and
 | **pull** a card into a working column (To do → Doing) | assigns **you**, if nobody is on it yet |
 | **finish** a stage (Doing → To review) | comments **"Code done by @you"** and unassigns you |
 | send a card **back** for changes (Reviewing → Doing) | assigns **whoever did that stage before**, no comment |
-| move a card to **Done** | comments with the whole story: *Spec @a · Code @b · Review & test @c* |
+| move a finished spec to **Spec review** (Specing → Spec review) | nothing: the spec waits for approval, and you stay on it |
+| move an approved spec on (Spec review → To do), and you are **not** its writer | comments **"Spec written by @writer, approved by @you"** with the spec PR, and unassigns the writer |
+| *(the spec PR is merged)* | moves the card to **To do** within the hour, crediting the PR's author and approvers |
+| *(a PR that closes the issue is merged)* | the Project moves the card to **Done**; the bot adds the story and credits the PR's approvers |
+| move a card to **Done** | comments with the whole story: *Spec @a (approved by @b) · Code @c · Review & test @d* |
 | move a card between waiting columns | unassigns anyone on it, no comment |
 
 ## Every case
@@ -32,14 +36,17 @@ The bot comments **only when a stage is finished**, or when a card reaches Done.
 
 | Move | Comment |
 |---|---|
-| Specing → To do (or further) | **Spec done by @x**, moved from Specing to To do by @mover. |
+| Spec review → To do, by someone other than the writer | **Spec written by @a, approved by @mover**, then *Spec PR: #N* |
+| Spec review (or Specing) → To do, by the writer | **Spec written by @a** (nobody approves their own spec) |
+| a merged spec PR moves the card to To do | **Spec written by @author, approved by @approvers**, moved … when spec PR #N was merged. |
 | Doing → To review (or further) | **Code done by @x**, moved from Doing to To review by @mover. |
-| Reviewing → Done | **Reviewed and tested by @x**, moved from Reviewing to Done by @mover. Then: *Finished. Spec @a · Code @b · Review & test @c* |
+| Reviewing → Done | **Reviewed and tested by @x**, moved from Reviewing to Done by @mover (or without "by", when the Project moved it because the issue was closed). Then: *Finished. Spec @a (approved by @b) · Code @c · Review & test @d* |
 | any other column → Done | *Finished. Spec @a · Code @b…* (the story so far), if any stage was credited |
 
 **No comment** for:
 - pulling a card into a working column (To do → Doing): it only assigns;
 - moves between waiting columns (Approved → To spec, To do → To review…);
+- moving a finished spec into Spec review, or back from it to Specing;
 - moving a card back (Reviewing → Doing, To review → To do…);
 - moves in the Inbox and Approved;
 - dropping a card in the column it was already in.
@@ -54,6 +61,8 @@ When a card leaves a working column going forward, the credit goes to:
 
 So assign yourself while you work, or the credit goes to whoever moves the card on.
 
+**Specs** credit two people: the **writer** (whoever is on the card, or else the spec PR's author) and the **approver**: whoever moves the card out of Spec review, unless that is the writer; when the spec PR's merge moves the card, its approving reviewers. The spec PR is the one that references the issue (GitHub's link, "Closes #N" or `**Issue:** #N`) and adds a `docs/specs/SPEC-….md` file; one linked only by its branch name is not found for a manual move, so that comment has no PR link.
+
 ### When the bot assigns and unassigns
 
 | The card moves into… | Who is on it afterwards |
@@ -61,6 +70,7 @@ So assign yourself while you work, or the credit goes to whoever moves the card 
 | a **working** column, going forward (To do → Doing) | whoever was already assigned; if nobody, **whoever moved it** |
 | a **working** column, skipping the queue (Doing → Reviewing) | **whoever moved it**: the previous stage's people are credited and unassigned |
 | a **working** column, going back (Reviewing → Doing) | **whoever did that stage before** (from the bot's earlier comment); if nobody was credited, whoever was assigned, or else whoever moved it |
+| **Spec review** (or back from it to Specing) | **unchanged**: the writer stays on it while it waits |
 | a **waiting** column, the Inbox, Approved or Done | **nobody**: everyone is unassigned |
 
 "Going forward" and "going back" follow the board's order, left to right.
@@ -84,12 +94,21 @@ The Project's **Block** field says which block a card's work is planned in. It l
 
 **Approving does not set a block.** Approve now, plan for B3 later.
 
+### When PRs are merged
+
+| Merged | What happens | How |
+|---|---|---|
+| a **spec PR** linked to the issue (GitHub link, "Closes #N", `**Issue:** #N`, or a branch like `spec/890-…`) | if the card is still in To spec, Specing or Spec review, it moves to **To do**, with "Spec written by @author, approved by @approvers" | the bot checks merged PRs **once an hour** |
+| a **code PR** that closes the issue | the issue closes, the card moves to **Done**, and the bot posts the story | the Project's built-in **Item closed** workflow moves the card; the bot reacts to that move |
+
+A card already at To do or further is left alone, so nothing happens twice.
+
 ## What the bot does not do
 
-- It **never moves cards**, closes issues or touches pull requests.
+- It **only moves a card in one case**: a merged spec PR moves its card to To do. It never closes issues or touches pull requests.
 - It acts only on **issues** on the Kanban Project. Pull requests and draft items on the board are ignored.
 - It ignores every other Project in the org, and every repo it is not installed on.
-- It ignores its own changes (the Block field it sets), so it never loops.
+- It ignores its own changes (the Block field it sets, a merged spec's move), so it never loops. Other bots are ignored too, except the Project's own automation moving a card to Done.
 - It does not undo what people do by hand. Fix an assignee or delete a comment, and the bot leaves it.
 
 ## When something looks wrong

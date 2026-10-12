@@ -4,6 +4,10 @@ import { COLUMN_BY_ID, columnIndex, type StageId } from './flow'
 // it get the credit in a comment on the issue and are unassigned, so an
 // assignee always means "on it right now" and the issue keeps the history:
 //
+//   Specing → Spec review  nothing: the spec waits for approval, its writer stays on it
+//   Spec review → To do    "Spec written by @a, approved by @x" (x: whoever moved it,
+//                          unless that is the writer; or the spec PR's approvers
+//                          when its merge moved the card), with the spec PR
 //   Doing → To review      "Code done by @b", @b unassigned
 //   To review → Reviewing  nobody assigned, so whoever moved it takes it
 //   Reviewing → Doing      back for changes: @b (who coded) is assigned again
@@ -11,18 +15,23 @@ import { COLUMN_BY_ID, columnIndex, type StageId } from './flow'
 //
 // Pure, so the rules can be tested without GitHub.
 
-export type Credit = { stage: StageId; logins: string[]; at: number }
+export type Credit = { stage: StageId; logins: string[]; at: number; approvers?: string[] }
+
+// The spec PR of a card, when the bot found one.
+export type SpecPr = { number: number; author: string | null; approvers: string[]; merged: boolean }
 
 export type HandoffInput = {
   from: string
   to: string
   assignees: string[]
-  // Who moved the card (the webhook sender); null when unknown.
+  // Who moved the card (the webhook sender); null when GitHub's automation or
+  // the bot itself moved it (a closed issue, a merged spec PR).
   mover: string | null
   // People who approved the card's pull requests: the most reliable reviewer.
   approvers?: string[]
   // Earlier hand-offs on this card, oldest first.
   credits: Credit[]
+  specPr?: SpecPr | null
 }
 
 export type Handoff = {
@@ -34,7 +43,7 @@ export type Handoff = {
 
 const DONE_BY: Record<StageId, string> = {
   intake: 'Triage done',
-  spec: 'Spec done',
+  spec: 'Spec written',
   build: 'Code done',
   review: 'Reviewed and tested',
   done: 'Finished',
@@ -55,14 +64,26 @@ export function handoff(input: HandoffInput, now = Date.now()): Handoff {
   if (!from || !to || from.id === to.id) return none
 
   const forward = columnIndex(to.id) > columnIndex(from.id)
-  const leftWork = forward && from.kind === 'active'
+  // A stage is finished when its card leaves it going forward, from a column
+  // where it was worked on or reviewed (Specing → Spec review stays in Spec).
+  const leftWork = forward && (from.kind === 'active' || from.kind === 'review') && to.stage !== from.stage
   const people = (xs: string[]) => [...new Map(xs.map((x) => [x.toLowerCase(), x])).values()]
+  const has = (xs: string[], x: string) => xs.some((y) => y.toLowerCase() === x.toLowerCase())
+  const mover = input.mover ? [input.mover] : []
 
   // Credit for the stage being finished.
   let credit: Credit | null = null
-  if (leftWork) {
+  if (leftWork && from.stage === 'spec') {
+    // The writer: whoever is on the card, or the spec PR's author.
+    const writer = people(input.assignees.length ? input.assignees : input.specPr?.author ? [input.specPr.author] : mover)
+    // The approver: whoever moved it out of Spec review, or, when the spec PR's
+    // merge moved it, the PR's approvers. Never the writer.
+    const approving = from.kind === 'review' || input.specPr?.merged ? (input.mover ? mover : (input.specPr?.approvers ?? [])) : []
+    const approvers = people(approving.filter((x) => !has(writer, x)))
+    if (writer.length) credit = { stage: 'spec', logins: writer, at: now, ...(approvers.length ? { approvers } : {}) }
+  } else if (leftWork) {
     const approvers = from.stage === 'review' ? (input.approvers ?? []) : []
-    const logins = people(approvers.length ? approvers : input.assignees.length ? input.assignees : input.mover ? [input.mover] : [])
+    const logins = people(approvers.length ? approvers : input.assignees.length ? input.assignees : mover)
     if (logins.length) credit = { stage: from.stage, logins, at: now }
   }
 
@@ -70,24 +91,30 @@ export function handoff(input: HandoffInput, now = Date.now()): Handoff {
   // where work happens, whoever did this stage before (going back), whoever
   // already took it, or else whoever moved it.
   let target: string[] = []
-  if (to.kind === 'active') {
+  if (to.kind === 'review') target = input.assignees // waiting for approval: nobody changes
+  else if (to.kind === 'active') {
     const before = forward ? undefined : lastCredit(input.credits, to.stage)?.logins
     target = before ?? (leftWork ? [] : input.assignees)
     if (!target.length && input.mover) target = [input.mover]
   }
-  const has = (xs: string[], x: string) => xs.some((y) => y.toLowerCase() === x.toLowerCase())
   const assign = people(target.filter((x) => !has(input.assignees, x)))
   const unassign = input.assignees.filter((x) => !has(target, x))
 
   // Comment only when a stage is finished, or when the card reaches Done.
   const lines: string[] = []
   const by = (logins: string[]) => logins.map((l) => `@${l}`).join(', ')
-  if (credit) lines.push(`**${DONE_BY[credit.stage]} by ${by(credit.logins)}**, moved from ${from.name} to ${to.name}${input.mover ? ` by @${input.mover}` : ''}.`)
+  if (credit) {
+    const approved = credit.approvers?.length ? `, approved by ${by(credit.approvers)}` : ''
+    const how = input.specPr?.merged && !input.mover ? ` when spec PR #${input.specPr.number} was merged` : input.mover ? ` by @${input.mover}` : ''
+    lines.push(`**${DONE_BY[credit.stage]} by ${by(credit.logins)}${approved}**, moved from ${from.name} to ${to.name}${how}.`)
+    if (credit.stage === 'spec' && input.specPr && !(input.specPr.merged && !input.mover)) lines.push(`Spec PR: #${input.specPr.number}`)
+  }
   if (to.kind === 'done') {
     const all = [...input.credits, ...(credit ? [credit] : [])]
     const story = STORY.map(([stage, label]) => {
       const c = lastCredit(all, stage)
-      return c ? `${label} ${by(c.logins)}` : null
+      if (!c) return null
+      return `${label} ${by(c.logins)}${c.approvers?.length ? ` (approved by ${by(c.approvers)})` : ''}`
     }).filter(Boolean)
     if (story.length) lines.push(`Finished. ${story.join(' · ')}`)
   }

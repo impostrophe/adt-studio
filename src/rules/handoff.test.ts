@@ -80,3 +80,56 @@ describe('credits in comments', () => {
     expect(creditsFromComments(['<!-- done-board:handoff {"stage":"spec","logins":["ana"],"at":1} -->'])).toEqual([{ stage: 'spec', logins: ['ana'], at: 1 }])
   })
 })
+
+describe('spec review lane', () => {
+  const pr = { number: 890, author: 'ana', approvers: ['bruna'], merged: false }
+
+  it('a finished spec waits for approval: nothing changes, no comment', () => {
+    expect(handoff({ from: 'specing', to: 'spec-review', assignees: ['ana'], mover: 'ana', credits: [] }, at)).toEqual({ credit: null, comment: null, assign: [], unassign: [] })
+  })
+
+  it('moved on by someone else: written by the writer, approved by them, with the spec PR', () => {
+    const h = handoff({ from: 'spec-review', to: 'to-do', assignees: ['ana'], mover: 'bruna', credits: [], specPr: pr }, at)
+    expect(h.credit).toEqual({ stage: 'spec', logins: ['ana'], approvers: ['bruna'], at })
+    expect(h.unassign).toEqual(['ana'])
+    expect(h.comment).toContain('**Spec written by @ana, approved by @bruna**, moved from Spec review to To do by @bruna.')
+    expect(h.comment).toContain('Spec PR: #890')
+  })
+
+  it('moved on by the writer: written only, nobody approved', () => {
+    const h = handoff({ from: 'spec-review', to: 'to-do', assignees: ['ana'], mover: 'ana', credits: [] }, at)
+    expect(h.credit).toEqual({ stage: 'spec', logins: ['ana'], at })
+    expect(h.comment).toContain('**Spec written by @ana**, moved from Spec review to To do by @ana.')
+  })
+
+  it('the spec PR was merged: its approvers approved it, its author wrote it', () => {
+    const h = handoff({ from: 'spec-review', to: 'to-do', assignees: [], mover: null, credits: [], specPr: { ...pr, merged: true } }, at)
+    expect(h.credit).toEqual({ stage: 'spec', logins: ['ana'], approvers: ['bruna'], at })
+    expect(h.comment).toContain('**Spec written by @ana, approved by @bruna**, moved from Spec review to To do when spec PR #890 was merged.')
+  })
+
+  it('a merged spec still in Specing moves on the same way', () => {
+    const h = handoff({ from: 'specing', to: 'to-do', assignees: ['ana'], mover: null, credits: [], specPr: { ...pr, merged: true } }, at)
+    expect(h.credit).toEqual({ stage: 'spec', logins: ['ana'], approvers: ['bruna'], at })
+  })
+
+  it('changes requested: back to Specing, nothing changes', () => {
+    expect(handoff({ from: 'spec-review', to: 'specing', assignees: ['ana'], mover: 'bruna', credits: [] }, at)).toEqual({ credit: null, comment: null, assign: [], unassign: [] })
+  })
+
+  it('the story at Done shows who approved the spec', () => {
+    const credits = [{ stage: 'spec' as const, logins: ['ana'], approvers: ['bruna'], at }, credit('build', 'caio')]
+    const h = handoff({ from: 'reviewing', to: 'done', assignees: ['dani'], mover: 'dani', credits }, at)
+    expect(h.comment).toContain('Finished. Spec @ana (approved by @bruna) · Code @caio · Review & test @dani')
+  })
+})
+
+describe('moved to Done by GitHub (issue closed by a merged PR)', () => {
+  it('credits the PR approvers and tells the story, without a mover', () => {
+    const h = handoff({ from: 'reviewing', to: 'done', assignees: ['caio'], mover: null, approvers: ['dani'], credits: [credit('build', 'bruna')] }, at)
+    expect(h.credit).toEqual(credit('review', 'dani'))
+    expect(h.comment).toContain('**Reviewed and tested by @dani**, moved from Reviewing to Done.')
+    expect(h.comment).toContain('Finished. Code @bruna · Review & test @dani')
+    expect(h.unassign).toEqual(['caio'])
+  })
+})

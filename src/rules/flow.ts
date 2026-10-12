@@ -2,7 +2,9 @@
 // Kanban Project's "Status" field: they are the contract between the board and
 // the bot. Renaming a column on the Project means renaming it here too.
 
-export type ColumnKind = 'inbox' | 'queue' | 'active' | 'done'
+// review: a lane where finished work waits for approval; the people on the
+// card stay as they are (Spec review).
+export type ColumnKind = 'inbox' | 'queue' | 'active' | 'review' | 'done'
 
 export type StageId = 'intake' | 'spec' | 'build' | 'review' | 'done'
 
@@ -15,6 +17,7 @@ export const COLUMNS: Column[] = [
   { id: 'approved', name: 'Approved', stage: 'intake', kind: 'queue' },
   { id: 'to-spec', name: 'To spec', stage: 'spec', kind: 'queue' },
   { id: 'specing', name: 'Specing', stage: 'spec', kind: 'active' },
+  { id: 'spec-review', name: 'Spec review', stage: 'spec', kind: 'review' },
   { id: 'to-do', name: 'To do', stage: 'build', kind: 'queue' },
   { id: 'doing', name: 'Doing', stage: 'build', kind: 'active' },
   { id: 'to-review', name: 'To review', stage: 'review', kind: 'queue' },
