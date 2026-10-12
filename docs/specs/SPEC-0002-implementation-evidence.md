@@ -1,5 +1,50 @@
 # SPEC-0002 implementation evidence
 
+## Quiz rerun correction from product testing — 2026-10-11
+
+The owner tested the published `373619dd2` implementation and saw the generated
+pages 6–8 quiz reappear beneath its manually corrected version. That matched the
+old Decision 8 / AC-4, but the owner explicitly selected **keep the edited quiz
+and skip its page group**. The spec and quiz identity documentation now record
+that rule. The owner authorized committing and publishing this correction with
+its review notes on the existing PR #880 branch. The verification below applies
+to this amendment; the historical completion reports do not certify it.
+
+- Build normal eligible batches first, then exclude complete source-page sets
+  already covered by manual or unknown-authorship quizzes. Page selection order
+  and display placement do not change coverage; partial overlap is a different
+  group. Remaining batches keep their inputs, and protected groups make no model
+  requests. API and DAG callers use the same exclusion for generation/capacity.
+- Recheck protected coverage inside the existing atomic quiz publisher. A
+  generated/cached candidate cannot append an alternative to a protected group.
+  Ordinary publication retires prior AI alternatives from the active set while
+  preserving history. Protected quiz/option IDs and content remain intact;
+  multiple protected quizzes are retained. Explicit Add after / Replace keep
+  their existing insert/consent behavior.
+- Four added AC-4 regressions failed before the fix. Two run actual HTTP
+  admission, saves, stage execution, batching, quiz generation and SQLite with
+  only the model boundary stubbed: manual and legacy pages 6–8 stay unchanged
+  across repeated reruns, the neighboring group regenerates, an old AI duplicate
+  leaves active content but stays in history, and fully protected groups make
+  zero model calls. Pure tests cover unchanged batch boundaries, reordered page
+  selection and all-protected generation. Existing tests also exercise explicit
+  Replace failure/cancellation/success and protected catalog/audio identities.
+
+Verification for this correction:
+
+| Command | Result |
+|---|---|
+| `env -u OPENAI_API_KEY pnpm exec vitest run packages/pipeline/src/__tests__/quiz-generation.test.ts apps/api/src/routes/manual-edit-survival.test.ts apps/api/src/routes/quiz-id-lifecycle.test.ts apps/api/src/routes/quiz-identity-regressions.test.ts apps/api/src/routes/quizzes.test.ts` | 5 files / 107 tests passed. |
+| `env -u OPENAI_API_KEY pnpm exec vitest run packages/pipeline/src/__tests__/cli-authorship.test.ts` | 1 file / 1 test passed; fresh-book DAG writer compatibility, not full CLI resume acceptance. |
+| `pnpm typecheck` | Passed; rebuilds the shared package output used by API tests. |
+| `pnpm lint` | Passed; 0 errors and the existing 8 unused-suppression warnings. |
+| `git diff --check` | Passed. |
+
+No full-suite, paid-provider, browser, packaged desktop or release acceptance run
+is claimed for this correction. The user's post-fix UI check is pending. No
+user book was modified during development; test storage used temporary copies.
+The invariant lint command remains planned and unavailable.
+
 ## Completion under delegated assumptions — 2026-10-11
 
 The owner authorized reasonable assumptions to finish the remaining items after

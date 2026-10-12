@@ -148,6 +148,7 @@ import type {
   AppConfig,
   ImageClassificationOutput,
   PageSectioningOutput,
+  QuizGenerationOutput,
   WebRenderingOutput,
   ImageCaptioningOutput,
   TextCatalogOutput,
@@ -1851,7 +1852,10 @@ async function runQuizzesStep(
   const storage = createBookStorage(label, booksDir)
 
   try {
-    const previousVersion = storage.getLatestNodeData("quiz-generation", "book")?.version ?? 0
+    const previous = storage.getLatestNodeData("quiz-generation", "book")
+    const previousVersion = previous?.version ?? 0
+    const protectedPageGroups = ((previous?.data as QuizGenerationOutput | undefined)?.quizzes ?? [])
+      .filter(isProtectedContent).map((quiz) => quiz.pageIds)
     const publish = (output: Parameters<typeof saveQuizOutput>[1]) => storage.transaction(() => {
       options.signal?.throwIfAborted()
       assertEditVersion(storage.getLatestNodeData("quiz-generation", "book")?.version, previousVersion)
@@ -1944,9 +1948,10 @@ async function runQuizzesStep(
     )
 
     if (quizPages.length > 0) {
-      assertQuizGenerationCapacity(storage, batchPages(quizPages, quizConfig.pagesPerQuiz, quizConfig.quizSectionTypes).length)
+      assertQuizGenerationCapacity(storage, batchPages(quizPages, quizConfig.pagesPerQuiz, quizConfig.quizSectionTypes, protectedPageGroups).length)
       const quizResult = await generateAllQuizzes(quizPages, quizConfig, quizModel, {
         concurrency: effectiveConcurrency,
+        protectedPageGroups,
         onQuizComplete: (completed, total) => {
           progress.emit({
             type: "step-progress",

@@ -1,4 +1,5 @@
 import { isProtectedContent, stampManualEdits } from "./manual-edits.js"
+import { quizPageGroupKey } from "./quiz-generation.js"
 import { randomUUID } from "node:crypto"
 import type { Storage } from "@adt/storage"
 import {
@@ -79,7 +80,8 @@ function reconcileLegacyUpdate(output: QuizGenerationOutput, current: Quiz[]): Q
 /** All quiz writes share one atomic allocation/persistence boundary.
  * - edit: reconcile compatible legacy requests before allocating additions.
  * - insert: existing quizzes already carry IDs; every missing ID is new.
- * - replace: full generation creates new entities, even when its LLM is cached.
+ * - replace: retain protected groups; allocate fresh entities for other groups,
+ *   even when their LLM output is cached.
  * No generation or filesystem work is performed while the transaction is held. */
 export function saveQuizOutput(
   storage: Storage,
@@ -97,7 +99,11 @@ export function saveQuizOutput(
       isProtectedContent(quiz) ? [{ ...quiz, quizId: quiz.quizId ?? formatQuizId(index + 1) }] : []
     ) }).quizzes : []
     if (mode === "replace") {
-      incoming = { ...output, quizzes: [...protectedQuizzes, ...output.quizzes.map(({ quizId: _id, ...quiz }) => ({ ...quiz, source: "ai" as const }))] }
+      // Recheck coverage at publication too: a retained/cached candidate must
+      // never append an AI alternative to the protected quiz for that group.
+      const protectedGroups = new Set(protectedQuizzes.map((quiz) => quizPageGroupKey(quiz.pageIds)))
+      const generated = output.quizzes.filter((quiz) => !protectedGroups.has(quizPageGroupKey(quiz.pageIds)))
+      incoming = { ...output, quizzes: [...protectedQuizzes, ...generated.map(({ quizId: _id, ...quiz }) => ({ ...quiz, source: "ai" as const }))] }
     } else {
       const row = storage.getLatestNodeData("quiz-generation", "book")
       const current = row ? withResolvedQuizIds(row.data as QuizGenerationOutput).quizzes : []

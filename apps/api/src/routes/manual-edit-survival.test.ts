@@ -112,6 +112,9 @@ it("saves, runs real admission/preparation/workers, reads history, previews and 
   expect(read("page-sectioning", "pg001")!.version).toBe(2)
   expect((await json("toc")).entries[0].title).toBe("Manual contents")
   expect((await json("quizzes")).quizzes.quizzes).toEqual(expect.arrayContaining([expect.objectContaining({ quizId: manualQuizId, source: "manual", question: "Manual question" })]))
+  // The stub returns an alternative for the protected group. Publication must
+  // reject it too, even if an adapter supplies a retained/generated candidate.
+  expect((await json("quizzes")).quizzes.quizzes).toHaveLength(1)
   expect((await run("sectioning", { toStage: "translate" })).status).toBe("completed")
   expect(read("image-captioning", "pg001")!.data).toMatchObject({ captions: [expect.objectContaining({ source: "manual", caption: "Manual caption" })] })
   expect(read("glossary")!.data).toMatchObject({ items: [expect.objectContaining({ source: "manual", definition: "Manual definition" })] })
@@ -282,12 +285,68 @@ it("protects unknown page and TOC provenance without adding a version", async ()
   expect(generateToc).not.toHaveBeenCalled()
 })
 
+it.each(["manual", "unknown"] as const)("AC-4: repeated HTTP reruns skip the %s pages 6–8 quiz without appending its original generated version", async (authorship) => {
+  const db = book()
+  db.clearNodesByType(["web-rendering"])
+  for (let n = 6; n <= 11; n++) {
+    const id = `pg${String(n).padStart(3, "0")}`
+    db.putExtractedPage({ pageId: id, pageNumber: n, text: "Source", images: [], pageImage: { imageId: `${id}_page`, buffer: Buffer.from("image"), format: "png", hash: id, width: 1, height: 1 } })
+    db.putNodeData("page-sectioning", id, { source: "ai", reasoning: "", sections: [section(id, `Page ${n}`)] })
+    db.putNodeData("web-rendering", id, { sections: [{ sectionIndex: 0, sectionType: "text_only", reasoning: "", html: `<section data-section-id="${id}_sec001"><p>Page ${n}</p></section>` }] })
+  }
+  const covered = { ...quiz("Original pages 6–8"), afterPageId: "pg008", pageIds: ["pg006", "pg007", "pg008"] }
+  db.putNodeData("quiz-generation", "book", { generatedAt: "fixture", language: "en", pagesPerQuiz: 3, quizzes: [
+    { ...covered, quizId: "qz001", ...(authorship === "manual" ? { source: "ai" } : {}) },
+    { ...quiz("Unprotected neighbor"), quizId: "qz002", source: "ai", afterPageId: "pg011", pageIds: ["pg009", "pg010", "pg011"] },
+    // An alternative created by the old behavior should leave the active set
+    // on an ordinary rerun while remaining recoverable in history.
+    { ...covered, quizId: "qz003", source: "ai" },
+  ] })
+  db.close()
+  if (authorship === "manual") {
+    const loaded = await json("quizzes")
+    loaded.quizzes.quizzes[0].question = "My pages 6–8 correction"
+    loaded.quizzes.quizzes[0].options[1].text = "My corrected answer"
+    loaded.quizzes.quizzes[0].answerIndex = 1
+    expect((await send("quizzes", { ...loaded.quizzes, baseVersion: loaded.version })).status).toBe(200)
+  }
+  const protectedQuiz = (await json("quizzes")).quizzes.quizzes[0]
+  const actual = await vi.importActual<typeof import("@adt/pipeline")>("@adt/pipeline")
+  generateAllQuizzes.mockImplementation(actual.generateAllQuizzes)
+  generateObject.mockImplementation(async () => ({ object: { question: "Generated neighbor", options: quiz().options, answer_index: 0, reasoning: "fixture" } }))
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    generateObject.mockClear()
+    expect((await run("quizzes")).status).toBe("completed")
+    const current = (await json("quizzes")).quizzes.quizzes
+    expect(current).toHaveLength(2)
+    expect(current[0]).toEqual(protectedQuiz)
+    expect(current[1]).toMatchObject({ source: "ai", pageIds: ["pg009", "pg010", "pg011"] })
+    expect(generateObject).toHaveBeenCalledTimes(1)
+    expect(generateObject.mock.calls[0][0].context.page_texts.map((page: { pageId: string }) => page.pageId)).toEqual(["pg009", "pg010", "pg011"])
+  }
+  const history = await json("debug/versions/quiz-generation/book?includeData=true")
+  expect(JSON.stringify(history)).toContain('"qz003"')
+
+  // Protect the last AI group: rerunning now needs zero model requests.
+  const loaded = await json("quizzes")
+  loaded.quizzes.quizzes[1].question = "My neighboring correction"
+  expect((await send("quizzes", { ...loaded.quizzes, baseVersion: loaded.version })).status).toBe(200)
+  const allProtected = (await json("quizzes")).quizzes.quizzes
+  generateObject.mockClear()
+  expect((await run("quizzes")).status).toBe("completed")
+  expect((await json("quizzes")).quizzes.quizzes).toEqual(allProtected)
+  expect(generateObject).not.toHaveBeenCalled()
+})
+
 it("keeps protected quiz and option identities, translations and recordings while replacing AI neighbors, including no eligible pages", async () => {
+  fs.appendFileSync(configPath, "quiz_generation:\n  pages_per_quiz: 1\n")
+  generateAllQuizzes.mockResolvedValue({ generatedAt: "new", language: "en", pagesPerQuiz: 1, quizzes: [{ ...quiz("New AI question"), afterPageId: "pg003", pageIds: ["pg003"] }] })
   const db = book()
   db.putNodeData("quiz-generation", "book", { generatedAt: "before", language: "en", pagesPerQuiz: 1, quizzes: [
     { ...quiz("Manual question"), quizId: "qz001", source: "manual", options: quiz().options.map((o, i) => ({ ...o, optionId: `qz001_o${i}` })) },
-    { ...quiz("Legacy question"), quizId: "qz002", afterPageId: "pg002" },
-    { ...quiz("Old AI question"), quizId: "qz003", source: "ai" },
+    { ...quiz("Legacy question"), quizId: "qz002", afterPageId: "pg002", pageIds: ["pg002"] },
+    { ...quiz("Old AI question"), quizId: "qz003", source: "ai", afterPageId: "pg003", pageIds: ["pg003"] },
   ] })
   db.putNodeData("tts", "en", { entries: [{ textId: "qz001_que", language: "en", fileName: "qz001_que.mp3", provider: "manual", model: "manual", voice: "manual", voiceSlot: "primary", cached: false }] })
   // The editor is deferred, but stored ordering already has a public schema.
@@ -308,7 +367,7 @@ it("keeps protected quiz and option identities, translations and recordings whil
   const current = (await json("quizzes")).quizzes.quizzes
   expect(current.find((q: { quizId: string }) => q.quizId === "qz001")).toEqual(prior[0])
   expect(current.find((q: { quizId: string }) => q.quizId === "qz002")).toMatchObject({ question: "Legacy question" })
-  expect(current.map((q: { quizId: string }) => q.quizId)).toEqual(["qz001", "qz004", "qz002"])
+  expect(current.map((q: { quizId: string }) => q.quizId)).toEqual(["qz001", "qz002", "qz004"])
   expect(fs.readFileSync(path.join(root, label, "audio/en/qz001_que.mp3"), "utf8")).toBe("UNCHANGED RECORDING")
   expect(read("tts", "en")!.data).toMatchObject({ entries: [expect.objectContaining({ textId: "qz001_que", provider: "manual" })] })
   const noPages = book(); noPages.clearNodesByType(["web-rendering"]); noPages.close()

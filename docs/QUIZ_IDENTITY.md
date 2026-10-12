@@ -17,7 +17,11 @@ version and versions newer than a restored version.
 
 - Editing, deleting, or repositioning an existing quiz preserves its ID.
 - Full-stage regeneration preserves manual and unknown-authorship quizzes with
-  their exact IDs and creates fresh IDs for generated AI quizzes. Identical or
+  their exact IDs and skips batches with the same complete source-page set.
+  Filtering happens after batching, so remaining groups do not shift. It creates
+  fresh IDs for generated AI quizzes only in unprotected groups. Prior AI
+  alternatives leave the active set on rerun but remain in version history;
+  protected quizzes are never deduplicated. Identical or
   cached model output does not reuse a retired identity. Generate-one replacement
   must name the protected quiz IDs at that position and supply the current version.
 - Restoring a version selects its existing quizzes and IDs. It does not allocate

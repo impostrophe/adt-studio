@@ -23,6 +23,7 @@ import type {
   StepName,
   ImageClassificationOutput,
   PageSectioningOutput,
+  QuizGenerationOutput,
   BookMetadata,
   BookSummaryOutput,
   GlossaryOutput,
@@ -76,6 +77,7 @@ import { regenerateGlossaryPreservingEdits, buildGlossaryConfig } from "./glossa
 import { generateToc, buildTocGenerationConfig } from "./toc-generation.js"
 import { generateAllQuizzes, buildQuizGenerationConfig, batchPages, type QuizPageInput } from "./quiz-generation.js"
 import { saveQuizOutput, assertQuizGenerationCapacity } from "./quiz-ids.js"
+import { isProtectedContent } from "./manual-edits.js"
 import { buildTextCatalog } from "./text-catalog.js"
 import { buildEasyReadConfig, buildEasyReadSourceBlocks, createEmptyEasyReadOutput, generateEasyRead, flattenEasyReadEntries, isDeterministicEmptyEasyReadOutput } from "./easy-read.js"
 import { retainedEasyRead } from "./retained-catalog.js"
@@ -739,9 +741,12 @@ export async function runFullPipeline(
         })
       }
       if (quizPages.length > 0) {
-        assertQuizGenerationCapacity(storage, batchPages(quizPages, quizConfig.pagesPerQuiz, quizConfig.quizSectionTypes).length)
+        const previous = storage.getLatestNodeData("quiz-generation", "book")?.data as QuizGenerationOutput | undefined
+        const protectedPageGroups = (previous?.quizzes ?? []).filter(isProtectedContent).map((quiz) => quiz.pageIds)
+        assertQuizGenerationCapacity(storage, batchPages(quizPages, quizConfig.pagesPerQuiz, quizConfig.quizSectionTypes, protectedPageGroups).length)
         const result = await generateAllQuizzes(quizPages, quizConfig, model, {
           concurrency: effectiveConcurrency,
+          protectedPageGroups,
           onQuizComplete: (completed, total) => {
             p.emit({
               type: "step-progress",
