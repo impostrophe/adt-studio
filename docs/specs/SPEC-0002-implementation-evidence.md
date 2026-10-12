@@ -1,9 +1,14 @@
 # SPEC-0002 implementation evidence
 
-> **2026-10-12 audit in progress:** the earlier completion reports below are
-> historical. [The refreshed integration audit](../verification/spec-0002-oct12-audit.md)
-> supersedes them for the updated prerequisite, F1–F4 and independent findings.
-> Publication and complete platform acceptance have not yet passed this audit.
+> **2026-10-12 qualified implementation:** [the refreshed integration audit](../verification/spec-0002-oct12-audit.md)
+> supersedes the historical reports below. Source `7b53e448` is integrated onto
+> SPEC-0001 `aefe4185`; F1–F4 and the additional independent findings are fixed
+> and rechecked. All 4,097 tests, final build/typechecks/lint/Lingui, actual Docker
+> browser/export/restart checks, packaged Desktop API/resources checks and the
+> built-old-version read probe pass. Exact published-head CI is recorded in the
+> review-request comment. AC-9/11/17 retain SPEC-0001's explicit legacy-owner
+> qualification; this is not unrestricted legacy compatibility, specification
+> approval or release certification. See the audit for all 19 ACs and limits.
 
 
 ## Review preparation after manual testing — 2026-10-11
