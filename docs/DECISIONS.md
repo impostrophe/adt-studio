@@ -967,26 +967,44 @@ separate action after saving. #619 and #626 remain background/deferred.
 
 ### Context
 
-Changing page_sectioning.mode currently updates YAML independently of pipeline completion state. Historical or imported multi-section output can reach By Page rendering, and destructive pre-run cleanup can occur before validation.
+By Page generation was fixed by #692. The previous B1 proposal imposed persisted
+cardinality/lifecycle gates, blocking manual editing and older books; it also
+withheld ordinary Storyboard pages until a whole run completed. The September 30
+and October 12 product reviews supersede those policies. The owner authorized
+amendment and implementation, not specification approval.
 
 ### Decision
 
-Treat an effective mode transition as non-destructive invalidation of Sectioning and its downstream dependency closure. Serialize and recover configuration/status publication, preserve entity history and Extract state, and require one valid latest section per active source page before any By Page Storyboard mutation.
+By Page constrains generation/cache validation only. Preferences are informational;
+ordinary Sectioning fills missing pages. Explicit exact-version replacement also
+confirms a scoped, version-preserving active Storyboard reset before generation.
+The reset is a database transaction; failed generation retains prior authored
+Sectioning and history while reset Storyboard remains missing. Ordinary rendering
+publishes each page's HTML/tree transaction immediately. Only a real layout switch
+requires whole-window all-success publication. Shared ownership/coverage, not
+mode bookkeeping, governs output usability and completeness.
 
 ### Consequences
 
-Mode changes need writer admission and a recoverable cross-file/database transition. Rendering entry points must share the same preflight; neither mode changes nor preflight failures authorize content deletion. The wider B2 mode/merge design is not approved by this B1 proposal.
+Reuse SPEC-0001/0002 admission, versioning, ownership and freshness. Retain shared
+cross-process protection instead of adding/replacing it with a second lock; retain
+necessary journal/crash recovery and fail closed on ambiguous SQLite ownership.
+Sectioning ordinary-AI replacement and fixed-pair active retention from SPEC-0002
+are refined only as documented in the amended spec. Full CLI resume belongs to
+SPEC-0010; B2 remains deferred. Unknown rendered-owner omission stays qualified.
 
-This ADR is under review with its spec; no implementation acceptance criterion is satisfied by publishing it. The spec owns the acceptance/test mapping and approval questions. The same PR now includes the stacked B1 implementation and executable invariant regressions, including protected existing-book regeneration and bounded CLI/DAG resume; see its [current evidence and rollout limits](verification/spec-0003-stack-implementation.md). This does not approve the proposed decision.
+See [the amended contract](specs/SPEC-0003-sectioning-modes.md) and
+[original AC mapping and evidence](verification/spec-0003-oct12-audit.md).
+This decision remains proposed, with human review pending.
 
 ### Alternatives Considered
 
-| Approach | Why Not |
+| Approach | Why not |
 |---|---|
-| UI warning only | Does not protect API, imported books or CLI execution. |
-| Automatically merge or truncate old sections | Ambiguous content and identity changes would destroy editorial intent. |
-
----
+| Persisted By Page cardinality/lifecycle gates | Invalidates intentional editing and blocks usable older books. |
+| Retain incompatible HTML actively after confirmed Sectioning regeneration | Reassigns historical ownership/indexes and makes incomplete work appear current. |
+| Whole-book publication for every Storyboard run | Withholds successful pages and discards work after unrelated failure. |
+| Replace shared writer gate with in-process-only serialization | Does not coordinate supported prerequisite writers. |
 
 ## Decision Log Summary
 
