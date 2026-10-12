@@ -69,7 +69,7 @@ export function createTaskService(eventBus: BookEventBus, booksDir?: string): Ta
       const dir = directory(label)
       let terminalPersisted = false
       let writerToken: string | undefined
-      if (dir && !fs.existsSync(path.join(dir, `${label}.db`))) throw new HTTPException(404, { message: "Book not found" })
+      if (dir && options?.request && !fs.existsSync(path.join(dir, `${label}.db`))) throw new HTTPException(404, { message: "Book not found" })
       const persist = () => {
         if (dir && options?.request) appendTaskEvent(dir, { requestId: options.request.id,
           fingerprint: options.request.fingerprint, owner: { ...owner, writerToken }, task: info })

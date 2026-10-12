@@ -494,7 +494,7 @@ export { outputSkipped } from "./output-freshness.js"
 
 export { captureOutputReferences } from "./output-references.js"
 export { preflightSectioning, SectioningPreflightError } from "./sectioning-preflight.js"
-export { SectioningSafetyError, effectiveSectioningMode, sectioningInvalidationSteps, activeSectioningPages, assertPersistedSectioning, assertSectioningCurrent, assertSectioningReplacementSafe, prepareSectioningRun, completeSectioning, createStoryboardPublication } from "./sectioning-lifecycle.js"
+export { SectioningSafetyError, effectiveSectioningMode, sectioningInvalidationSteps, activeSectioningPages, assertPersistedSectioning, assertSectioningCurrent, assertDownstreamSectioningCurrent, assertSectioningReplacementSafe, prepareSectioningRun, completeSectioning, createStoryboardPublication } from "./sectioning-lifecycle.js"
 
 export { extractionOptionsFromConfig, prepareExtractionAdmission, assertSafeExtractionRun } from "./extraction-admission.js"
 
@@ -509,7 +509,7 @@ export type { StageRunner, StageRunOptions, StageRunProgress } from "./stage-exe
 export { ResumeIncompleteError, catalogResumeStages } from "./catalog-resume.js"
 export { readGenerationCatalog, storyboardGenerationContent, GENERATION_NODES, isGenerationKind } from "./generation-catalog.js"
 
-export { assertPackageReadable, recoverPackagePublication } from "./packaging/publication.js"
+export { assertPackageReadable, recoverPackagePublication, newPackageAttempt, publishPackageAttempt } from "./packaging/publication.js"
 
 export { writePackageInventory, packageInventoryValid } from "./packaging/publication.js"
 export { classifySectioningSynchronization } from "./sectioning-sync.js"
@@ -518,4 +518,6 @@ export type { GenerationCatalogOptions } from "./generation-catalog.js"
 
 export { createRenderCachePublication, recoverRenderCachePublication } from "./render-cache-publication.js"
 
-export { readValidationArtifact, validationArtifactHash } from "./validation-artifact.js"
+export { readValidationArtifact, isValidationArtifactPage, validationArtifactHash } from "./validation-artifact.js"
+
+export { createGenerationPublication } from "./generation-publication.js"

@@ -29,8 +29,8 @@ export function recoverRenderCachePublication(storage: Storage): void {
   const r = roots(storage, record.attemptId)
   if (!fs.lstatSync(r.attempt).isDirectory()) throw new Error("Unsafe cache recovery directory")
   const committed = record.renderings.every((target) => {
-    const row = storage.getLatestNodeData("web-rendering", target.pageId)
-    return row?.version === target.version && inputSignature(row.data) === target.signature
+    const row = storage.getAllNodeVersions("web-rendering", target.pageId).find((row) => row.version === target.version)
+    return row !== undefined && inputSignature(row.data) === target.signature
   })
   if (!committed) for (const entry of record.entries) {
     const destination = path.join(r.cache, `${entry.hash}.json`)

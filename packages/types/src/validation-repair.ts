@@ -9,6 +9,7 @@ export const ValidationSectionSnapshot = z.object({
 })
 export type ValidationSectionSnapshot = z.infer<typeof ValidationSectionSnapshot>
 export const ValidationArtifactSnapshot = z.object({
+  id: z.string().uuid().optional(),
   sections: z.array(ValidationSectionSnapshot),
 })
 export type ValidationArtifactSnapshot = z.infer<typeof ValidationArtifactSnapshot>

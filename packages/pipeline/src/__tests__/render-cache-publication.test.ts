@@ -80,3 +80,23 @@ it.each([false, true])("recovers a process killed after cache activation and SQL
   finally { reopened.close() }
   expect(JSON.parse(fs.readFileSync(path.join(cache, `${oldKey}.json`), "utf8"))).toEqual(committed ? { fresh: true } : { old: true })
 })
+
+
+it.each(["edit", "restore"])("later %s cannot undo a committed fresh cache while cleaning its journal", (action) => {
+  const { storage, book, cache } = setup(), attemptId = randomUUID(), generated = { fresh: true }
+  try {
+    const attempt = path.join(book, `.render-cache-attempt-${attemptId}`)
+    fs.mkdirSync(attempt); fs.copyFileSync(path.join(cache, `${oldKey}.json`), path.join(attempt, `${oldKey}.previous`))
+    storage.putNodeData("web-rendering", "page", generated)
+    fs.writeFileSync(path.join(cache, `${oldKey}.json`), JSON.stringify(generated))
+    fs.writeFileSync(path.join(book, RENDER_CACHE_JOURNAL), JSON.stringify({ version: 1, attemptId,
+      entries: [{ hash: oldKey, existed: true }], renderings: [{ pageId: "page", version: 2, signature: inputSignature(generated) }] }))
+    if (action === "edit") storage.putNodeData("web-rendering", "page", { manual: "keep" })
+    else storage.setCurrentNodeVersion("web-rendering", "page", 1)
+    const current = storage.getLatestNodeData("web-rendering", "page"), history = storage.getAllNodeVersions("web-rendering", "page")
+    withBookWriter(book, () => recoverRenderCachePublication(storage))
+    expect(storage.getLatestNodeData("web-rendering", "page")).toEqual(current)
+    expect(storage.getAllNodeVersions("web-rendering", "page")).toEqual(history)
+    expect(JSON.parse(fs.readFileSync(path.join(cache, `${oldKey}.json`), "utf8"))).toEqual(generated)
+  } finally { storage.close() }
+})

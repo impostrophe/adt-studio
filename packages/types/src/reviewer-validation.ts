@@ -108,6 +108,8 @@ export const ReviewerPageValidationResult = z.object({
 export type ReviewerPageValidationResult = z.infer<typeof ReviewerPageValidationResult>
 
 export const ReviewerPageValidationRecord = z.object({
+  artifact_id: z.string().uuid().optional(),
+  artifact: ValidationArtifactSnapshot.optional(),
   fix_stage: z.never().optional(),
   session_id: z.string().min(1),
   page_id: z.string().min(1),

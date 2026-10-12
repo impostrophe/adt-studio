@@ -239,7 +239,12 @@ export async function runAccessibilityAssessment(
       page: index + 1,
       totalPages: pageEntries.length,
     })
-    pages.push(await auditPackagedPage(adtDir, entry, axeSource, { runOnlyTags, disabledRules }))
+    const page = await auditPackagedPage(adtDir, entry, axeSource, { runOnlyTags, disabledRules })
+    const owners = artifact?.sections.filter(section => section.sectionId === entry.section_id && section.href === entry.href)
+    // The stable ID may retain its original page prefix after a move.
+    if (owners?.length === 1) page.pageId = owners[0].pageId
+    else if (owners && owners.length > 1) page.pageId = null
+    pages.push(page)
   }
 
   const output: AccessibilityAssessmentOutputType = {

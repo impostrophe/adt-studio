@@ -71,6 +71,18 @@ export function assertSectioningReplacementSafe(storage: Storage): void {
   }
 }
 
+/** Read-only downstream admission, also safe inside the caller's SQLite commit. */
+export function assertDownstreamSectioningCurrent(config: AppConfig, bookDir: string, from: StageName): void {
+  if (!getStageDependents("storyboard").includes(from)) return
+  const lifecycle = readSectioningLifecycle(bookDir)
+  if (lifecycle && (!lifecycle.sectioningReady || lifecycle.mode !== effectiveSectioningMode(config))) {
+    throw new SectioningSafetyError("SECTIONING_STALE", "Sectioning is stale after a mode change. Downstream generation is blocked; saved output remains inspectable.")
+  }
+  if (lifecycle?.storyboardPending) {
+    throw new SectioningSafetyError("SECTIONING_STALE", "Storyboard still contains retained output from before Sectioning changed. Run Storyboard for the active book before generating downstream output or exporting it.")
+  }
+}
+
 export function prepareSectioningRun(label: string, booksRoot: string, from: StageName, to: StageName, configPath?: string): void {
   const { bookDir } = resolveBookPaths(label, booksRoot)
   withBookWriter(bookDir, () => {
@@ -86,13 +98,7 @@ export function prepareSectioningRun(label: string, booksRoot: string, from: Sta
         throw new SectioningSafetyError("SECTIONING_REGENERATION_BLOCKED", "Re-extraction of an existing book requires preservation-safe CLI/Extract admission. Existing pages and assets are kept.")
       }
       if (stages.includes("storyboard") && !stages.includes("sectioning")) assertSectioningCurrent(storage, config, bookDir)
-      const lifecycle = readSectioningLifecycle(bookDir)
-      if (getStageDependents("storyboard").includes(from) && lifecycle && (!lifecycle.sectioningReady || lifecycle.mode !== effectiveSectioningMode(config))) {
-        throw new SectioningSafetyError("SECTIONING_STALE", "Sectioning is stale after a mode change. Downstream generation is blocked; saved output remains inspectable.")
-      }
-      if (getStageDependents("storyboard").includes(from) && lifecycle?.storyboardPending) {
-        throw new SectioningSafetyError("SECTIONING_STALE", "Storyboard still contains retained output from before Sectioning changed. Run Storyboard for the active book before generating downstream output or exporting it.")
-      }
+      assertDownstreamSectioningCurrent(config, bookDir, from)
     } finally { storage.close() }
   })
 }

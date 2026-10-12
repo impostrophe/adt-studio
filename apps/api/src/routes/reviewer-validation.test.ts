@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { writeValidationArtifact, stampValidationArtifact } from "../../../../packages/pipeline/src/validation-artifact.js"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -78,6 +79,44 @@ describe("Reviewer validation routes", () => {
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it("binds each explicit review to its loaded artifact, preserves old records and rejects stale Preview drafts", async () => {
+    enableReviewerValidation(configPath)
+    const storage = createBookStorage(label, tmpDir), adt = path.join(tmpDir, label, "adt")
+    const entries = [{ section_id: "pg001_sec001", href: "page.html" }]
+    fs.mkdirSync(path.join(adt, "content"), { recursive: true })
+    fs.writeFileSync(path.join(adt, "content/pages.json"), JSON.stringify(entries))
+    const publish = (content: string) => {
+      fs.writeFileSync(path.join(adt, "page.html"), `<html><head><title>Review</title></head><body>${content}</body></html>`)
+      const id = stampValidationArtifact(adt, entries)
+      writeValidationArtifact(storage, adt, entries, id)
+      return id
+    }
+    const post = (suffix: string, body: unknown) => app.request(`/api/books/${label}/validation/${suffix}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    try {
+      const a = publish("Artifact A")
+      expect((await post("sessions", { session_id: "same-session", reviewer_name: "Reviewer" })).status).toBe(201)
+      const record = { session_id: "same-session", page_id: "pg001", section_id: "pg001_sec001", href: "page.html", artifact_id: a,
+        results: [{ criterion_id: "reading", status: "needs-changes", comment: "Keep my review" }] }
+      const first = await post("page-results", record)
+      expect(first.status, await first.clone().text()).toBe(201)
+      expect((await first.json()).record.artifact.id).toBe(a)
+      const previous = storage.getAllNodeVersions("reviewer-page-validation", "same-session:pg001:default")
+      const b = publish("Artifact B")
+      const stale = await post("page-results", record)
+      expect(stale.status).toBe(409)
+      expect(storage.getAllNodeVersions("reviewer-page-validation", "same-session:pg001:default")).toEqual(previous)
+      const next = await post("page-results", { ...record, artifact_id: b, artifact: { id: a, sections: [] } })
+      expect(next.status, await next.clone().text()).toBe(201)
+      expect((await next.json()).record.artifact.id).toBe(b)
+      const history = storage.getAllNodeVersions("reviewer-page-validation", "same-session:pg001:default")
+      expect(history).toHaveLength(2); expect(history[0]).toEqual(previous[0])
+      expect((storage.getLatestNodeData("reviewer-validation-session", "same-session")!.data as { artifact: { id: string } }).artifact.id).toBe(a)
+      // Older clients remain writable but cannot fabricate a tested snapshot.
+      expect((await post("page-results", { ...record, artifact_id: undefined, artifact: { id: b, sections: [] } })).status).toBe(201)
+      expect((storage.getLatestNodeData("reviewer-page-validation", "same-session:pg001:default")!.data as { artifact?: unknown }).artifact).toBeUndefined()
+    } finally { storage.close() }
   })
 
   it("returns the reviewer validation catalog", async () => {
