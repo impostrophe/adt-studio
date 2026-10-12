@@ -143,6 +143,48 @@ it("bounds provider preparation failures and retains every requested phrase as f
   expect(transport).toHaveBeenCalledTimes(1)
 })
 
+it("counts translation validation retries at transport without resubmitting protected text", async () => {
+  const entries = [{ id: "a", text: "First" }, { id: "b", text: "Protected source" }, { id: "c", text: "Last" }]
+  const protectedEntry = { id: "b", text: "Hand correction", source: "manual" as const }
+  const previous = { entries: [protectedEntry], generatedAt: "old" }
+  const respond = transport.getMockImplementation()!
+  let providerCost = 0
+  transport.mockImplementation(async (...args) => {
+    providerCost += 0.015 // Fixture tariff per actual HTTP call, including failed validation.
+    response = { translations: transport.mock.calls.length === 1 ? [] : ["Premier", "Dernier"] }
+    return respond(...args)
+  })
+  const logs: import("@adt/llm").LlmLogEntry[] = []
+  const llmModel = model(logs)
+  const adapter = vi.spyOn(llmModel, "generateObject")
+  const config = { ...translationConfig, maxRetries: 1 }
+  const result = await translateCatalog({ entries, language: "fr", config, previous, llmModel })
+  expect(adapter).toHaveBeenCalledTimes(1)
+  expect(transport).toHaveBeenCalledTimes(2)
+  expect(providerCost).toBe(0.03)
+  expect(logs.map(({ attempt, cacheHit, success, usage }) => ({ attempt, cacheHit, success, usage }))).toEqual([
+    { attempt: 0, cacheHit: false, success: false, usage: { inputTokens: 10, outputTokens: 5 } },
+    { attempt: 1, cacheHit: false, success: true, usage: { inputTokens: 10, outputTokens: 5 } },
+  ])
+  for (const [, request] of transport.mock.calls) {
+    const messages = JSON.stringify(JSON.parse(String(request?.body)).messages)
+    expect(messages).not.toContain("Protected source")
+    expect(messages).not.toContain("Hand correction")
+  }
+  expect(result.entries).toHaveLength(3)
+  expect(result.entries).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: "a", text: "Premier", source: "ai" }),
+    protectedEntry,
+    expect.objectContaining({ id: "c", text: "Dernier", source: "ai" }),
+  ]))
+  const logCount = logs.length
+  expect(await translateCatalog({ entries, language: "fr", config, previous: result, llmModel })).toBe(result)
+  expect(adapter).toHaveBeenCalledTimes(1)
+  expect(transport).toHaveBeenCalledTimes(2)
+  expect(logs).toHaveLength(logCount)
+  expect(providerCost).toBe(0.03)
+})
+
 it.each([120, 8_850])("keeps fixed translation windows across %i entries and accounts for requests, cache, provider and cost separately", async (entryCount) => {
   const entries = Array.from({ length: entryCount }, (_, i) => ({ id: `entry-${i}`, text: `Phrase ${i}` }))
   const windowCount = Math.ceil(entryCount / translationConfig.batchSize)
