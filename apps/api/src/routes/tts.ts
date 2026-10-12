@@ -641,7 +641,7 @@ export function createTTSRoutes(booksDir: string, configPath?: string, taskServi
     const voiceSlot: VoiceSlot = parsed.data.voiceSlot ?? "primary"
 
     const normalizedLanguage = normalizeSafeAudioLanguage(parsed.data.language)
-    const audioDir = resolveAudioDirectory(booksDir, safeLabel, normalizedLanguage)
+    resolveAudioDirectory(booksDir, safeLabel, normalizedLanguage)
 
     const storage = createBookStorage(safeLabel, booksDir)
 
