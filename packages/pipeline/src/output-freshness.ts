@@ -147,8 +147,9 @@ export function selectedForGeneration(status: OutputStatus, metadata?: OutputMet
     if (replacement.signature !== status.signature || replacement.contentHash !== status.contentHash) {
       throw new Error("Output changed since review. Refresh before replacing it.")
     }
-    return true
+    return !status.blocked
   }
+  if (status.blocked) return false
   if (status.protected) return false
   return scope?.retry?.some((identity) => outputIdentityKey(identity) === key) || needsOutputGeneration(status, metadata)
 }

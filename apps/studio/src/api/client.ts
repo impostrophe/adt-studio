@@ -1,3 +1,4 @@
+import { localizeExtractionError } from "@/lib/extraction-errors"
 import { i18n } from "@lingui/core"
 import { msg } from "@lingui/core/macro"
 export class ApiError extends Error {
@@ -128,7 +129,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     } catch {
       message = text || undefined
     }
-    throw new ApiError(message ?? i18n._(msg`Request failed: ${res.status}`), res.status)
+    throw new ApiError(localizeExtractionError(message ?? i18n._(msg`Request failed: ${res.status}`)), res.status)
   }
 
   return res.json()
@@ -256,6 +257,7 @@ export interface StageRunProviderCredentials {
 }
 
 export interface RunStagesOptions {
+  resume?: boolean
   replaceManual?: boolean
   protectedReplacements?: import("@adt/types").AuthoredReplacement[]
   outputScope?: OutputRunScope
@@ -406,6 +408,7 @@ export interface PendingDecision {
 }
 
 export interface StageRunStatus {
+  summary?: import("@adt/types").PipelineResumeSummary
   label: string
   status: "idle" | "running" | "cancelling" | "cancelled" | "completed" | "failed"
   fromStage?: string
@@ -1956,6 +1959,7 @@ export const api = {
       error: string | null
       stepErrors: Record<string, string> | null
       stepMessages: Record<string, string> | null
+      resumeSummary?: import("@adt/types").PipelineResumeSummary
       runStatus: "idle" | "running" | "cancelling" | "cancelled" | "completed" | "failed"
       pendingDecisions: PendingDecision[]
       coverage?: import("@adt/types").StoryboardCoverage

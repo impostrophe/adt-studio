@@ -409,18 +409,26 @@ describe("full-stage quiz regeneration", () => {
     expect(useStorage((s) => s.getStepRuns()).find((s) => s.step === "quiz-generation")?.status).toBe("error")
   })
 
-  it("reserves IDs while upstream invalidation retains output and unsafe extraction is blocked", async () => {
+  it("reserves IDs while upstream invalidation and extraction preparation retain output", async () => {
     seed([quiz("One"), quiz("Two")])
     writeSectioningLifecycle(path.join(root, label), "dynamic", true)
     makeBeforeRun(label, "storyboard", "storyboard", root, configPath)()
     expect(stored().quizzes).toHaveLength(2)
     useStorage((s) => saveQuizOutput(s, output([quiz("Three")]), "replace"))
     expect(stored().quizzes[0].quizId).toBe("qz003")
-    expect(makeBeforeRun(label, "extract", "quizzes", root, configPath)).toThrow(/preservation-safe|unknown-origin/)
+    expect(makeBeforeRun(label, "extract", "quizzes", root, configPath)).not.toThrow()
     expect(stored().quizzes[0].quizId).toBe("qz003")
     useStorage((s) => saveQuizOutput(s, output([quiz("Four")]), "replace"))
     expect(stored().quizzes[0].quizId).toBe("qz004")
     expect(history()).toHaveLength(3)
+  })
+
+  it("explicit protected generation replacement preserves history and never reuses retired quiz IDs", () => {
+    seed([{ ...quiz("Human question", "qz001"), source: "manual" }])
+    useStorage((s) => saveQuizOutput(s, output([quiz("Generated replacement")]), "replace", true))
+    expect(stored().quizzes).toEqual([expect.objectContaining({ question: "Generated replacement", quizId: "qz002", source: "ai" })])
+    expect(history()).toHaveLength(2)
+    expect(history()[0].data.quizzes[0]).toMatchObject({ question: "Human question", quizId: "qz001", source: "manual" })
   })
 
   it("cannot reuse or overwrite old manual audio when the full run preserves the speech manifest", async () => {

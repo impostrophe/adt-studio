@@ -75,6 +75,9 @@ it("the actual CLI refuses verified existing extraction without rewriting output
   finally { s.close() }
 })
 
-it.each(["--from-stage", "--to-stage", "--protected-replacements"])("does not advertise or accept deferred CLI scope: %s", (flag) => {
-  expect(() => parseCliArgs(["book", pdfPath, flag, "sectioning"])).toThrow("Unknown option")
+it("validates bounded CLI ranges and requires named replacement input", () => {
+  expect(parseCliArgs(["book", "source.pdf", "--from-stage", "sectioning", "--to-stage", "storyboard", "--protected-replacements", "replace.json"]).fromStage).toBe("sectioning")
+  for (const flags of [["--from-stage", "sectioning"], ["--from-stage", "storyboard", "--to-stage", "sectioning"], ["--protected-replacements", "replace.json"]]) {
+    expect(() => parseCliArgs(["book", "source.pdf", ...flags])).toThrow()
+  }
 })

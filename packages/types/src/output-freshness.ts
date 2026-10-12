@@ -35,6 +35,7 @@ export type OutputMetadata = z.infer<typeof OutputMetadata>
 
 export const OutputKind = z.enum([
   "caption", "translation", "easy-read", "preparation", "audio", "timestamps", "image-translation",
+  "extract-generation", "sectioning", "storyboard", "quizzes", "glossary", "toc", "package",
 ])
 export type OutputKind = z.infer<typeof OutputKind>
 
@@ -62,6 +63,7 @@ export const OutputLocation = z.object({
 export type OutputLocation = z.infer<typeof OutputLocation>
 
 export const OutputStatus = z.object({
+  blocked: z.boolean().optional(),
   included: z.boolean().optional(),
   text: z.string().optional(),
   sourceText: z.string().optional(),
@@ -166,3 +168,5 @@ export const OutputDisclosureOptions = z.object({
   glossary: z.boolean().optional(), quizzes: z.boolean().optional(), readAloud: z.boolean().optional(), languages: z.array(z.string()).optional(),
 }).strict()
 export type OutputDisclosureOptions = z.infer<typeof OutputDisclosureOptions>
+
+export const GENERATION_OUTPUT_KINDS = ["extract-generation", "sectioning", "storyboard", "quizzes", "glossary", "toc", "package"] as const
