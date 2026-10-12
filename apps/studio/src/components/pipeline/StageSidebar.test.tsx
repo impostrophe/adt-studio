@@ -12,6 +12,8 @@ const cancelRunMock = vi.fn()
 const toastInfoMock = vi.fn()
 const matchRouteMock = vi.fn(() => true)
 const searchMock = { tab: "reviewer-checklist" }
+const outputsMock = vi.fn((): { data?: { summaries: { stages: Record<string, { applicable: number; current: boolean; updates: number; warnings: number; missing: number }> } } } => ({}))
+vi.mock("./components/OutputReview", () => ({ useOutputs: () => outputsMock(), CatalogSummary: () => <div>Selected stage outputs</div> }))
 
 vi.mock("@lingui/core", () => ({
   i18n: {
@@ -70,6 +72,7 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useLingui: () => ({ t: (strings: TemplateStringsArray, ...values: unknown[]) => strings.reduce((text, part, index) => text + part + (values[index] ?? ""), "") }),
 }))
 
 vi.mock("@/hooks/use-book-run", () => ({
@@ -140,9 +143,45 @@ afterEach(() => {
   cleanup()
   vi.clearAllMocks()
   stageStateMock.mockImplementation(defaultStageState)
+  outputsMock.mockReturnValue({})
 })
 
 describe("StageSidebar", () => {
+  it.each(["idle", "queued", "running", "done", "error"] as const)("keeps missing-only Speech attention consistent with the %s attempt state", async (state) => {
+    outputsMock.mockReturnValue({ data: { summaries: { stages: { speech: { applicable: 3, current: false, updates: 0, warnings: 0, missing: 3 } } } } })
+    stageStateMock.mockImplementation((stage) => stage === "speech" ? state : "idle")
+    const { StageSidebar } = await import("./components/StageSidebar")
+    render(<StageSidebar bookLabel="demo-book" activeStep="book" />)
+    const button = screen.queryByRole("button", { name: /Review Speech outputs/ })
+    expect(!!button).toBe(state === "done" || state === "error")
+  })
+  it("AC-15 shows existing stale/protected outputs despite a completed job and opens the affected items", async () => {
+    stageStateMock.mockReturnValue("done")
+    outputsMock.mockReturnValue({ data: { summaries: { stages: { translate: { applicable: 4, current: false, updates: 1, warnings: 2, missing: 0 } } } } })
+    const { StageSidebar } = await import("./components/StageSidebar")
+    const view = render(<StageSidebar bookLabel="demo-book" activeStep="book" />)
+    expect(screen.getByTitle("Language").getAttribute("aria-label")).toContain("needs update")
+    fireEvent.click(screen.getByRole("button", { name: /Review Language outputs.*Updates: 1.*Warnings: 2.*Missing: 0/ }))
+    expect(screen.getByRole("dialog").textContent).toContain("Selected stage outputs")
+    fireEvent.click(screen.getByRole("button", { name: "Close" }))
+    outputsMock.mockReturnValue({ data: { summaries: { stages: { translate: { applicable: 4, current: true, updates: 0, warnings: 0, missing: 0 } } } } })
+    view.rerender(<StageSidebar bookLabel="demo-book" activeStep="book" />)
+    expect(screen.getByTitle("Language").getAttribute("aria-label")).toContain("done")
+    expect(screen.queryByRole("button", { name: /Review Language outputs/ })).toBeNull()
+  })
+
+  it("AC-15 preserves running/error job status separately from saved output warnings", async () => {
+    outputsMock.mockReturnValue({ data: { summaries: { stages: { speech: { applicable: 3, current: true, updates: 0, warnings: 1, missing: 0 } } } } })
+    stageStateMock.mockImplementation((stage) => stage === "speech" ? "running" : "idle")
+    const { StageSidebar } = await import("./components/StageSidebar")
+    const view = render(<StageSidebar bookLabel="demo-book" activeStep="book" />)
+    expect(screen.getByTitle("Speech").getAttribute("aria-label")).toContain("in progress")
+    expect(screen.getByRole("button", { name: /Review Speech outputs.*Warnings: 1/ })).toBeTruthy()
+    stageStateMock.mockImplementation((stage) => stage === "speech" ? "error" : "idle")
+    view.rerender(<StageSidebar bookLabel="demo-book" activeStep="book" />)
+    expect(screen.getByTitle("Speech: failed")).toBeTruthy()
+    expect(screen.getByRole("button", { name: /Review Speech outputs.*Warnings: 1/ })).toBeTruthy()
+  })
   it("routes the book settings button to the API Keys section", async () => {
     matchRouteMock.mockReturnValue(true)
     const { StageSidebar } = await import("./components/StageSidebar")

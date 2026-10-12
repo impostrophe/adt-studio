@@ -10,13 +10,14 @@ import { ReviewRow } from "./ReviewRow"
 import { identityKey, needsAttention } from "./review-plan"
 import { reviewStatus } from "./review-status"
 
-export function OutputReviewPanel({ bookLabel, outputs, catalog, conflicts = [], disclosure, renderDetail }: {
+export function OutputReviewPanel({ bookLabel, outputs, catalog, conflicts = [], disclosure, renderDetail, defaultOpen = false }: {
   bookLabel: string; outputs: OutputStatus[]; catalog: OutputStatus[]; disclosure: boolean
+  defaultOpen?: boolean
   conflicts?: CatalogConflict[]
   renderDetail: (output: OutputStatus) => ReactNode
 }) {
   const { t, i18n } = useLingui()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
   const [category, setCategory] = useState("")
   const [language, setLanguage] = useState("")
   const [status, setStatus] = useState("")

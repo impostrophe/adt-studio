@@ -1,6 +1,6 @@
 import { OutputReviewPanel } from "./output-review/OutputReviewPanel"
 import { useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useLingui } from "@lingui/react/macro"
 import { AlertTriangle, TextCursorInput, Volume2 } from "lucide-react"
 import { OUTPUT_KIND_TO_STAGE, type OutputKind, type OutputStatus, type StageName, type OutputDisclosureOptions } from "@adt/types"
@@ -12,9 +12,8 @@ import { cn } from "@/lib/utils"
 import { useFloatingSaveDirtyEntries } from "./floating-save"
 import { useStageStatus } from "@/hooks/use-stage-status"
 
-export function useOutputs(bookLabel: string, disclosure = false, features?: OutputDisclosureOptions) {
-  return useQuery({ queryKey: ["books", bookLabel, "outputs", disclosure, features], queryFn: () => disclosure ? api.getOutputDisclosure(bookLabel, features) : api.getOutputs(bookLabel), staleTime: 1000, enabled: !!bookLabel })
-}
+import { useOutputs } from "@/hooks/use-outputs"
+export { useOutputs } from "@/hooks/use-outputs"
 
 /** Job completion and saved content are separate. An invalidated job must not
  * hide a preserved editor behind the first-run setup screen. */
@@ -61,16 +60,15 @@ function OutputReviewItem({ bookLabel, output, outputs, dirty = false, disclosur
   const warnings = output.warnings
   const fallback = output.identity.kind === "preparation" && warnings.some((warning) => !warning.source && warning.reason.startsWith("preparation-"))
   const ownWarning = warnings.some((warning) => !warning.source)
-  const source = warnings.find((warning) => warning.source)?.source
-  const upstream = source && outputs.find((item) => item.identity.kind === source.kind && item.identity.id === source.id && item.identity.language === source.language && item.identity.voiceSlot === source.voiceSlot)
+  const upstream = outputs.filter((item) => warnings.some(({ source }) => source && item.identity.kind === source.kind && item.identity.id === source.id && item.identity.language === source.language && item.identity.voiceSlot === source.voiceSlot))
   if (!warnings.length && !output.updateNeeded && !output.missing && !output.manual && !edited) return null
   const label = output.identity.kind === "translation" ? t`Translation` : output.identity.kind === "preparation" ? t`Speech text` : output.identity.kind === "audio" ? t`Audio` : output.identity.kind === "caption" ? t`Caption` : output.identity.kind === "easy-read" ? t`Easy Read` : output.identity.kind === "timestamps" ? t`Timestamps` : t`Image translation`
-  const reason = warnings.some((warning) => warning.reason === "legacy") ? t`Freshness is unknown. Existing content has been kept.`
-    : warnings.some((warning) => warning.reason === "source-changed") ? t`Source changed. Your edit has been kept.`
-    : warnings.some((warning) => warning.reason === "preparation-failed") ? t`Text preparation failed. Speech text uses the original text.`
-    : warnings.some((warning) => warning.reason === "preparation-outdated") ? t`Text preparation is outdated. Speech text uses the original text.`
-    : warnings.some((warning) => warning.reason === "preparation-missing") ? t`Text preparation is missing. Speech text uses the original text.`
-    : source ? t`An input needs review.` : ""
+  const reasons = [...new Set(warnings.map((warning) => warning.reason === "legacy" ? t`Freshness is unknown. Existing content has been kept.`
+    : warning.reason === "source-changed" ? t`Source changed. Your edit has been kept.`
+    : warning.reason === "preparation-failed" ? t`Text preparation failed. Speech text uses the original text.`
+    : warning.reason === "preparation-outdated" ? t`Text preparation is outdated. Speech text uses the original text.`
+    : warning.reason === "preparation-missing" ? t`Text preparation is missing. Speech text uses the original text.`
+    : t`An input needs review.`))]
   const content = <div className={compact || inline ? "space-y-2 text-xs" : "rounded border border-amber-200/70 bg-amber-50/40 px-2 py-1 text-xs"}>
     <div className="flex flex-wrap items-center gap-2">
       <span className="font-medium">{label}</span>
@@ -81,7 +79,7 @@ function OutputReviewItem({ bookLabel, output, outputs, dirty = false, disclosur
     </div>
     {detail && output.sourceText && <p className="mt-1 text-muted-foreground">{output.sourceText}</p>}
     {detail && output.text && output.text !== output.sourceText && <p className="mt-1">{output.text}</p>}
-    {reason && <p className="mt-1">{reason}</p>}
+    {reasons.map((reason) => <p key={reason} className="mt-1">{reason}</p>)}
     {description && <p className="mt-1 text-muted-foreground">{description}</p>}
     {disclosure && <p>{output.included ? t`Existing output is included.` : t`Missing output is omitted.`}</p>}
     {hasDraft && <p className="text-muted-foreground">{t`Save or cancel your draft before reviewing outputs.`}</p>}
@@ -94,9 +92,9 @@ function OutputReviewItem({ bookLabel, output, outputs, dirty = false, disclosur
       {(output.updateNeeded || output.missing) && (!output.protected) && <Button size="sm" variant="ghost" disabled={mutation.isPending} onClick={() => mutation.mutate("generate")}>{t`Generate selected output`}</Button>}
       {output.protected && <Button size="sm" variant="ghost" disabled={mutation.isPending} onClick={() => setReplace(!replace)}>{t`Regenerate`}</Button>}
       {replace && <Button size="sm" variant="outline" disabled={mutation.isPending} onClick={() => mutation.mutate("replace")}>{t`Regenerate and replace my edit`}</Button>}
-      {upstream && <Button size="sm" variant="ghost" onClick={() => setShowSource(!showSource)}>{t`Review source`}</Button>}
+      {upstream.length > 0 && <Button size="sm" variant="ghost" onClick={() => setShowSource(!showSource)}>{t`Review source`}</Button>}
     </div>}
-    {showSource && upstream && <div className="mt-2 border-l pl-2"><p className="mb-1 font-mono">{upstream.identity.id} {upstream.identity.language}</p><OutputReviewItem bookLabel={bookLabel} output={upstream} outputs={outputs} dirty={dirty} disclosure={disclosure} detail inline={inline} /></div>}
+    {showSource && upstream.map((source) => <div key={JSON.stringify(source.identity)} className="mt-2 border-l pl-2"><p className="mb-1 font-mono">{source.identity.id} {source.identity.language}</p><OutputReviewItem bookLabel={bookLabel} output={source} outputs={outputs} dirty={dirty} disclosure={disclosure} detail inline={inline} /></div>)}
     {mutation.error && <p className="mt-1 text-red-700">{mutation.error.message}</p>}
   </div>
   if (!compact) return content
@@ -120,13 +118,15 @@ function OutputReviewItem({ bookLabel, output, outputs, dirty = false, disclosur
   </Popover>
 }
 
-export function CatalogSummary({ bookLabel, stage, disclosure = false, features }: { bookLabel: string; stage?: StageName; disclosure?: boolean; features?: OutputDisclosureOptions }) {
+export function CatalogSummary({ bookLabel, stage, disclosure = false, features, expanded = false }: { bookLabel: string; stage?: StageName; disclosure?: boolean; features?: OutputDisclosureOptions; expanded?: boolean }) {
+  const { t } = useLingui()
   const { data, error } = useOutputs(bookLabel, disclosure, features)
   // Optional speech preparation is reviewed beside saved speech text, not as
   // unfinished translation work merely because a display string was edited.
   const outputs = (data?.outputs ?? []).filter((output) => !output.excluded && (!stage || OUTPUT_KIND_TO_STAGE[output.identity.kind] === stage) &&
     (disclosure || stage !== "translate" || output.identity.kind !== "preparation"))
   if (error) return <p className="text-xs text-red-700">{error.message}</p>
-  return <OutputReviewPanel bookLabel={bookLabel} outputs={outputs} catalog={data?.outputs ?? []} conflicts={data?.conflicts} disclosure={disclosure}
-    renderDetail={(output) => <OutputReviewItem bookLabel={bookLabel} output={output} outputs={data?.outputs ?? []} disclosure={disclosure} detail inline />} />
+  const ownershipPages = [...new Set(data?.ownershipWarnings?.map((warning) => warning.pageId) ?? [])].join(", ")
+  return <>{ownershipPages && <p className="rounded border border-amber-300 p-2 text-xs text-amber-800">{t`Some rendered sections on ${ownershipPages} have no verified section owner and are omitted from preview and export. Their content and history are retained. Review their section identities in Storyboard.`}</p>}<OutputReviewPanel defaultOpen={expanded} bookLabel={bookLabel} outputs={outputs} catalog={data?.outputs ?? []} conflicts={data?.conflicts} disclosure={disclosure}
+    renderDetail={(output) => <OutputReviewItem bookLabel={bookLabel} output={output} outputs={data?.outputs ?? []} disclosure={disclosure} detail inline />} /></>
 }

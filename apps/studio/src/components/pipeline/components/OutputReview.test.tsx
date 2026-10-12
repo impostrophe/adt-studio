@@ -3,7 +3,7 @@ import React from "react"
 import { afterEach, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import type { CoreTtsCatalogEntry, OutputStatus } from "@adt/types"
+import type { CoreTtsCatalogEntry, OutputStatus, PackagingWarning } from "@adt/types"
 import type { TTSResponse } from "@/api/client"
 import type { StageState } from "@/hooks/use-book-run"
 import { shouldShowMissingSpeech } from "../stages/languages/lib/speech-review-state"
@@ -35,14 +35,35 @@ function status(overrides: Partial<OutputStatus> = {}): OutputStatus {
     warnings: [], pageIds: [], sectionIds: [], ...overrides }
 }
 
-function setup(outputs: OutputStatus[]) {
+function setup(outputs: OutputStatus[], ownershipWarnings: PackagingWarning[] = []) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
-  client.setQueryData(["books", "book", "outputs", false, undefined], { outputs })
+  client.setQueryData(["books", "book", "outputs", false, undefined], { outputs, ownershipWarnings })
   clients.push(client)
   return ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
 }
 
 const review = { bookLabel: "book", id: "phrase", kinds: ["translation"] as ["translation"], language: "fr", compact: true }
+
+it("AC-12 discloses unverifiable rendered ownership without offering generation or approval", () => {
+  render(<CatalogSummary bookLabel="book" />, { wrapper: setup([], [{ kind: "orphaned-rendering", pageId: "pg001", sectionIndex: 0 }]) })
+  expect(screen.getByText(/Some rendered sections on pg001 have no verified section owner/)).toBeTruthy()
+  expect(screen.getByText(/Their content and history are retained/)).toBeTruthy()
+  expect(screen.queryByRole("button")).toBeNull()
+})
+
+it("AC-15 expanded details retain every reason and linked source", () => {
+  const first = status({ identity: { kind: "translation", id: "first-source", language: "fr" }, warnings: [{ reason: "legacy" }], text: "First correction" })
+  const second = status({ identity: { kind: "preparation", id: "second-source", language: "fr" }, warnings: [{ reason: "source-changed" }], text: "Second correction" })
+  render(<OutputReview {...review} kinds={["audio"]} />, { wrapper: setup([first, second, status({ identity: { kind: "audio", id: "phrase", language: "fr" }, manual: false, warnings: [
+    { reason: "legacy" }, { reason: "preparation-failed" }, { reason: "upstream", source: first.identity }, { reason: "upstream", source: second.identity },
+  ] })]) })
+  fireEvent.click(screen.getByRole("button", { name: "Audio: Needs review" }))
+  expect(screen.getByText("Freshness is unknown. Existing content has been kept.")).toBeTruthy()
+  expect(screen.getByText("Text preparation failed. Speech text uses the original text.")).toBeTruthy()
+  fireEvent.click(screen.getByRole("button", { name: "Review source" }))
+  expect(screen.getByText("First correction")).toBeTruthy()
+  expect(screen.getByText("Second correction")).toBeTruthy()
+})
 
 it("keeps manual authorship quiet and requires an explicit replacement after opening its actions", async () => {
   render(<OutputReview {...review} />, { wrapper: setup([status()]) })

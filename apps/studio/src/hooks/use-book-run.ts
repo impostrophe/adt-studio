@@ -954,6 +954,7 @@ function removeStepError(
 
 /** Invalidate data queries when a stage completes so views refresh. */
 function invalidateStageData(qc: ReturnType<typeof useQueryClient>, label: string, stage: string) {
+  qc.invalidateQueries({ queryKey: ["books", label, "outputs"] })
   // Invalidate stage-specific data
   switch (stage) {
     case "extract":

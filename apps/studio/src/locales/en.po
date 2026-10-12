@@ -469,11 +469,17 @@ msgstr "{mins}m ago"
 msgid "{missingAudioCount} missing"
 msgstr "{missingAudioCount} missing"
 
-msgid "{missingForCurrentStage} entry/entries are missing audio. Re-run to generate the missing items."
-msgstr "{missingForCurrentStage} entry/entries are missing audio. Re-run to generate the missing items."
+#~ msgid "{missingForCurrentStage} entry/entries are missing audio. Re-run to generate the missing items."
+#~ msgstr "{missingForCurrentStage} entry/entries are missing audio. Re-run to generate the missing items."
 
-msgid "{missingForCurrentStage} entry/entries are missing translations. Re-run to fill the missing items."
-msgstr "{missingForCurrentStage} entry/entries are missing translations. Re-run to fill the missing items."
+#~ msgid "{missingForCurrentStage} entry/entries are missing translations. Re-run to fill the missing items."
+#~ msgstr "{missingForCurrentStage} entry/entries are missing translations. Re-run to fill the missing items."
+
+msgid "{missingForCurrentStage} language outputs are missing. Re-run to fill the missing items."
+msgstr "{missingForCurrentStage} language outputs are missing. Re-run to fill the missing items."
+
+msgid "{missingForCurrentStage} speech outputs are missing. Re-run to generate the missing items."
+msgstr "{missingForCurrentStage} speech outputs are missing. Re-run to generate the missing items."
 
 msgid "{needsChanges} flagged"
 msgstr "{needsChanges} flagged"
@@ -8291,6 +8297,9 @@ msgstr "Revert to {originalLanguageName}"
 msgid "Review"
 msgstr "Review"
 
+msgid "Review {label} outputs"
+msgstr "Review {label} outputs"
+
 msgid "Review and refine each simplified block side-by-side with the original before packaging."
 msgstr "Review and refine each simplified block side-by-side with the original before packaging."
 
@@ -9270,14 +9279,21 @@ msgstr "Software update status"
 #~ msgstr "Some books are mostly single pages but have a few illustrations that run across two facing pages. Choose Single here — then, after extraction, the Extract view detects those spreads and lets you merge just those pairs while every other page stays on its own."
 
 #. placeholder {0}: warnings.length
-msgid "Some content was left out of the bundle: {0} rendered section(s) on {pageList} have no sectioning row, so they could not be included. Re-run the storyboard render for those pages, then package again."
-msgstr "Some content was left out of the bundle: {0} rendered section(s) on {pageList} have no sectioning row, so they could not be included. Re-run the storyboard render for those pages, then package again."
+#~ msgid "Some content was left out of the bundle: {0} rendered section(s) on {pageList} have no sectioning row, so they could not be included. Re-run the storyboard render for those pages, then package again."
+#~ msgstr "Some content was left out of the bundle: {0} rendered section(s) on {pageList} have no sectioning row, so they could not be included. Re-run the storyboard render for those pages, then package again."
+
+#. placeholder {0}: warnings.length
+msgid "Some content was left out of the bundle: {0} rendered section(s) on {pageList} have no verified section owner, so they could not be included. Their content and history are retained. Review their section identities in Storyboard, then package again."
+msgstr "Some content was left out of the bundle: {0} rendered section(s) on {pageList} have no verified section owner, so they could not be included. Their content and history are retained. Review their section identities in Storyboard, then package again."
 
 msgid "Some items could not be updated. The list has been refreshed; completed changes are kept."
 msgstr "Some items could not be updated. The list has been refreshed; completed changes are kept."
 
 msgid "Some pages have no embedded text layer — text was recovered from the page image. Prefer a text-based PDF."
 msgstr "Some pages have no embedded text layer — text was recovered from the page image. Prefer a text-based PDF."
+
+msgid "Some rendered sections on {ownershipPages} have no verified section owner and are omitted from preview and export. Their content and history are retained. Review their section identities in Storyboard."
+msgstr "Some rendered sections on {ownershipPages} have no verified section owner and are omitted from preview and export. Their content and history are retained. Review their section identities in Storyboard."
 
 msgid "Something went wrong"
 msgstr "Something went wrong"
@@ -10774,6 +10790,9 @@ msgstr "Updates are running. You can continue reviewing the book."
 
 msgid "Updates preserve manual edits."
 msgstr "Updates preserve manual edits."
+
+msgid "Updates: {updates}. Warnings: {warnings}. Missing: {missing}."
+msgstr "Updates: {updates}. Warnings: {warnings}. Missing: {missing}."
 
 msgid "Upload"
 msgstr "Upload"

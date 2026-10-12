@@ -164,20 +164,13 @@ export function EasyReadEditor({
   const mutationError = getErrorMessage(saveMutation.error)
 
   const updateEntry = (
-    blockKey: { pageId: string; sectionId: string; sectionIndex: number },
+    _blockKey: { pageId: string; sectionId: string; sectionIndex: number },
     easyReadId: string,
     text: string,
   ) => {
     if (!draftBlocks) baseline.current = { baseVersion: data?.version ?? 0, sourceSignature: data?.sourceSignature ?? "" }
     const base = draftBlocks ?? data?.blocks ?? []
     setDraftBlocks(base.map((block) => {
-      if (
-        block.pageId !== blockKey.pageId ||
-        block.sectionId !== blockKey.sectionId ||
-        block.sectionIndex !== blockKey.sectionIndex
-      ) {
-        return block
-      }
       return {
         ...block,
         entries: block.entries.map((entry) =>

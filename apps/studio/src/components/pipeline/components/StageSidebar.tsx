@@ -20,7 +20,8 @@ import { toast } from "@/components/ui/sonner"
 import { useBookRun } from "@/hooks/use-book-run"
 import { useAccessibilityAssessment } from "@/hooks/use-debug"
 import { useBookTasks } from "@/hooks/use-book-tasks"
-import { useStageMissingCounts } from "@/hooks/use-stage-missing-counts"
+import { useOutputs } from "./OutputReview"
+import { StageOutputStatus } from "./StageOutputStatus"
 import { useDirtyTabsForStage } from "@/hooks/use-settings-dirty-tabs"
 import { getSettingsTabs } from "../settings-tabs"
 import { usePackageAdtStatus } from "@/hooks/use-books"
@@ -83,9 +84,7 @@ export function StageSidebar({
   const { data: signLanguageData } = useSignLanguageVideos(bookLabel)
   const { data: packageStatus } = usePackageAdtStatus(bookLabel)
   const { tasks } = useBookTasks(bookLabel)
-  const stageMissing = useStageMissingCounts(bookLabel)
-  const translateNeedsRerun = stageMissing.translate > 0
-  const speechNeedsRerun = stageMissing.speech > 0
+  const { data: catalog } = useOutputs(bookLabel)
   const activeDirtyTabs = useDirtyTabsForStage(activeStep)
   const { data: sidebarPages } = usePages(bookLabel, { enabled: false })
   const hasNoTextLayer = (sidebarPages ?? []).some((p) => p.extractionWarning)
@@ -93,6 +92,7 @@ export function StageSidebar({
     msg`Some pages have no embedded text layer — text was recovered from the page image. Prefer a text-based PDF.`
   )
 
+  const hasStoredSpeech = (catalog?.outputs ?? []).some((output) => output.identity.kind === "audio" && (output.usable || output.protected))
   const currentState = stageState(activeStep)
   // A stale Storyboard still has its renderings — staleness is a step_runs flag,
   // not a delete. Closing the pages panel on stage status alone took the page
@@ -176,7 +176,12 @@ export function StageSidebar({
     const isActive = step.slug === activeStep
     const Icon = step.icon
     const state = completionOverrides[step.slug] ? "done" : stageState(step.slug)
-    const stageCompleted = state === "done"
+    const content = catalog?.summaries?.stages[step.slug]
+    // Keep complete expected counts in the read model. Optional speech only
+    // surfaces missing-output attention after an attempt, and not during it.
+    const hideMissingSpeech = step.slug === "speech" && (state === "running" || state === "queued" || (state === "idle" && !hasStoredSpeech))
+    const visibleContent = content && hideMissingSpeech ? { ...content, missing: 0 } : content
+    const stageCompleted = content ? content.current : state === "done"
     // Overview is the stage's landing page, and its Run button. It is normally
     // redundant while a stage is idle, because the stage's own view *is* the
     // landing page — but a stale Storyboard shows the editor instead, so hiding
@@ -190,13 +195,9 @@ export function StageSidebar({
     const settingsTabs = getSettingsTabs(step.slug, i18n, showOverviewTab)
     const showSubTabs = isActive && isSettings && !!settingsTabs
 
-    // Translate/Speech revert to needs-rerun look when their downstream output
-    // has gaps (e.g. after a glossary addition). The in-view banner gives the
-    // user the actionable details and Re-run button.
-    const stageNeedsRerun =
-      (step.slug === "translate" && translateNeedsRerun) ||
-      (step.slug === "speech" && speechNeedsRerun)
-    const ringState = stageNeedsRerun || state === "error" ? "idle" : state
+    const stageNeedsRerun = !!content && !content.current
+    const activeAttempt = state === "running" || state === "queued"
+    const ringState = activeAttempt ? state : stageNeedsRerun || state === "error" ? "idle" : content?.current ? "done" : state
 
     // "book" is always filled; all other stages fill when their own completion signal is met.
     const iconFilled = step.slug === "book" ? true : stageCompleted
@@ -205,7 +206,7 @@ export function StageSidebar({
 
     // Expose stage status to screen readers — the visual ring/color carries it
     // for sighted users, but the link's accessible name must say it too.
-    const statusKey = step.slug === "book" ? undefined : stageNeedsRerun ? "needs-update" : state
+    const statusKey = step.slug === "book" ? undefined : activeAttempt || state === "error" ? state : stageNeedsRerun ? "needs-update" : content?.current ? "done" : state
     const stepAriaLabel = statusKey
       ? i18n._(msg`${stepLabel}: ${getStageStatusLabelI18n(statusKey)}`)
       : stepLabel
@@ -279,6 +280,8 @@ export function StageSidebar({
               {stepLabel}
             </span>
           </Link>
+
+          {visibleContent && <StageOutputStatus bookLabel={bookLabel} stage={step.slug} summary={visibleContent} />}
 
           {state === "running" && (
             <button

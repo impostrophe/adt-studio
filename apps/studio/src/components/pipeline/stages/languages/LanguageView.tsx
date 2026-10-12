@@ -476,17 +476,17 @@ export function LanguageView({
     }
   }, [outputLanguages.length, hasExplicitOutputLanguages]);
 
-  const easyReadEntries = useMemo(
-    () =>
-      (easyReadData?.blocks ?? []).flatMap((block) =>
-        block.entries.map((entry) => ({
-          id: entry.easyReadId,
-          text: entry.text,
-          locations: [{ pageId: block.pageId, sectionId: block.sectionId }],
-        })),
-      ),
-    [easyReadData],
-  );
+  const easyReadEntries = useMemo(() => {
+    const byId = new Map<string, { id: string; text: string; locations: Array<{ pageId: string; sectionId: string }> }>();
+    // The API resolves one authoritative value for a shared identity. Preserve
+    // every location without duplicating language/audio rows and counts.
+    for (const block of easyReadData?.blocks ?? []) for (const entry of block.entries) {
+      const value = byId.get(entry.easyReadId) ?? { id: entry.easyReadId, text: entry.text, locations: [] };
+      if (!value.locations.some((location) => location.pageId === block.pageId && location.sectionId === block.sectionId)) value.locations.push({ pageId: block.pageId, sectionId: block.sectionId });
+      byId.set(entry.easyReadId, value);
+    }
+    return [...byId.values()];
+  }, [easyReadData]);
   const entries = useMemo(() => {
     const base = catalog?.entries ?? [];
     return easyReadEntries.length > 0 ? [...base, ...easyReadEntries] : base;
@@ -1902,8 +1902,8 @@ export function LanguageView({
             <div className="flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
               <div className="text-xs text-amber-900">
                 {isSpeechStage
-                  ? t`${missingForCurrentStage} entry/entries are missing audio. Re-run to generate the missing items.`
-                  : t`${missingForCurrentStage} entry/entries are missing translations. Re-run to fill the missing items.`}
+                  ? t`${missingForCurrentStage} speech outputs are missing. Re-run to generate the missing items.`
+                  : t`${missingForCurrentStage} language outputs are missing. Re-run to fill the missing items.`}
               </div>
               <Button
                 size="sm"
