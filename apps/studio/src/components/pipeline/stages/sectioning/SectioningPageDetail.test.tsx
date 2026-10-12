@@ -242,7 +242,7 @@ describe("SectioningPageDetail — save confirmation", () => {
     renderDetail()
     fireEvent.click(screen.getByText("edit"))
     await act(async () => { await expect(savedEntry.onSaveStay!()).rejects.toThrow("Content changed") })
-    fireEvent.click(screen.getByRole("button", { name: "Keep my conflicting edits" }))
+    fireEvent.click(screen.getByRole("button", { name: "Keep my changes" }))
     await act(async () => { await savedEntry.onSaveStay!() })
     expect(updateSectioning).toHaveBeenLastCalledWith("bk", "bk_p1", expect.objectContaining({ baseVersion: 2, sections: [expect.objectContaining({ sectionType: "edited" })] }))
   })

@@ -11513,3 +11513,30 @@ msgstr "Esta página cambió o se inició una ejecución. Se conservaron tus cam
 
 msgid "This restores the last generated sectioning for this page. Your edited version stays in history. Other pages keep their edits. This page can be regenerated on the next Re-run."
 msgstr "Esto restaura la última división en secciones generada para esta página. Tu versión editada permanece en el historial. Las demás páginas conservan sus cambios. Esta página podrá regenerarse en la próxima ejecución."
+
+msgid "Changes not saved"
+msgstr "Cambios sin guardar"
+
+msgid "Conflicting changes detected"
+msgstr "Se detectaron cambios en conflicto"
+
+msgid "Keep my changes"
+msgstr "Conservar mis cambios"
+
+msgid "Keep the values you entered where changes overlap."
+msgstr "Conserva los valores que introdujiste donde los cambios se superponen."
+
+msgid "Load latest saved values"
+msgstr "Cargar los últimos valores guardados"
+
+msgid "Replace your overlapping changes with the latest saved values."
+msgstr "Reemplaza tus cambios superpuestos por los últimos valores guardados."
+
+msgid "This page was changed after you started editing, so some values are now out of sync. Your changes have not been saved."
+msgstr "Esta página cambió después de que empezaras a editarla, por lo que algunos valores ya no coinciden. Tus cambios no se han guardado."
+
+msgid "Your changes are still here. Review them before saving again."
+msgstr "Tus cambios siguen aquí. Revísalos antes de volver a guardar."
+
+msgid "Your other edits will be kept. Review the result, then save again."
+msgstr "Se conservarán tus demás cambios. Revisa el resultado y vuelve a guardar."

@@ -26,7 +26,7 @@ it("lists protected page numbers, defaults replacement off on every open and sen
   const { onRun } = await mount("sectioning", [{ node: "page-sectioning", itemId: "pg003", pageNumber: 3, version: 7 }])
   await waitFor(() => expect(api.getStepStatus).toHaveBeenCalled())
   fireEvent.click(screen.getByRole("button", { name: "Rerun" }))
-  expect(await screen.findByText(/Protected pages:/)).toBeTruthy()
+  expect(await screen.findByText(/Pages with manual edits or unknown authorship:/)).toBeTruthy()
   expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false)
   fireEvent.click(screen.getByRole("checkbox"))
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }))

@@ -11513,3 +11513,30 @@ msgstr "This page changed or a run started. Your edits were kept. Try again."
 
 msgid "This restores the last generated sectioning for this page. Your edited version stays in history. Other pages keep their edits. This page can be regenerated on the next Re-run."
 msgstr "This restores the last generated sectioning for this page. Your edited version stays in history. Other pages keep their edits. This page can be regenerated on the next Re-run."
+
+msgid "Changes not saved"
+msgstr "Changes not saved"
+
+msgid "Conflicting changes detected"
+msgstr "Conflicting changes detected"
+
+msgid "Keep my changes"
+msgstr "Keep my changes"
+
+msgid "Keep the values you entered where changes overlap."
+msgstr "Keep the values you entered where changes overlap."
+
+msgid "Load latest saved values"
+msgstr "Load latest saved values"
+
+msgid "Replace your overlapping changes with the latest saved values."
+msgstr "Replace your overlapping changes with the latest saved values."
+
+msgid "This page was changed after you started editing, so some values are now out of sync. Your changes have not been saved."
+msgstr "This page was changed after you started editing, so some values are now out of sync. Your changes have not been saved."
+
+msgid "Your changes are still here. Review them before saving again."
+msgstr "Your changes are still here. Review them before saving again."
+
+msgid "Your other edits will be kept. Review the result, then save again."
+msgstr "Your other edits will be kept. Review the result, then save again."

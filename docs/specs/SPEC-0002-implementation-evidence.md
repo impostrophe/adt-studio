@@ -1,5 +1,51 @@
 # SPEC-0002 implementation evidence
 
+## Conflict prompt clarity and styling — 2026-10-11
+
+The owner confirmed the two-tab quiz conflict flow works as described, but found
+the warning's wording and styling confusing. The shared prompt now says
+**Conflicting changes detected**, explains that the page changed after editing
+began, and offers **Keep my changes** or **Load latest saved values**. Each choice
+explains how overlapping changes are handled; a shared reminder says other
+edits are kept and the result must be reviewed and saved again. Internal field
+paths are no longer shown. The card uses the app's existing buttons, warning
+colors and spacing, with text wrapping for longer translations.
+
+This changes presentation in the four editors using `DraftConflict`; the merge,
+draft retention and guarded-save behavior are unchanged. All new strings are
+translated in all five locales. The owner repeated the conflict test with the
+revised presentation and confirmed, “Yep it works.” The two-tab quiz walkthrough
+and revised conflict prompt are therefore accepted in the development UI; this
+does not claim conflict testing in every editor or release-build verification.
+
+Verification: `use-guarded-draft.test.tsx` and `SectioningPageDetail.test.tsx`
+pass (10 tests), including edits typed after a conflict and both resolution
+choices. Typecheck and lint pass (eight existing lint warnings); extraction
+reports zero missing translations, and `git diff --check` passes. The actual
+component and app CSS were visually inspected in an isolated browser preview;
+the temporary preview fixture was removed. No user book was changed by the agent, and no
+full end-to-end, packaged desktop or release check is claimed for this copy edit.
+
+## TOC manual review and badge layout — 2026-10-11
+
+The owner confirmed saved TOC edits persist after navigation, the manual badge
+appears, and restoring v1 works. After confirming the dedicated TOC replacement
+warning, they initially reported retained edited content; read-only inspection
+of the running API showed current AI output at v5 and manual versions retained
+in history. The owner then confirmed the screen displays the generated TOC.
+No regeneration behavior was changed on the basis of the initial observation.
+
+The TOC uses the same authorship badge as Sectioning, but its flex-column parent
+stretched the badge across the view. A padded flex row now preserves the compact
+pill shape. The existing Sectioning confirmation test's text assertion was also
+updated to match the previously published dialog wording.
+
+Verification: all four `LandingPageShell.authorship.test.tsx` tests pass;
+`manual-edit-survival.test.ts -t 'confirmed TOC'` passes (one test, 23 skipped).
+`pnpm typecheck`, `pnpm lint` (eight existing warnings) and `git diff --check`
+passed for the layout correction. No new strings, translations or backend
+changes; visual confirmation of the adjusted pill remains with the owner.
+
 ## Single-page revert and clearer Sectioning consent — 2026-10-11
 
 The owner confirmed the quiz correction works, French translation edits survive,
@@ -30,8 +76,10 @@ legacy/missing history, unsaved drafts, stale/busy rejection and read retry.
 `pnpm typecheck` passed; `pnpm lint` passed with the existing eight warnings;
 `pnpm --filter @adt/studio extract` reports zero missing translations in every
 locale. No full-suite, paid-provider, browser, desktop or release run is claimed
-for this addition; the new UI still needs the owner's hands-on check. No user
-book was modified. The invariant lint command remains planned and unavailable.
+for this addition. The owner subsequently confirmed the single-page revert
+walkthrough works, including Cancel, restoration, neighboring-page preservation
+and ordinary rerun eligibility. No user book was modified by the agent.
+The invariant lint command remains planned and unavailable.
 
 ## Quiz rerun correction from product testing — 2026-10-11
 
