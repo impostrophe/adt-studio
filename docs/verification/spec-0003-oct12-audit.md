@@ -261,3 +261,36 @@ the new review-request comment on [PR #884](https://github.com/unicef/adt-studio
 after publication. This committed local report does not pre-claim hosted success.
 The PR title/body are intentionally preserved; only a new comment/reviewer request
 is authorized. Spec/index/ADR remain in review/proposed.
+
+
+### First published CI and test-only correction
+
+[CI run 38257329047](https://github.com/unicef/adt-studio/actions/runs/38257329047)
+at `b2280e354827ada9d1da337a0d031db6e3b07f6f` passed Docker and i18n but failed
+three real-PDF preservation cases at their explicit 30-second limits: 4,267 tests
+passed and 3 timed out. Root typecheck passed. This run is not green.
+
+The independent reviewer measured Vitest's generic deep equality of the 5,704,567-byte
+Raven PDF at 9,991.8 ms versus 1.46 ms for exact `Buffer.equals`; a deliberately
+changed byte was detected. The fix uses native exact byte equality and preserves
+real extraction, SQLite, history/manifest assertions, zero provider-call assertions,
+the 30-second case limits and the 15-second CLI subprocess limit. This is an
+assertion-cost correction, not a claim that extraction was slow or runtime safety
+was defective. No production behavior changed.
+
+The writer's focused command `DEVELOPER_DIR=/Library/Developer/CommandLineTools
+pnpm exec vitest run packages/pipeline/src/__tests__/sectioning-resume.test.ts
+--maxWorkers 2` passed 8/8 in 6.97 s (`ci-fix-focused.log`). The independent rerun
+passed 8/8 in 6.69 s and confirmed unchanged exact-byte semantics; its report above
+records the reviewed file digest. Final publication still requires newly published
+exact-head hosted CI; this earlier failed run is retained as evidence.
+
+
+Linux verification also passed: `docker build --target build -t adt-spec3-oct12-test .`
+then the focused Vitest command inside that image, with this checkout's
+`vitest.config.ts` and `tests/` mounted read-only into `/app`, passed **8/8 in 5.32 s**
+(`ci-fix-linux-build.log`, `ci-fix-linux-focused.log`). The four former slow cases
+completed in 767/551/448/444 ms; the actual CLI case took 1,104 ms. Image manifest:
+`sha256:8364af9ad64dfb7ccb4d107acaf93731a10f18797ef7e3d0cbaa9d8c8228ffa6`.
+This Linux/arm64 focused rerun supplements, rather than replaces, hosted Linux CI.
+Product code and the final runtime/packaging checkpoint `5a9f9b48` are unchanged.

@@ -58,7 +58,8 @@ it.each(["fixed", "reflowable", "fixed-part", "reflowable-part"])("verified extr
     expect(s.getAllNodeVersions("web-rendering", f.pageId)).toHaveLength(1)
   } finally { s.close() }
   expect(fs.readFileSync(path.join(f.bookDir, "extraction.json"))).toEqual(manifest)
-  expect(fs.readFileSync(path.join(f.bookDir, `${f.label}.pdf`))).toEqual(pdf)
+  // Compare every byte without Vitest traversing millions of Buffer properties.
+  expect(fs.readFileSync(path.join(f.bookDir, `${f.label}.pdf`)).equals(pdf)).toBe(true)
 })
 
 it("the actual CLI refuses verified existing extraction without rewriting output", async () => {
