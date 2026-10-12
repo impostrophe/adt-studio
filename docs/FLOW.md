@@ -84,17 +84,6 @@ The Project's **Block** field says which block a card's work is planned in. It l
 
 **Approving does not set a block.** Approve now, plan for B3 later.
 
-### Worked on
-
-Assignees only show who is on a card **now**: the bot unassigns people when they finish a stage. The Project's **Worked on** field keeps **everyone who worked on the card**, so you can still find your past work. Like Block, it lives on the Project only; the issue does not change.
-
-| Who gets added | When |
-|---|---|
-| whoever is credited for a stage (Spec, Code, Review & test) | when the card leaves that stage |
-| the author of a PR linked to the issue (GitHub link, `**Issue:** #N`, "Closes #N", or a branch like `fix/940-…`) | within the hour after the PR is opened or updated |
-
-People are only ever added, never removed, and bots are left out. To see your cards, filter any view with **`worked-on:*@your-username*`** (for example `worked-on:*@Eliezir*`); **My work** (`assignee:@me`) still shows what you are on right now.
-
 ## What the bot does not do
 
 - It **never moves cards**, closes issues or touches pull requests.

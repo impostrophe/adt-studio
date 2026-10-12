@@ -6,26 +6,21 @@
 //   - a Status move runs the hand-off rules (rules/handoff.ts): credit and
 //     unassign whoever finished a stage, assign whoever picked the card up,
 //     tell the story at Done; and the block rules (rules/blocks.ts), which
-//     only ever touch the Project's Block field, never the issue;
-//   - and it adds whoever worked on the card (stage credits, linked PR
-//     authors) to the Project's "Worked on" field (rules/worked.ts).
+//     only ever touch the Project's Block field, never the issue.
 //
 // The webhook says who moved the card (sender) and from where to where, so the
 // bot keeps no state: past credits are read back from its own comments.
 // Everything it writes shows as the App (<slug>[bot]), with the App's
 // permissions, on the repos it is installed on. See docs/FLOW.md.
 //
-// Hourly it asks GitHub to redeliver deliveries that failed, and adds the
-// authors of newly linked PRs to "Worked on" (opening a PR moves no card).
+// Hourly it asks GitHub to redeliver deliveries that failed.
 //
 // Secrets: WEBHOOK_SECRET, APP_PRIVATE_KEY (PKCS#8 PEM).
 // Vars: APP_ID, BOT_LOGIN (<slug>[bot]), PROJECTS (comma-separated project node ids).
-import { api, graphql, installationToken, appJwt, postComment, verifySignature, type AppEnv } from './github.ts'
-import { blockName, blockOnMove, type Block } from './rules/blocks.ts'
-import { columnFromStatusName } from './rules/flow.ts'
-import { creditsFromComments, handoff } from './rules/handoff.ts'
-import { mergeWorkedOn } from './rules/worked.ts'
-import { syncPrAuthors, WORKED_FIELD } from './worked-sync.ts'
+import { api, graphql, installationToken, appJwt, postComment, verifySignature, type AppEnv } from './github'
+import { blockName, blockOnMove, type Block } from './rules/blocks'
+import { columnFromStatusName } from './rules/flow'
+import { creditsFromComments, handoff } from './rules/handoff'
 
 type Env = AppEnv & { WEBHOOK_SECRET: string; BOT_LOGIN: string; PROJECTS: string }
 
@@ -79,7 +74,6 @@ export default {
 
   async scheduled(_controller: unknown, env: Env) {
     await redeliverFailed(env)
-    await addPrAuthors(env)
   },
 }
 
@@ -93,14 +87,11 @@ function projects(env: Env) {
 const CARD = `query($item: ID!) {
   item: node(id: $item) { ... on ProjectV2Item {
     block: fieldValueByName(name: "${BLOCK_FIELD}") { ... on ProjectV2ItemFieldIterationValue { title } }
-    worked: fieldValueByName(name: "${WORKED_FIELD}") { ... on ProjectV2ItemFieldTextValue { text } }
-    project { id
-      blockField: field(name: "${BLOCK_FIELD}") { ... on ProjectV2IterationField { id configuration {
-        iterations { id title startDate duration } completedIterations { id title startDate duration } } } }
-      workedField: field(name: "${WORKED_FIELD}") { ... on ProjectV2Field { id } } }
+    project { id field(name: "${BLOCK_FIELD}") { ... on ProjectV2IterationField { id configuration {
+      iterations { id title startDate duration } completedIterations { id title startDate duration } } } } }
     content { ... on Issue { number state repository { nameWithOwner }
       assignees(first: 20) { nodes { login } }
-      closedByPullRequestsReferences(first: 10, includeClosedPrs: true) { nodes { author { __typename login } reviews(states: APPROVED, first: 20) { nodes { author { login } } } } } } } } } }`
+      closedByPullRequestsReferences(first: 10, includeClosedPrs: true) { nodes { reviews(states: APPROVED, first: 20) { nodes { author { login } } } } } } } } } }`
 
 type Card = {
   itemId: string
@@ -112,16 +103,13 @@ type Card = {
   approvers: string[]
   block: string | null // the Block field
   blockField: { id: string; iterations: (Block & { id: string })[] } | null
-  prAuthors: string[]
-  workedOn: string | null // the Worked on field
-  workedField: string | null // its id, when the Project has it
 }
 
 async function readCard(token: string, itemId: string): Promise<Card | null> {
   const item = (await graphql(token, CARD, { item: itemId })).item
   const issue = item?.content
   if (!issue?.number) return null
-  const f = item.project.blockField
+  const f = item.project.field
   return {
     itemId,
     projectId: item.project.id,
@@ -132,9 +120,6 @@ async function readCard(token: string, itemId: string): Promise<Card | null> {
     approvers: [...new Set<string>(issue.closedByPullRequestsReferences.nodes.flatMap((pr: any) => pr.reviews.nodes.map((r: any) => r.author?.login).filter(Boolean)))],
     block: item.block?.title ?? null,
     blockField: f?.configuration ? { id: f.id, iterations: [...f.configuration.completedIterations, ...f.configuration.iterations] } : null,
-    prAuthors: prAuthors(issue.closedByPullRequestsReferences.nodes),
-    workedOn: item.worked?.text ?? null,
-    workedField: item.project.workedField?.id ?? null,
   }
 }
 
@@ -159,9 +144,6 @@ async function onMove(env: Env, installation: number, item: { node_id: string },
   if (h.unassign.length) await api(token, 'DELETE', `${issue}/assignees`, { assignees: h.unassign })
   if (h.assign.length) await api(token, 'POST', `${issue}/assignees`, { assignees: h.assign })
 
-  // Everyone credited so far, this move included, plus the PR authors.
-  await setWorkedOn(token, card, mergeWorkedOn(card.workedOn, ...credits.map((c) => c.logins), h.credit?.logins ?? [], card.prAuthors))
-
   const next = blockOnMove({ from, to, block: card.block ? blockName(card.block) : null, blocks: card.blockField?.iterations ?? [] })
   if (next !== undefined) await setBlock(token, card, next)
 }
@@ -185,22 +167,6 @@ async function setBlock(token: string, card: Card, name: string | null) {
 }
 
 // ---------------------------------------------------------------------------
-// Worked on: a text field on the Project, never the issue
-
-function prAuthors(prs: { author: { __typename: string; login: string } | null }[]) {
-  return prs.filter((p) => p.author && p.author.__typename !== 'Bot').map((p) => p.author!.login)
-}
-
-async function setWorkedOn(token: string, card: { projectId: string; itemId: string; workedOn: string | null; workedField: string | null }, value: string) {
-  if (!card.workedField || value === (card.workedOn ?? '')) return
-  await graphql(
-    token,
-    'mutation($p: ID!, $i: ID!, $f: ID!, $v: String!) { updateProjectV2ItemFieldValue(input: { projectId: $p, itemId: $i, fieldId: $f, value: { text: $v } }) { clientMutationId } }',
-    { p: card.projectId, i: card.itemId, f: card.workedField, v: value },
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Hourly
 
 // GitHub does not retry a delivery that failed (the Worker was down, or
@@ -214,22 +180,5 @@ async function redeliverFailed(env: Env) {
     if (Date.parse(d.delivered_at) < since || handled.has(d.guid)) continue
     handled.add(d.guid)
     await api(jwt, 'POST', `/app/hook/deliveries/${d.id}/attempts`).catch((err) => console.error(`redeliver ${d.guid}: ${(err as Error).message}`))
-  }
-}
-
-// Opening or linking a PR moves no card, so the bot hears nothing: once an
-// hour, add the authors of PRs updated in the last three days to "Worked on".
-async function addPrAuthors(env: Env) {
-  const since = new Date(Date.now() - 3 * 86_400_000).toISOString()
-  const jwt = await appJwt(env)
-  for (const inst of (await api(jwt, 'GET', '/app/installations')) as { id: number }[]) {
-    const token = await installationToken(env, inst.id)
-    for (const projectId of projects(env)) {
-      const changed = await syncPrAuthors(token, projectId, since).catch((err) => {
-        console.error(`worked on: ${(err as Error).message}`)
-        return 0
-      })
-      if (changed) console.log(`Worked on: ${changed} card(s) got PR authors`)
-    }
   }
 }

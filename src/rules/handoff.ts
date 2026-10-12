@@ -1,4 +1,4 @@
-import { COLUMN_BY_ID, columnIndex, type StageId } from './flow.ts'
+import { COLUMN_BY_ID, columnIndex, type StageId } from './flow'
 
 // Hand-off: when a card leaves a stage it was being worked in, the people on
 // it get the credit in a comment on the issue and are unassigned, so an

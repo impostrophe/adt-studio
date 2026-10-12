@@ -40,10 +40,8 @@ export const RETRY_DELAYS_MS = [500, 1500, 4000]
 const TRANSIENT = new Set([429, 502, 503, 504])
 
 export class GitHubError extends Error {
-  readonly status: number | null
-  constructor(message: string, status: number | null) {
+  constructor(message: string, readonly status: number | null) {
     super(message)
-    this.status = status
   }
   get transient() {
     return this.status === null || TRANSIENT.has(this.status)
