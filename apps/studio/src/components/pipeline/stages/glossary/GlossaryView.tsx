@@ -209,6 +209,10 @@ export function GlossaryView({ bookLabel }: { bookLabel: string }) {
     if (result.imageRequirementsChanged) {
       queryClient.invalidateQueries({ queryKey: ["books", bookLabel, "pages"] })
       invalidateStoryboardDependents(queryClient, bookLabel)
+    } else {
+      // Glossary text feeds Language and Speech; refresh the sidebar's
+      // attention (the branch above already does, so don't read it twice).
+      void queryClient.invalidateQueries({ queryKey: ["books", bookLabel, "outputs"] })
     }
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["books", bookLabel, "glossary"] }),
