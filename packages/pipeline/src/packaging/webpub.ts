@@ -135,9 +135,15 @@ export function packageWebpub(
   const needsHtmlToc = (entries: TocLink[]): boolean => entries.some((entry) =>
     !entry.href || (entry.children !== undefined && needsHtmlToc(entry.children)),
   )
-  const htmlToc = needsHtmlToc(toc)
-  if (htmlToc) {
-    fs.writeFileSync(path.join(webpubDir, "contents.html"), renderTocDocument(toc, title, options.language))
+  let htmlTocHref: string | undefined
+  if (needsHtmlToc(toc)) {
+    htmlTocHref = "contents.html"
+    // Legacy stable IDs can already own this filename. Keep every copied page
+    // intact and allocate only the derived navigation resource's name.
+    for (let suffix = 2; fs.existsSync(path.join(webpubDir, htmlTocHref)); suffix++) {
+      htmlTocHref = `contents-${suffix}.html`
+    }
+    fs.writeFileSync(path.join(webpubDir, htmlTocHref), renderTocDocument(toc, title, options.language))
   }
 
   // Enumerate all files as resources, excluding the reading-order documents
@@ -146,7 +152,7 @@ export function packageWebpub(
   const allResources: Array<{ href: string; type: string }> = []
   collectWebpubResources(webpubDir, webpubDir, allResources)
   const resources = allResources.filter((r) => !readingOrderHrefs.has(r.href))
-    .map((resource) => htmlToc && resource.href === "contents.html"
+    .map((resource) => resource.href === htmlTocHref
       ? { ...resource, rel: "contents" }
       : resource)
 
@@ -170,7 +176,7 @@ export function packageWebpub(
     links,
     readingOrder,
     resources,
-    ...(toc.length > 0 && !htmlToc ? { toc } : {}),
+    ...(toc.length > 0 && !htmlTocHref ? { toc } : {}),
     ...(pageListNav.length > 0 ? { pageList: pageListNav } : {}),
     ...(landmarks.length > 0 ? { landmarks } : {}),
   }
