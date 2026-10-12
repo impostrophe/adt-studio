@@ -1,5 +1,7 @@
 # SPEC-0003 B1 continuation audit
 
+> Historical evidence. The October 12 product amendment supersedes the persisted-mode gates and whole-run publication described here. See the [current contract and complete acceptance audit](spec-0003-oct12-audit.md) and [new independent review](spec-0003-independent-review-2026-10-12.md). These earlier passing results do not certify the revised behavior.
+
 Started 2026-10-10 against published PR #884 head `e3737abe`.
 Human approval remains pending. This audit does not amend the acceptance criteria.
 

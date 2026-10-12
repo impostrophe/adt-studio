@@ -1,5 +1,7 @@
 # SPEC-0003 B1 — stacked implementation evidence
 
+> Historical evidence. The October 12 product amendment supersedes the persisted-mode gates and whole-run publication described here. See the [current contract and complete acceptance audit](spec-0003-oct12-audit.md) and [new independent review](spec-0003-independent-review-2026-10-12.md). These earlier passing results do not certify the revised behavior.
+
 Historical continuation report. For the subsequent review, fixes and refreshed verification, see [independent B1 review](spec-0003-independent-review.md). Publication statements below describe this earlier continuation.
 
 Date: 2026-10-11. Human approval remains pending. This report supersedes the

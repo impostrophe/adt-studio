@@ -1,5 +1,7 @@
 # SPEC-0003 B1 — independent review and refreshed verification
 
+> Historical evidence. The October 12 product amendment supersedes the persisted-mode gates and whole-run publication described here. See the [current contract and complete acceptance audit](spec-0003-oct12-audit.md) and [new independent review](spec-0003-independent-review-2026-10-12.md). These earlier passing results do not certify the revised behavior.
+
 Date: 2026-10-11. Human approval remains pending. This is a fresh behavioral
 review of the existing implementation, with regression fixes, not a maintainer
 approval or release certification. B2 modes and cross-page merge remain deferred.

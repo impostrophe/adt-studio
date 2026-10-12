@@ -32,7 +32,7 @@ ADR 024 is reserved by [SPEC-0001 / PR #879](https://github.com/unicef/adt-studi
 22. [Unified Stage/Step Status via useBookRun](#022-unified-stagestep-status-via-usebookrun)
 23. [Visual Refinement + File-Based Debug Screenshots](#023-visual-refinement--file-based-debug-screenshots)
 24. [Catalog-Based Freshness from Saved Input Signatures (proposed)](#adr-024)
-25. [Sectioning mode changes preserve content and gate rendering](#025-sectioning-mode-changes-preserve-content-and-gate-rendering)
+25. [Sectioning generation preferences, scoped reset and per-page publication](#025-sectioning-mode-changes-preserve-content-and-gate-rendering)
 
 ---
 
@@ -1036,7 +1036,7 @@ This decision remains proposed, with human review pending.
 | 022 | Stage/step status | Unified `useBookRun()` with SSE cache-patching | Dual-source (local SSE state + query cache) |
 | 023 | Visual QA + debug screenshots | Screenshot-based refinement + file-backed debug images | Structural-only validation, DB BLOB storage |
 | 024 (proposed) | Downstream freshness | Catalog-based input signatures and scoped regeneration with existing caching | Whole-stage clearing, universal section flags, general dependency graph |
-| 025 | Sectioning mode changes preserve content and gate rendering (proposed) | See SPEC-0003 | UI warning only |
+| 025 (proposed) | Sectioning generation preferences and publication | Scoped versioned reset; ordinary per-page publication; shared ownership and coverage | Persisted mode gates, automatic replacement, all-run buffering |
 
 ---
 
