@@ -113,6 +113,15 @@ added, cloned, merged or deleted sections. Section counts may be informational
 warnings with bounded page lists; they never gate rendering. Missing/unreadable
 page input is reported individually and unrelated pages continue. Keep actual
 input-integrity, HTML, reading-order and accessibility validation/retries.
+Reflowable rendering uses the saved semantic tree. The established fixed-layout
+renderer continues using the saved positioned PDF inputs and publishes its
+positioned tree with HTML; accepting arbitrary semantic counts does not promise
+that a semantic split changes PDF geometry or produces separate fixed pages.
+
+An unreadable historical payload cannot safely supply spent identities for
+replacement. Report that page individually and require restoration of a valid
+historical version; other runnable pages continue. Retain its raw history and
+media. An explicitly confirmed reset still has the commit semantics above.
 
 Structural operations use stable ownership when retaining rendering. Historical
 HTML is not current input after reset and cannot be reassigned by index. Keep

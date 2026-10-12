@@ -13,8 +13,8 @@ import {
   type BookDetail,
   type PartRange,
 } from "@adt/types"
-import { openBookDb, withBookWriter, BookBusyError, recoverSectioningTransition, publishSectioningTransition, atomicBookFile, readSectioningLifecycle } from "@adt/storage"
-import { loadBookConfig, loadConfig, deepMerge, effectiveSectioningMode, sectioningInvalidationSteps } from "@adt/pipeline"
+import { createBookStorage, openBookDb, withBookWriter, BookBusyError, recoverSectioningTransition, publishSectioningTransition, atomicBookFile } from "@adt/storage"
+import { storyboardCoverage, activeSectioningPages, loadBookConfig, loadConfig, deepMerge, effectiveSectioningMode } from "@adt/pipeline"
 import { AppConfig } from "@adt/types"
 
 type BookDb = ReturnType<typeof openBookDb>
@@ -78,16 +78,12 @@ export function readSplitSummary(
   }
 }
 
-function computeCompletedStages(db: BookDb, bookDir: string): string[] {
+function computeCompletedStages(db: BookDb, bookDir: string, configPath?: string): string[] {
   const rows = db.all("SELECT step, status FROM step_runs") as Array<{
     step: string
     status: string
   }>
   const statusByStep = new Map(rows.map((r) => [r.step, r.status]))
-  const lifecycle = readSectioningLifecycle(bookDir)
-  if (lifecycle && !lifecycle.sectioningReady) {
-    for (const step of sectioningInvalidationSteps()) statusByStep.delete(step)
-  }
 
   const completed: string[] = []
   for (const stage of PIPELINE) {
@@ -99,11 +95,15 @@ function computeCompletedStages(db: BookDb, bookDir: string): string[] {
     if (allDone) completed.push(stage.name)
   }
 
-  if (fs.existsSync(path.join(bookDir, "adt")) && (!lifecycle || (lifecycle.sectioningReady && completed.includes("package")))) {
-    completed.push("preview")
-  }
-
-  return completed
+  const label = path.basename(bookDir)
+  const booksDir = path.dirname(bookDir)
+  const storage = createBookStorage(label, booksDir)
+  try {
+    const coverage = storyboardCoverage(storage, activeSectioningPages(storage, loadBookConfig(label, booksDir, configPath), bookDir).map((page) => page.pageId))
+    if (!coverage.complete) return completed.filter((stage) => stage !== "storyboard" && stage !== "package")
+    if (coverage.rendered > 0 && fs.existsSync(path.join(bookDir, "adt"))) completed.push("preview")
+    return completed
+  } finally { storage.close() }
 }
 
 function toIsoDate(ms: number): string {
@@ -138,7 +138,7 @@ function isRecoverableDbError(err: unknown): err is Error {
   return err.message.includes("Schema version mismatch") || err.message.includes("database is locked")
 }
 
-export function listBooks(booksDir: string): BookSummary[] {
+export function listBooks(booksDir: string, configPath?: string): BookSummary[] {
   const resolvedDir = path.resolve(booksDir)
   if (!fs.existsSync(resolvedDir)) return []
 
@@ -187,7 +187,7 @@ export function listBooks(booksDir: string): BookSummary[] {
             }
           }
 
-          completedStages = computeCompletedStages(db, bookDir)
+          completedStages = computeCompletedStages(db, bookDir, configPath)
         } finally {
           db.close()
         }
@@ -227,7 +227,7 @@ export function listBooks(booksDir: string): BookSummary[] {
   return books
 }
 
-export function getBook(label: string, booksDir: string): BookDetail {
+export function getBook(label: string, booksDir: string, configPath?: string): BookDetail {
   const safeLabel = parseBookLabel(label)
   const resolvedDir = path.resolve(booksDir)
   const bookDir = path.join(resolvedDir, safeLabel)
@@ -287,7 +287,7 @@ export function getBook(label: string, booksDir: string): BookDetail {
           }
         }
 
-        completedStages = computeCompletedStages(db, bookDir)
+        completedStages = computeCompletedStages(db, bookDir, configPath)
       } finally {
         db.close()
       }
@@ -415,7 +415,7 @@ export function updateBookConfig(
     try {
       if (db.all("SELECT step FROM step_runs WHERE status = 'running'").length) throw new BookBusyError()
     } finally { db.close() }
-    publishSectioningTransition(bookDir, text, newMode, sectioningInvalidationSteps())
+    publishSectioningTransition(bookDir, text, newMode, [])
   })
 }
 

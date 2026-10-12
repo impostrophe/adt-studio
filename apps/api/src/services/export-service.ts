@@ -4,7 +4,7 @@ import { HTTPException } from "hono/http-exception"
 import { parseBookLabel } from "@adt/types"
 import type { PackagingWarning } from "@adt/types"
 import { createBookStorage, withBookWriter, recoverSectioningTransition, resolveBookPaths } from "@adt/storage"
-import { packageAdtWeb, packageWebpub, packageEpub, packagePnld, loadBookConfig, normalizeLocale, isFixedLayoutBook, prepareSectioningRun } from "@adt/pipeline"
+import { packageAdtWeb, packageWebpub, packageEpub, packagePnld, loadBookConfig, normalizeLocale, isFixedLayoutBook } from "@adt/pipeline"
 import { createZipStream } from "./zip-util.js"
 import { readPartInfo } from "./book-service.js"
 
@@ -86,7 +86,6 @@ export async function prepareExport(
   // It must remain available even when regeneration is safely blocked.
   if (format === "project") return { warnings: [] }
   return withBookWriter(bookDir, () => {
-    prepareSectioningRun(label, booksDir, "package", "package", configPath)
     return prepareAdmittedExport(label, format, booksDir, webAssetsDir, configPath, features, defaultSettingsOverride, promptsDir)
   })
 }

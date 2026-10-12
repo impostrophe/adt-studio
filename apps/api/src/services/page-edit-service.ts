@@ -1,6 +1,6 @@
 import { withBookWriter, resolveBookPaths } from "@adt/storage"
 import {
-  createStoryboardPublication, FIXED_LAYOUT_SECTIONING_NODE, SectioningSafetyError,
+  resolveRenderedSection, createStoryboardPublication, FIXED_LAYOUT_SECTIONING_NODE, SectioningSafetyError,
   isFixedLayoutBook, processFixedLayoutPages,
 } from "@adt/pipeline"
 import crypto from "node:crypto"
@@ -65,6 +65,7 @@ export async function reRenderPages(options: ReRenderOptions[]): Promise<ReRende
       const publication = createStoryboardPublication(storage, label, booksDir, configPath)
       const pages = new Set(publication.storage.getPages().map((page) => page.pageId))
       if (options.some((item) => !pages.has(item.pageId))) throw new Error("Requested page is outside the active source-page window")
+      publication.assertScope([...new Set(options.map((item) => item.pageId))])
       if (isFixedLayoutBook(loadBookConfig(label, booksDir, configPath))) {
         if (options.some((item) => item.sectionIndex !== undefined)) {
           throw new SectioningSafetyError("STORYBOARD_INPUT_CHANGED", "A fixed-layout page must be re-rendered as a whole. Existing output is kept.")
@@ -73,17 +74,22 @@ export async function reRenderPages(options: ReRenderOptions[]): Promise<ReRende
           throw new SectioningSafetyError("STORYBOARD_INPUT_CHANGED", "Fixed-layout rendering uses extracted positioned content and cannot apply an LLM prompt. Existing output is kept.")
         }
         const pageIds = options.map((item) => item.pageId)
-        processFixedLayoutPages(publication.storage, `/api/books/${label}/images`, pageIds)
+        processFixedLayoutPages(publication.storage, `/api/books/${label}/images`, pageIds, { onPage: (id) => publication.publishPage(id) })
         publication.publish(pageIds)
         return pageIds.map((pageId) => {
           const row = storage.getLatestNodeData("web-rendering", pageId)!
           return { version: row.version, rendering: row.data }
         })
       }
-      const results: ReRenderResult[] = []
-      for (const item of options) results.push(await reRenderAdmittedPage(item, publication))
+      for (const item of options) {
+        await reRenderAdmittedPage(item, publication)
+        publication.publishPage(item.pageId)
+      }
       publication.publish(options.map((item) => item.pageId))
-      return results
+      return options.map((item) => {
+        const row = storage.getLatestNodeData("web-rendering", item.pageId)!
+        return { version: row.version, rendering: row.data }
+      })
     } finally { storage.close() }
   })
 }
@@ -239,13 +245,18 @@ async function reRenderAdmittedPage(
     const existingRenderingParsed = existingRenderingRow
       ? WebRenderingOutput.safeParse(existingRenderingRow.data)
       : null
-    if (existingRenderingRow && !existingRenderingParsed?.success) {
+    if (existingRenderingRow?.data != null && !existingRenderingParsed?.success) {
       throw new Error("Invalid web-rendering data")
     }
     const existingSections = existingRenderingParsed?.success
       ? existingRenderingParsed.data.sections
       : []
-    const withoutTarget = existingSections.filter((s) => s.sectionIndex !== sectionIndex)
+    const withoutTarget = existingSections.flatMap((entry) => {
+      const owner = resolveRenderedSection(entry, sectioning.sections)
+      if (!owner) return []
+      const index = sectioning.sections.indexOf(owner)
+      return index === sectionIndex ? [] : [{ ...entry, sectionIndex: index }]
+    })
     const newTarget = renderResult.sections.find((s) => s.sectionIndex === sectionIndex)
     const mergedSections = newTarget
       ? [...withoutTarget, newTarget].sort((a, b) => a.sectionIndex - b.sectionIndex)

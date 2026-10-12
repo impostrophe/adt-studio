@@ -44,7 +44,13 @@ export function atomicBookFile(file: string, text: string): void {
 export function readSectioningLifecycle(bookDir: string): SectioningLifecycle | null {
   const file = path.join(bookDir, SECTIONING_LIFECYCLE)
   if (!fs.existsSync(file)) return null
-  return SectioningLifecycle.parse(JSON.parse(fs.readFileSync(file, "utf8")))
+  try {
+    const parsed = SectioningLifecycle.safeParse(JSON.parse(fs.readFileSync(file, "utf8")))
+    return parsed.success ? parsed.data : null
+  } catch (error) {
+    if (error instanceof SyntaxError) return null
+    throw error
+  }
 }
 
 export function writeSectioningLifecycle(bookDir: string, mode: SectioningMode, sectioningReady: boolean, storyboardPending?: boolean): void {

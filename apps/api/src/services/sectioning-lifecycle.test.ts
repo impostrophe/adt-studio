@@ -9,7 +9,7 @@ import {
   readSectioningLifecycle, writeSectioningLifecycle, SECTIONING_JOURNAL,
 } from "@adt/storage"
 import { PIPELINE } from "@adt/types"
-import { createStoryboardPublication, sectioningInvalidationSteps, loadBookConfig, assertPersistedSectioning, prepareSectioningRun } from "@adt/pipeline"
+import { createStoryboardPublication, sectioningInvalidationSteps, loadBookConfig, activeSectioningPages, prepareSectioningRun } from "@adt/pipeline"
 import { getBook, getBookConfig, updateBookConfig } from "./book-service.js"
 import { createBookRoutes } from "../routes/books.js"
 import { errorHandler } from "../middleware/error-handler.js"
@@ -35,7 +35,7 @@ const seed = () => {
   s.putNodeData("page-sectioning", "pg002", value(2))
   s.putNodeData("page-sectioning", "pg002", value(1))
   s.setCurrentNodeVersion("page-sectioning", "pg002", 1)
-  s.putNodeData("web-rendering", "pg002", { sections: [{ html: "kept" }] })
+  s.putNodeData("web-rendering", "pg002", { sections: value(2).sections.map((section, sectionIndex) => ({ sectionIndex, sectionType: "text", reasoning: "retained", sectionId: section.sectionId, html: `<section data-section-id="${section.sectionId}">kept</section>` })) })
   for (const stage of PIPELINE) for (const step of stage.steps) s.markStepCompleted(step.name)
   s.close()
   const db = openBookDb(path.join(dir, `${label}.db`))
@@ -85,10 +85,10 @@ describe("SPEC-0003 configuration publication", () => {
     expect(readSectioningLifecycle(dir)?.mode).toBe("page")
   })
 
-  it.each([["dynamic", "page"], ["page", "dynamic"]])("invalidates %s → %s without touching history, Extract or media", (oldMode, newMode) => {
+  it.each([["dynamic", "page"], ["page", "dynamic"]])("changes %s → %s without invalidating saved content, attempts or media", (oldMode, newMode) => {
     fs.writeFileSync(path.join(dir, "config.yaml"), `page_sectioning:\n  mode: ${oldMode}\n`)
     const before = snapshot()
-    const extract = runs().filter((run) => !sectioningInvalidationSteps().includes(run.step as never))
+    const extract = runs()
     updateBookConfig(label, root, config(newMode), globalConfig)
     expect(runs()).toEqual(extract)
     expect(snapshot()).toEqual(before)
@@ -106,7 +106,7 @@ describe("SPEC-0003 configuration publication", () => {
     expect(runs()).toEqual(before)
     fs.writeFileSync(path.join(dir, "config.yaml"), "structure_types: {}\nrole_types: {}\npage_sectioning:\n  mode: dynamic\n")
     updateBookConfig(label, root, {}, globalConfig)
-    expect(runs().some((run) => run.step === "translation")).toBe(false)
+    expect(runs().some((run) => run.step === "translation")).toBe(true)
     expect(loadBookConfig(label, root, globalConfig).page_sectioning?.mode).toBe("page")
   })
 
@@ -153,7 +153,7 @@ describe("SPEC-0003 configuration publication", () => {
     if (boundary === "lifecycle") {
       expect(() => runs()).toThrow(/recovery is pending/)
       recoverSectioningTransition(dir)
-      expect(runs().some((run) => run.step === "page-sectioning")).toBe(false)
+      expect(runs().some((run) => run.step === "page-sectioning")).toBe(true)
       expect(readSectioningLifecycle(dir)?.mode).toBe("page")
     } else {
       recoverSectioningTransition(dir)
@@ -162,22 +162,13 @@ describe("SPEC-0003 configuration publication", () => {
     }
     expect(snapshot()).toEqual(before)
   })
-  it("rolls back a partial SQLite invalidation and recovers the published YAML", () => {
-    const dbPath = path.join(dir, `${label}.db`)
-    const db = openBookDb(dbPath)
-    db.exec("CREATE TRIGGER fail_mode_invalidation BEFORE DELETE ON step_runs WHEN OLD.step = 'translation' BEGIN SELECT RAISE(ABORT, 'injected db failure'); END")
+  it("mode preference changes do not execute completion invalidation", () => {
+    const db = openBookDb(path.join(dir, `${label}.db`))
+    db.exec("CREATE TRIGGER forbid_invalidation BEFORE DELETE ON step_runs BEGIN SELECT RAISE(ABORT, 'unexpected invalidation'); END")
     db.close()
     const before = runs()
-    expect(() => updateBookConfig(label, root, config("page"), globalConfig)).toThrow("injected db failure")
-    expect(() => runs()).toThrow(/recovery is pending/)
-    withBookWriter(dir, () => {
-      const inspect = openBookDb(dbPath)
-      expect(inspect.all("SELECT step FROM step_runs")).toHaveLength(before.length)
-      inspect.exec("DROP TRIGGER fail_mode_invalidation")
-      inspect.close()
-    })
-    recoverSectioningTransition(dir)
-    expect(runs().some((run) => run.step === "translation")).toBe(false)
+    updateBookConfig(label, root, config("page"), globalConfig)
+    expect(runs()).toEqual(before)
   })
 
   it("defaults an omitted effective mode to Dynamic without invalidating", () => {
@@ -200,7 +191,7 @@ describe("SPEC-0003 configuration publication", () => {
     expect(() => runs()).toThrow(/recovery is pending/)
     recoverSectioningTransition(dir)
     expect(readSectioningLifecycle(dir)).toMatchObject({ mode: "page", sectioningReady: false })
-    expect(runs().some((run) => run.step === "page-sectioning")).toBe(false)
+    expect(runs().some((run) => run.step === "page-sectioning")).toBe(true)
     expect(snapshot()).toEqual(before)
   })
 
@@ -269,7 +260,7 @@ describe("SPEC-0003 configuration publication", () => {
       expect(getBookConfig(label, root)).toBeNull()
       expect(runs()).toEqual(oldRuns)
     } else {
-      expect(runs().some((run) => run.step === "page-sectioning")).toBe(false)
+      expect(runs().some((run) => run.step === "page-sectioning")).toBe(true)
       expect(loadBookConfig(label, root, globalConfig).page_sectioning?.mode).toBe("page")
     }
     expect(snapshot()).toEqual(before)
@@ -280,9 +271,9 @@ describe("SPEC-0003 configuration publication", () => {
 })
 
 describe("SPEC-0003 persisted data and publication", () => {
-  it("does not expose retained completion as current after conservative invalidation", async () => {
+  it("lifecycle metadata does not revoke usable saved output", async () => {
     writeSectioningLifecycle(dir, "dynamic", false)
-    expect(getBook(label, root).completedStages).toEqual(["extract"])
+    expect(getBook(label, root).completedStages).toContain("storyboard")
     const bus = createBookEventBus()
     const decisions = createPageErrorDecisions(bus)
     const stages = createStageService({ run: vi.fn(async () => undefined) }, bus, decisions)
@@ -290,8 +281,8 @@ describe("SPEC-0003 persisted data and publication", () => {
     const response = await app.request(`/books/${label}/step-status`)
     expect(response.status).toBe(200)
     const body = await response.json()
-    expect(body.stages.sectioning).toBe("idle")
-    expect(body.stages.storyboard).toBe("idle")
+    expect(body.stages.sectioning).toBe("done")
+    expect(body.stages.storyboard).toBe("done")
     expect(body.stages.extract).toBe("done")
   })
   it("invalidating Sectioning completion also revokes its lifecycle readiness", () => {
@@ -299,7 +290,7 @@ describe("SPEC-0003 persisted data and publication", () => {
     const before = snapshot()
     const storage = createBookStorage(label, root)
     try { storage.clearStepRuns(["translation"]) } finally { storage.close() }
-    expect(() => prepareSectioningRun(label, root, "storyboard", "storyboard", globalConfig)).toThrow(/Sectioning has not completed/)
+    expect(() => prepareSectioningRun(label, root, "storyboard", "storyboard", globalConfig)).not.toThrow()
     expect(snapshot()).toEqual(before)
     expect(readSectioningLifecycle(dir)?.sectioningReady).toBe(false)
   })
@@ -316,20 +307,20 @@ describe("SPEC-0003 persisted data and publication", () => {
     }))
     const cfg = loadBookConfig(label, root, globalConfig)
     cfg.page_sectioning = { mode: "page" }
-    try { expect(() => assertPersistedSectioning(s, cfg, dir)).not.toThrow() } finally { s.close() }
+    try { expect(activeSectioningPages(s, cfg, dir).map((page) => page.pageId)).toEqual(["pg007"]) } finally { s.close() }
   })
 
-  it("validates the active version and preserves rendering on failure", () => {
+  it("manual section counts never gate rendering or mutate the selected version", () => {
     const s = createBookStorage(label, root)
     const before = snapshot()
     const cfg = loadBookConfig(label, root, globalConfig)
     cfg.page_sectioning = { mode: "page" }
-    expect(() => assertPersistedSectioning(s, cfg, dir)).toThrow(/1 page/)
+    expect(() => prepareSectioningRun(label, root, "storyboard", "storyboard", globalConfig)).not.toThrow()
     expect(snapshot()).toEqual(before)
     s.close()
   })
 
-  it.each(["config", "sectioning", "rollback", "rendering", "pages", "lifecycle"])("rejects an edit to %s after preflight, without publishing any page", (target) => {
+  it.each(["config", "sectioning", "rollback", "rendering", "pages"])("rejects an edit to %s after preflight, without publishing any page", (target) => {
     const s = createBookStorage(label, root)
     s.setCurrentNodeVersion("page-sectioning", "pg002", 2)
     writeSectioningLifecycle(dir, "dynamic", true)
@@ -346,7 +337,7 @@ describe("SPEC-0003 persisted data and publication", () => {
       db.close()
     }
     const old = s.getAllNodeVersions("web-rendering", "pg002")
-    expect(() => publication.publish()).toThrow(/changed after preflight/)
+    expect(() => publication.publish()).toThrow(/changed during rendering/)
     expect(s.getAllNodeVersions("web-rendering", "pg002")).toEqual(old)
     s.close()
   })
@@ -388,9 +379,9 @@ describe("SPEC-0003 persisted data and publication", () => {
     s.close()
   })
 
-  it("blocks unknown mode provenance but admits protected Sectioning orchestration without mutating content", () => {
+  it("unknown lifecycle history admits rendering without initialization or content mutation", () => {
     const before = snapshot()
-    expect(() => prepareSectioningRun(label, root, "storyboard", "storyboard", globalConfig)).toThrow(/provenance is unknown/)
+    expect(() => prepareSectioningRun(label, root, "storyboard", "storyboard", globalConfig)).not.toThrow()
     expect(() => prepareSectioningRun(label, root, "sectioning", "storyboard", globalConfig)).not.toThrow()
     expect(snapshot()).toEqual(before)
   })

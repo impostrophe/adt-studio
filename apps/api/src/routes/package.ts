@@ -1,3 +1,4 @@
+import { storyboardCoverage, activeSectioningPages } from "@adt/pipeline"
 import fs from "node:fs"
 import path from "node:path"
 import { Hono } from "hono"
@@ -14,7 +15,7 @@ import {
   mergeAccessibilityResults,
   isFixedLayoutBook,
   prepareSectioningRun,
-  SectioningSafetyError,
+  
 } from "@adt/pipeline"
 import type { Storage } from "@adt/storage"
 import type { TaskService } from "../services/task-service.js"
@@ -194,7 +195,7 @@ export function createPackageRoutes(
     try {
       const pages = storage.getPages()
       const hasRendering = pages.some(
-        (p) => storage.getLatestNodeData("web-rendering", p.pageId) !== null,
+        (p) => storyboardCoverage(storage, [p.pageId]).rendered > 0,
       )
       if (!hasRendering) {
         throw new HTTPException(409, {
@@ -278,14 +279,14 @@ export function createPackageRoutes(
     const status: PackagingStatus = { label: safeLabel, hasAdt }
     if (version) status.version = version
     if (fs.existsSync(path.join(bookDir, `${safeLabel}.db`))) {
+      const storage = createBookStorage(safeLabel, booksDir)
       try {
-        // Use the same admission rule as preview/export. File existence says
-        // the package is retained, not that it is compatible with this mode.
-        prepareSectioningRun(safeLabel, booksDir, "package", "package", configPath)
-      } catch (error) {
-        if (!(error instanceof SectioningSafetyError) || error.code !== "SECTIONING_STALE") throw error
-        status.modeCompatible = false
+        const coverage = storyboardCoverage(storage, activeSectioningPages(storage, loadBookConfig(safeLabel, booksDir, configPath), bookDir).map((page) => page.pageId))
+        status.complete = coverage.complete && coverage.rendered > 0
+        status.hasAdt = status.hasAdt && coverage.rendered > 0
       }
+      finally { storage.close() }
+
     }
     return c.json(status)
   })

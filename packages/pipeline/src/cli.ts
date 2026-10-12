@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 
 import path from "node:path"
-import fs from "node:fs"
 import cliProgress from "cli-progress"
-import { PIPELINE, STAGE_BY_NAME, STEP_TO_STAGE, AuthoredReplacement } from "@adt/types"
+import { PIPELINE, STAGE_BY_NAME, STEP_TO_STAGE } from "@adt/types"
 import type { StepName, StageName, ProgressEvent } from "@adt/types"
 import { parseCliArgs, USAGE } from "./cli-args.js"
 import { runFullPipeline } from "./pipeline-dag.js"
@@ -119,10 +118,8 @@ async function main(): Promise<void> {
     process.exit(args.length === 0 ? 1 : 0)
   }
 
-  const { label, pdfPath, startPage, endPage, booksRoot, concurrency, fromStage, toStage, protectedReplacementsFile } =
+  const { label, pdfPath, startPage, endPage, booksRoot, concurrency } =
     parseCliArgs(args)
-  const protectedReplacements = protectedReplacementsFile
-    ? AuthoredReplacement.array().parse(JSON.parse(fs.readFileSync(protectedReplacementsFile, "utf8"))) : undefined
   const controller = new AbortController()
   const cancel = () => controller.abort()
   process.on("SIGINT", cancel)
@@ -142,8 +139,6 @@ async function main(): Promise<void> {
         startPage,
         endPage,
         concurrency,
-        fromStage, toStage, protectedReplacements,
-        replaceManual: protectedReplacementsFile !== undefined,
         signal: controller.signal,
         promptsDir,
         templatesDir,
@@ -175,7 +170,7 @@ main().catch((err) => {
   if (err instanceof ExtractionAdmissionError || err instanceof BookBusyError) {
     process.stderr.write(`\nFailed: ${err.message}\n`)
     if (err instanceof ExtractionAdmissionError && err.summary) {
-      process.stderr.write("Extraction: verified reusable\nDownstream: blocked; no work started\nCurrent/stale/protected scopes: not assessed\nContent changed: no. Generated output: none.\nPipeline incomplete; exiting with status 1.\nUse --from-stage sectioning --to-stage storyboard for the supported B1 range.\n")
+      process.stderr.write("Extraction: verified reusable\nDownstream: blocked; no work started\nCurrent/stale/protected scopes: not assessed\nContent changed: no. Generated output: none.\nPipeline incomplete; exiting with status 1.\nExisting-book CLI resume is deferred to SPEC-0010. Use Studio for Sectioning replacement.\n")
     }
     process.exit(1)
   }

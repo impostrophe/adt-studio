@@ -1,6 +1,6 @@
 import path from "node:path"
 import { z } from "zod"
-import { BookLabel, SectioningResumeStage, STAGE_ORDER } from "@adt/types"
+import { BookLabel } from "@adt/types"
 
 export const USAGE = `Usage: pnpm pipeline <label> <pdf-file> [options]
 
@@ -13,9 +13,6 @@ Options:
   --end-page <n>      End at page N (inclusive)
   --books-dir <dir>   Books root directory (default: books)
   --concurrency <n>   Max parallel LLM calls (default: from config or 5)
-  --from-stage <s>    Resume Sectioning or Storyboard from verified extraction
-  --to-stage <s>      Last resumed stage: sectioning or storyboard (both required)
-  --protected-replacements <file>  Confirm exact protected records from a JSON array
   -h, --help          Show this help`
 
 const ParsedCliArgsSchema = z
@@ -26,9 +23,6 @@ const ParsedCliArgsSchema = z
     endPage: z.coerce.number().int().positive().optional(),
     booksDir: z.string().min(1).optional(),
     concurrency: z.coerce.number().int().positive().optional(),
-    fromStage: SectioningResumeStage.optional(),
-    toStage: SectioningResumeStage.optional(),
-    protectedReplacementsFile: z.string().min(1).optional(),
   })
   .refine(
     (value) =>
@@ -42,9 +36,6 @@ const ParsedCliArgsSchema = z
   )
 
 export interface ParsedCliArgs {
-  fromStage?: SectioningResumeStage
-  toStage?: SectioningResumeStage
-  protectedReplacementsFile?: string
   label: string
   pdfPath: string
   startPage?: number
@@ -59,16 +50,9 @@ export function parseCliArgs(args: string[]): ParsedCliArgs {
   let endPageRaw: string | undefined
   let booksDirRaw: string | undefined
   let concurrencyRaw: string | undefined
-  const resume: Record<string, string> = {}
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
-    const resumeKeys: Record<string, string> = { "--from-stage": "fromStage", "--to-stage": "toStage", "--protected-replacements": "protectedReplacementsFile" }
-    if (resumeKeys[arg]) {
-      if (!args[i + 1] || args[i + 1].startsWith("--")) throw new Error(`Missing value for ${arg}`)
-      resume[resumeKeys[arg]] = args[++i]
-      continue
-    }
     if (arg === "--start-page") {
       if (args[i + 1] === undefined) {
         throw new Error("Missing value for --start-page")
@@ -114,23 +98,14 @@ export function parseCliArgs(args: string[]): ParsedCliArgs {
     endPage: endPageRaw,
     booksDir: booksDirRaw,
     concurrency: concurrencyRaw,
-    ...resume,
   })
 
   if (!parsed.success) {
     const message = parsed.error.issues.map((issue) => issue.message).join("; ")
     throw new Error(message)
   }
-  const { fromStage, toStage, protectedReplacementsFile } = parsed.data
-  if ((fromStage === undefined) !== (toStage === undefined)
-    || (fromStage && toStage && STAGE_ORDER.indexOf(fromStage) > STAGE_ORDER.indexOf(toStage))
-    || (protectedReplacementsFile && fromStage !== "sectioning")) {
-    throw new Error("Specify an ordered --from-stage and --to-stage range; protected replacements require Sectioning")
-  }
 
   return {
-    fromStage, toStage,
-    protectedReplacementsFile: protectedReplacementsFile ? path.resolve(protectedReplacementsFile) : undefined,
     label: parsed.data.label,
     pdfPath: path.resolve(parsed.data.pdfFile),
     startPage: parsed.data.startPage,

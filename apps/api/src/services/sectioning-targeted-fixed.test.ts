@@ -90,17 +90,17 @@ it("runs fixed Storyboard through HTTP without requiring the unused LLM or visua
   expect(transport).not.toHaveBeenCalled()
 })
 
-it("targeted publication cannot clear the whole-book mode barrier until every active page is included", async () => {
+it("targeted publication ignores historical lifecycle flags and retains unrelated pages", async () => {
   writeSectioningLifecycle(dir, "page", true, true)
   const app = routes()
   expect((await request(app, "pg001/re-render")).status).toBe(200)
   expect(readSectioningLifecycle(dir)?.storyboardPending).toBe(true)
   expect((await request(app, "re-render", { pageIds: ["pg001", "pg002"] })).status).toBe(200)
-  expect(readSectioningLifecycle(dir)?.storyboardPending).toBe(false)
+  expect(readSectioningLifecycle(dir)?.storyboardPending).toBe(true)
   expect(transport).not.toHaveBeenCalled()
 })
 
-it("a bad unselected page still blocks targeted fixed rendering before any mutation", async () => {
+it("manual section counts on an unselected page do not block targeted fixed rendering", async () => {
   const s = store()
   const invalid = semantic(2)
   invalid.sections.push({ ...invalid.sections[0], sectionId: "pg002_sec010" })
@@ -108,9 +108,9 @@ it("a bad unselected page still blocks targeted fixed rendering before any mutat
   s.close()
   const before = history()
   const response = await request(routes(), "pg001/re-render")
-  expect(response.status).toBe(409)
-  expect(await response.json()).toMatchObject({ code: "SECTIONING_PREFLIGHT_FAILED", total: 1 })
-  expect(history()).toEqual(before)
+  expect(response.status).toBe(200)
+  expect(history()[1]).toEqual(before[1])
+  expect(history()[0]["web-rendering"]).toHaveLength(2)
   expect(transport).not.toHaveBeenCalled()
 })
 
@@ -135,6 +135,6 @@ it("uses the active part window for targeted fixed publication and retains the o
   expect((await request(routes(), "pg002/re-render")).status).toBe(200)
   expect(history()[0]).toEqual(before[0])
   expect(history()[1]["web-rendering"]).toHaveLength(2)
-  expect(readSectioningLifecycle(dir)?.storyboardPending).toBe(false)
+  expect(readSectioningLifecycle(dir)?.storyboardPending).toBe(true)
   expect(transport).not.toHaveBeenCalled()
 })

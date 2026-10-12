@@ -4,8 +4,8 @@ import path from "node:path"
 import { Hono } from "hono"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { PIPELINE } from "@adt/types"
-import { createBookStorage, readSectioningLifecycle, writeSectioningLifecycle } from "@adt/storage"
-import { assertSectioningCurrent, getRenderSectioning, loadBookConfig } from "@adt/pipeline"
+import { createBookStorage, openBookDb, readSectioningLifecycle, writeSectioningLifecycle } from "@adt/storage"
+import { storyboardCoverage, getRenderSectioning, loadBookConfig } from "@adt/pipeline"
 import { createBookRoutes } from "../routes/books.js"
 import { createStageRoutes } from "../routes/stages.js"
 import { createPageRoutes } from "../routes/pages.js"
@@ -27,11 +27,16 @@ const store = () => createBookStorage(label, root)
 const tree = (id: string, n = 1, source?: "ai" | "manual") => ({ source, reasoning: "retained", sections: Array.from({ length: n }, (_, i) => ({
   sectionId: `${id}_sec00${i + 1}`, sectionType: "text_only", pageNumber: Number(id.slice(1)),
   backgroundColor: "white", textColor: "black", isPruned: false,
-  nodes: [{ nodeId: `${id}_t00${i + 1}`, text: "Retained text", role: "text", isPruned: false }],
+  nodes: [1, 2].map((n) => ({ nodeId: `${id}_t${i}${n}`, text: `Retained text ${n}`, role: "text", isPruned: false })),
 })) })
 function history(node: string, id: string) { const s = store(); try { return s.getAllNodeVersions(node, id) } finally { s.close() } }
 const send = (route: string, body: unknown, method = "POST") => app.request(`/books/${label}/${route}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(route === "config" ? { config: body } : body) })
-const replacement = () => ({ replaceManual: true, protectedReplacements: ["p2", "p7"].map((itemId) => ({ node: "page-sectioning", itemId, version: 1 })) })
+async function replacement(ids?: string[]) {
+  const response = await app.request(`/books/${label}/step-status`)
+  expect(response.status).toBe(200)
+  const { protectedWork } = await response.json()
+  return { replaceManual: true, protectedReplacements: protectedWork.filter((record: { node: string; itemId: string }) => record.node === "page-sectioning" && (!ids || ids.includes(record.itemId))).map(({ pageNumber: _, ...record }: Record<string, unknown>) => record) }
+}
 async function run(extra = {}) {
   let result: { status: string; error?: string } | undefined
   const dispose = bus.addListener(label, (event) => {
@@ -54,7 +59,7 @@ beforeEach(() => {
     const id = `p${n}`
     s.putExtractedPage({ pageId: id, pageNumber: n, text: "Source", images: [], pageImage: { imageId: `${id}_page`, buffer: Buffer.from("retained pixels"), format: "png", hash: "pixels", width: 4, height: 6 } })
     s.putNodeData("page-sectioning", id, tree(id, 2, n === 2 ? "manual" : undefined))
-    s.putNodeData("web-rendering", id, { sections: [{ sectionIndex: 0, sectionType: "text_only", reasoning: "old", html: "Retained HTML" }] })
+    s.putNodeData("web-rendering", id, { sections: [{ sectionIndex: 0, sectionType: "text_only", reasoning: "old", sectionId: `${id}_sec001`, html: `<section data-section-id="${id}_sec001">Retained HTML</section>` }] })
   }
   s.putNodeData("book-outline", "book", { entries: [], styleClusters: [], reasoning: "fixture" })
   s.putNodeData("metadata", "book", { title: "Fixture", language_code: "en" })
@@ -74,106 +79,130 @@ beforeEach(() => {
 })
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
 
-it.each(["reflowable", "fixed", "reflowable-part", "fixed-part"])("changes mode, retains stale output, explicitly regenerates protected pages and publishes %s", async (layout) => {
+// Original AC-18/19 mode gates and retained-current HTML were superseded by
+// the authorized October review. These cases exercise their revised outcomes.
+it.each(["reflowable", "fixed", "reflowable-part", "fixed-part"])("mode preference, missing-only run, explicit reset and publication through HTTP: %s", async (layout) => {
   if (layout.startsWith("fixed")) fs.appendFileSync(configPath, "default_render_strategy: fixed\nrender_strategies:\n  fixed:\n    render_type: fixed_layout\n")
   if (layout.endsWith("part")) fs.writeFileSync(path.join(dir, "part.json"), JSON.stringify({ adtPart: 1, sourceLabel: label, title: null,
     range: { startPage: 5, endPage: 10 }, pageCount: 100, fingerprint: {}, identityHash: "i", semanticsHash: "s", createdAt: "now", partLabelSuggestion: "part" }))
+  const active = layout.endsWith("part") ? ["p7"] : ["p2", "p7"]
   const before = ["p2", "p7"].map((id) => [history("page-sectioning", id), history("web-rendering", id)])
   const pixels = fs.readFileSync(path.join(dir, "images/p7_page.png"))
   expect((await send("config", { page_sectioning: { mode: "page" } }, "PUT")).status).toBe(200)
-  expect(readSectioningLifecycle(dir)?.sectioningReady).toBe(false)
   expect(["p2", "p7"].map((id) => [history("page-sectioning", id), history("web-rendering", id)])).toEqual(before)
-  expect((await send("stages/run", { fromStage: "storyboard", toStage: "storyboard" })).status).toBe(409)
-  expect((await run()).error).toContain("explicit replacement")
+  expect((await run({ toStage: "sectioning" })).status).toBe("completed")
   expect(sectionPage).not.toHaveBeenCalled()
-  expect(renderPage).not.toHaveBeenCalled()
-  expect((await run(replacement())).status).toBe("completed")
-  const s = store()
+  expect(["p2", "p7"].map((id) => [history("page-sectioning", id), history("web-rendering", id)])).toEqual(before)
+  const consent = await replacement()
+  expect(consent.protectedReplacements.map((r: { itemId: string }) => r.itemId)).toEqual(active)
+  expect((await run({ ...consent, toStage: "sectioning" })).status).toBe("completed")
+  let s = store()
   try {
-    expect(() => assertSectioningCurrent(s, loadBookConfig(label, root, configPath), dir)).not.toThrow()
-    const active = layout.endsWith("part") ? ["p7"] : ["p2", "p7"]
-    expect(sectionPage.mock.calls.map(([input]) => input.pageId)).toEqual(active)
     for (const id of active) {
-      expect(s.getAllNodeVersions("page-sectioning", id)).toHaveLength(2)
+      expect(s.getLatestNodeData("web-rendering", id)?.data).toBeNull()
       expect(s.getAllNodeVersions("web-rendering", id)).toHaveLength(2)
       expect(s.getLatestNodeData("page-sectioning", id)?.data).toMatchObject({ source: "ai", sections: [{ sectionId: `${id}_sec003` }] })
-      expect(getRenderSectioning(s, id)?.sections).toHaveLength(1)
     }
-    expect(s.getStepRuns().filter((run) => PIPELINE.find((stage) => stage.name === "extract")!.steps.some((step) => step.name === run.step)).every((run) => run.status === "done")).toBe(true)
-    if (layout.endsWith("part")) expect([history("page-sectioning", "p2"), history("web-rendering", "p2")]).toEqual(before[0])
+    expect(storyboardCoverage(s, active).complete).toBe(false)
   } finally { s.close() }
+  const target = active[0]
+  const split = await send(`pages/${target}/sections/0/split`, { baseVersion: 2, beforeNodeIndex: 1 })
+  expect(split.status, await split.clone().text()).toBe(200)
+  expect((await run({ fromStage: "storyboard" })).status).toBe("completed")
+  s = store()
+  try {
+    expect(storyboardCoverage(s, active).complete).toBe(true)
+    expect((s.getLatestNodeData("page-sectioning", target)?.data as ReturnType<typeof tree>).sections).toHaveLength(2)
+    // Fixed layout deliberately keeps its positioned rendering architecture;
+    // arbitrary semantic counts are accepted but do not replace PDF geometry.
+    expect(getRenderSectioning(s, target)?.sections).toHaveLength(layout.startsWith("fixed") ? 1 : 2)
+    for (const id of active) expect(s.getAllNodeVersions("web-rendering", id)).toHaveLength(3)
+  } finally { s.close() }
+  if (layout.endsWith("part")) expect([history("page-sectioning", "p2"), history("web-rendering", "p2")]).toEqual(before[0])
   expect(fs.readFileSync(path.join(dir, "images/p7_page.png"))).toEqual(pixels)
 })
 
-it("retains compatible unknown-origin output and establishes readiness only after persisted preflight", async () => {
-  const s = store(); for (const id of ["p2", "p7"]) s.putNodeData("page-sectioning", id, tree(id)); s.close()
+it("older books render intentional By Page edits without lifecycle initialization", async () => {
+  fs.rmSync(path.join(dir, ".sectioning-lifecycle.json"))
+  fs.appendFileSync(configPath, "# inherited preference\n")
   await send("config", { page_sectioning: { mode: "page" } }, "PUT")
-  expect((await run()).status).toBe("completed")
+  fs.rmSync(path.join(dir, ".sectioning-lifecycle.json"))
+  expect((await run({ fromStage: "storyboard" })).status).toBe("completed")
   expect(sectionPage).not.toHaveBeenCalled()
   expect(renderPage).toHaveBeenCalledTimes(2)
-  expect(history("page-sectioning", "p2")).toHaveLength(2)
-  expect(readSectioningLifecycle(dir)?.sectioningReady).toBe(true)
+  expect(history("page-sectioning", "p2")).toHaveLength(1)
+  expect(readSectioningLifecycle(dir)).toBeNull()
+  expect((await app.request(`/books/${label}/adt-preview/content/pages.json`)).status).toBe(200)
 })
 
-it("queues Storyboard behind real protected generation and then permits a targeted rerender", async () => {
-  await send("config", { page_sectioning: { mode: "page" } }, "PUT")
+it("queues Storyboard behind explicit reset and then permits a targeted rerender", async () => {
   let release!: () => void
   sectionPage.mockImplementationOnce(async ({ pageId }) => { await new Promise<void>((resolve) => { release = resolve }); return tree(pageId) })
   const completions: unknown[] = []
   bus.addListener(label, (event) => { if (event.type === "stage-run-complete") completions.push(event) })
-  expect((await send("stages/run", { fromStage: "sectioning", toStage: "sectioning", ...replacement() })).status).toBe(200)
+  expect((await send("stages/run", { fromStage: "sectioning", toStage: "sectioning", ...await replacement() })).status).toBe(200)
   await vi.waitFor(() => expect(release).toBeDefined())
   const queued = await send("stages/run", { fromStage: "storyboard", toStage: "storyboard" })
   expect(await queued.json()).toMatchObject({ status: "queued" })
-  expect(history("web-rendering", "p2")).toHaveLength(1)
+  expect(history("web-rendering", "p2")).toHaveLength(2)
+  expect(history("web-rendering", "p2")[1].data).toBeNull()
   release()
   await vi.waitFor(() => expect(completions).toHaveLength(2), { timeout: 10_000 })
   expect((await send("pages/p2/re-render", {})).status).toBe(200)
-  expect(history("web-rendering", "p2")).toHaveLength(3)
-  expect(history("web-rendering", "p7")).toHaveLength(2)
+  expect(history("web-rendering", "p2")).toHaveLength(4)
+  expect(history("web-rendering", "p7")).toHaveLength(3)
 })
 
-it("does not publish a protected replacement against externally changed configuration", async () => {
-  await send("config", { page_sectioning: { mode: "page" } }, "PUT")
-  sectionPage.mockImplementationOnce(async ({ pageId }) => {
-    fs.appendFileSync(configPath, "editing_language: fr\n")
-    return tree(pageId)
-  })
+it("configuration edits during generation retain authored Sectioning and the committed reset", async () => {
+  sectionPage.mockImplementationOnce(async ({ pageId }) => { fs.appendFileSync(configPath, "editing_language: fr\n"); return tree(pageId) })
   const before = history("page-sectioning", "p2")
-  expect((await run(replacement())).status).toBe("failed")
+  expect((await run(await replacement())).status).toBe("failed")
   expect(history("page-sectioning", "p2")).toEqual(before)
-  expect(history("web-rendering", "p2")).toHaveLength(1)
-  expect(readSectioningLifecycle(dir)?.sectioningReady).toBe(false)
+  expect(history("web-rendering", "p2")).toHaveLength(2)
+  expect(history("web-rendering", "p2")[1].data).toBeNull()
 })
 
-it("rejects stale replacement confirmation synchronously after a previous failed run", async () => {
-  await send("config", { page_sectioning: { mode: "page" } }, "PUT")
-  expect((await run()).status).toBe("failed")
+it.each(["page-sectioning", "web-rendering", "fixed-layout-sectioning"])("rejects stale %s confirmation before reset or provider work", async (node) => {
+  const consent = await replacement()
   const s = store()
-  s.putNodeData("page-sectioning", "p2", tree("p2", 2, "manual"))
+  s.putNodeData(node, "p2", tree("p2", 2, "manual"))
   const before = s.getStepRuns()
   s.close()
-  const response = await send("stages/run", { fromStage: "sectioning", toStage: "storyboard", ...replacement() })
-  if (response.status === 200) await vi.waitFor(() => expect(service.getStatus(label).active?.status).toBe("failed"))
+  const response = await send("stages/run", { fromStage: "sectioning", toStage: "storyboard", ...consent })
   expect(response.status).toBe(409)
-  expect(await response.json()).toMatchObject({ currentVersion: 2 })
+  expect(await response.json()).toMatchObject({ code: "VERSION_CONFLICT" })
   expect(sectionPage).not.toHaveBeenCalled()
   const after = store()
-  try { expect(after.getStepRuns()).toEqual(before) }
-  finally { after.close() }
-  expect(history("page-sectioning", "p2")).toHaveLength(2)
-  expect(history("web-rendering", "p2")).toHaveLength(1)
+  try { expect(after.getStepRuns()).toEqual(before) } finally { after.close() }
 })
 
-it("keeps preview and export blocked between Sectioning completion and whole-book Storyboard publication", async () => {
-  expect((await send("config", { page_sectioning: { mode: "page" } }, "PUT")).status).toBe(200)
-  expect((await run({ ...replacement(), toStage: "sectioning" })).status).toBe("completed")
-  expect(readSectioningLifecycle(dir)).toMatchObject({ sectioningReady: true, storyboardPending: true })
-  const previewUrl = `/books/${label}/adt-preview/content/pages.json`
-  expect((await app.request(previewUrl)).status).toBe(409)
-  await expect(prepareExport(label, "webpub", root, path.resolve("assets/adt"), configPath)).rejects.toThrow(/Storyboard still contains retained output/)
-  expect(history("web-rendering", "p2")).toHaveLength(1)
+it.each([null, "null", "{broken json", JSON.stringify({ sections: "invalid" })])("ordinary Sectioning retains unreadable current records and Storyboard skips only that page: %s", async (raw) => {
+  const db = openBookDb(path.join(dir, `${label}.db`))
+  db.run("UPDATE node_data SET data = ? WHERE node = 'page-sectioning' AND item_id = 'p2'", [raw])
+  db.close()
+  expect((await run({ toStage: "sectioning" })).status).toBe("completed")
+  expect(sectionPage).not.toHaveBeenCalled()
   expect((await run({ fromStage: "storyboard" })).status).toBe("completed")
-  expect(readSectioningLifecycle(dir)?.storyboardPending).toBe(false)
-  expect((await app.request(previewUrl)).status).toBe(200)
+  expect(renderPage.mock.calls.map(([input]) => input.pageId)).toEqual(["p7"])
+  const status = await (await app.request(`/books/${label}/step-status`)).json()
+  expect(status.coverage).toMatchObject({ complete: false, missingPages: ["p2"] })
+  expect(status.stages.storyboard).not.toBe("done")
+  const check = openBookDb(path.join(dir, `${label}.db`))
+  expect(check.get("SELECT data FROM node_data WHERE node = 'page-sectioning' AND item_id = 'p2'")).toEqual({ data: raw })
+  check.close()
+})
+
+it("partial section rendering stays usable but incomplete across page, library, stage and export disclosure", async () => {
+  const s = store(); s.putNodeData("web-rendering", "p2", null); s.close()
+  const result = await app.request(`/books/${label}/pages/p2/re-render?sectionIndex=0`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+  expect(result.status, await result.clone().text()).toBe(200)
+  const status = await (await app.request(`/books/${label}/step-status`)).json()
+  expect(status.coverage.complete).toBe(false)
+  expect(status.stages.storyboard).not.toBe("done")
+  const detail = await (await app.request(`/books/${label}`)).json()
+  expect(detail.completedStages).not.toContain("storyboard")
+  const preview = await app.request(`/books/${label}/adt-preview/content/pages.json`)
+  expect(preview.status).toBe(200)
+  const exported = await prepareExport(label, "webpub", root, path.resolve("assets/adt"), configPath)
+  expect(exported.warnings).toContainEqual({ kind: "missing-storyboard", pageId: "p2" })
 })

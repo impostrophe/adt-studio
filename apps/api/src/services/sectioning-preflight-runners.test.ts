@@ -21,7 +21,7 @@ let dir: string
 let configPath: string
 const label = "book"
 const section = { sectionId: "p2_sec009", sectionType: "text", backgroundColor: "white", textColor: "black", pageNumber: 2, isPruned: false, nodes: [] }
-const output = (n = 1) => ({ reasoning: "retained", sections: Array.from({ length: n }, () => ({ ...section })) })
+const output = (n = 1) => ({ reasoning: "retained", sections: Array.from({ length: n }, (_, index) => ({ ...section, sectionId: `p2_sec00${index + 1}` })) })
 function store() { return createBookStorage(label, root) }
 function history() { const s = store(); try { return s.getPages().map((p) => s.getAllNodeVersions("web-rendering", p.pageId)) } finally { s.close() } }
 const options = () => ({ booksDir: root, promptsDir: root, configPath, fromStage: "storyboard", toStage: "storyboard", credentials: {} })
@@ -29,7 +29,7 @@ beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), "sectioning-runners-"))
   dir = path.join(root, label)
   configPath = path.join(root, "global.yaml")
-  fs.writeFileSync(configPath, 'structure_types: {}\nrole_types: {}\ndefault_model: "ollama:llama3"\npage_sectioning:\n  mode: page\n')
+  fs.writeFileSync(configPath, 'structure_types: {}\nrole_types: {}\ndefault_model: "ollama:llama3"\nconcurrency: 1\npage_sectioning:\n  mode: page\n')
   const s = store()
   for (const n of [2, 7]) {
     s.putExtractedPage({ pageId: `p${n}`, pageNumber: n, text: "text", pageImage: { imageId: `p${n}_page`, buffer: Buffer.from("image"), hash: "test", width: 4, height: 6, format: "png" }, images: [] })
@@ -43,91 +43,80 @@ beforeEach(() => {
 })
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
 
-describe("production preflight boundaries", () => {
-  it.each(["reflowable", "fixed"])("publishes valid By Page %s output while retaining prior versions", async (layout) => {
-    const s = store(); s.putNodeData("page-sectioning", "p7", output()); s.close()
-    if (layout === "fixed") fs.appendFileSync(configPath, '\ndefault_render_strategy: fixed\nrender_strategies:\n  fixed:\n    render_type: fixed_layout\n')
-    await createStageRunner().run(label, options(), { emit() {} })
-    expect(history().map((versions) => versions.length)).toEqual([2, 2])
-    const saved = store()
+function rendered(input: { sectioning: ReturnType<typeof output> }) {
+  return { sections: input.sectioning.sections.map((section, sectionIndex) => ({ sectionId: section.sectionId, sectionIndex, sectionType: section.sectionType, reasoning: "fixture", html: `<section data-section-id="${section.sectionId}">Current output</section>` })) }
+}
+function app() { return new Hono().onError(errorHandler).route("/", createPageRoutes(root, root, undefined, configPath)) }
+
+describe("revised saved-content and per-page publication boundaries", () => {
+  it.each(["first generation", "same-layout rerun"])("an early page is available through the real page API during a slow second page: %s", async (kind) => {
+    if (kind === "first generation") { const s = store(); for (const id of ["p2", "p7"]) s.putNodeData("web-rendering", id, null); s.close() }
+    let finish!: () => void
+    render.mockImplementation(async (input) => {
+      if (input.pageId === "p7") await new Promise<void>((resolve) => { finish = resolve })
+      return rendered(input)
+    })
+    const running = createStageRunner().run(label, options(), { emit() {} })
     try {
-      for (const page of ["p2", "p7"]) {
-        expect(saved.getAllNodeVersions("web-rendering", page).find((row) => row.version === 1)?.data)
-          .toEqual({ sections: [{ html: "saved" }] })
-      }
-    } finally { saved.close() }
-    expect(render).toHaveBeenCalledTimes(layout === "fixed" ? 0 : 2)
+      await vi.waitFor(() => expect(finish).toBeDefined())
+      const response = await app().request(`/books/${label}/pages`)
+      expect(response.status).toBe(200)
+      const pages = await response.json()
+      expect(pages.find((p: { pageId: string }) => p.pageId === "p2")).toMatchObject({ hasRendering: true })
+      const row = store(); try { expect(row.getLatestNodeData("web-rendering", "p2")?.data).toEqual(rendered({ sectioning: output(1) })) } finally { row.close() }
+    } finally { finish?.(); await running }
+    expect(render).toHaveBeenCalledTimes(2)
   })
 
-  it("cancellation after rendering starts publishes no partial page batch", async () => {
-    const s = store(); s.putNodeData("page-sectioning", "p7", output()); s.close()
+  it.each(["failure", "skip", "cancel"])("a later %s retains both the successfully published page and the failed page's old output", async (outcome) => {
     const before = history()
     const controller = new AbortController()
-    render.mockImplementation(async () => { controller.abort(); return { sections: [] } })
-    await expect(createStageRunner().run(label, { ...options(), signal: controller.signal }, { emit() {} })).rejects.toThrow()
-    expect(render).toHaveBeenCalled()
-    expect(history()).toEqual(before)
+    render.mockImplementation(async (input) => {
+      if (input.pageId === "p7") { if (outcome === "cancel") controller.abort(); throw new Error("second page unavailable") }
+      return rendered(input)
+    })
+    const running = createStageRunner().run(label, { ...options(), signal: controller.signal,
+      ...(outcome === "skip" ? { pageErrorPolicy: "ask" as const, requestPageDecision: async () => "skip" as const } : {}),
+    }, { emit() {} })
+    if (outcome === "skip") await running
+    else await expect(running).rejects.toThrow()
+    expect(history()[0]).toHaveLength(before[0].length + 1)
+    expect(history()[1]).toEqual(before[1])
   })
 
-  it("honors cancellation at fixed-layout rendering admission", async () => {
-    const s = store(); s.putNodeData("page-sectioning", "p7", output()); s.close()
+  it("manual counts do not block immediate or batched targeted HTTP rendering of another page", async () => {
+    render.mockImplementation(async (input) => rendered(input))
+    const before = history()[1]
+    for (const [suffix, body] of [["p2/re-render", {}], ["re-render", { pageIds: ["p2"] }]] as const) {
+      const response = await app().request(`/books/${label}/pages/${suffix}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      expect(response.status, await response.clone().text()).toBe(200)
+    }
+    expect(history()[1]).toEqual(before)
+    await reRenderPages([{ ...options(), label, pageId: "p2" }])
+    expect(render).toHaveBeenCalledTimes(3)
+  })
+
+  it("a targeted layout switch refuses a subset before provider calls", async () => {
     fs.appendFileSync(configPath, '\ndefault_render_strategy: fixed\nrender_strategies:\n  fixed:\n    render_type: fixed_layout\n')
     const before = history()
-    const controller = new AbortController()
-    await expect(createStageRunner().run(label, { ...options(), signal: controller.signal }, {
-      emit(event) { if (event.type === "step-start" && event.step === "web-rendering") controller.abort() },
-    })).rejects.toThrow()
+    await expect(reRenderPages([{ ...options(), label, pageId: "p2" }])).rejects.toThrow("STORYBOARD_PUBLICATION_INCOMPLETE")
     expect(history()).toEqual(before)
-  })
-
-  it.each(["reflowable", "fixed"])("rejects invalid persisted input before any %s stage renderer runs", async (layout) => {
-    if (layout === "fixed") fs.appendFileSync(configPath, '\ndefault_render_strategy: fixed\nrender_strategies:\n  fixed:\n    render_type: fixed_layout\n')
-    const before = history()
-    await expect(createStageRunner().run(label, options(), { emit() {} })).rejects.toThrow(/1 page\(s\)/)
     expect(render).not.toHaveBeenCalled()
-    expect(history()).toEqual(before)
   })
 
-  it("rejects HTTP, targeted HTTP and direct targeted batch paths without touching output", async () => {
-    const bus = createBookEventBus()
-    const decisions = createPageErrorDecisions(bus)
-    const stages = createStageService(createStageRunner(), bus, decisions)
-    const app = new Hono().onError(errorHandler)
-      .route("/", createStageRoutes(stages, bus, decisions, root, root, root, configPath))
-      .route("/", createPageRoutes(root, root, undefined, configPath))
-    const before = history()
-    for (const [url, body] of [[`/books/${label}/stages/run`, { fromStage: "storyboard", toStage: "storyboard" }], [`/books/${label}/pages/p2/re-render`, {}], [`/books/${label}/pages/re-render`, { pageIds: ["p2"] }]] as const) {
-      const response = await app.request(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-      expect(response.status).toBe(409)
-      expect(await response.json()).toMatchObject({ code: "SECTIONING_PREFLIGHT_FAILED", total: 1, failures: [{ pageId: "p7", pageNumber: 7, reason: "multiple" }] })
-    }
-    await expect(reRenderPages([{ ...options(), label, pageId: "p2" }])).rejects.toThrow(/Re-run Sectioning/)
-    expect(render).not.toHaveBeenCalled()
-    expect(history()).toEqual(before)
+  it("returns the actual committed version after restoring an older output", async () => {
+    const s = store()
+    s.putNodeData("web-rendering", "p2", { sections: [] })
+    s.putNodeData("web-rendering", "p2", { sections: [] })
+    s.setCurrentNodeVersion("web-rendering", "p2", 1)
+    s.close()
+    render.mockImplementation(async (input) => rendered(input))
+    const [result] = await reRenderPages([{ ...options(), label, pageId: "p2" }])
+    expect(result.version).toBe(4)
+    const check = store(); try { expect(check.getLatestNodeData("web-rendering", "p2")?.version).toBe(result.version) } finally { check.close() }
   })
 
-  it("rechecks queued input at execution time after an earlier job changes it", async () => {
-    const s = store(); s.putNodeData("page-sectioning", "p7", output()); s.close()
-    const bus = createBookEventBus()
-    let finish!: () => void
-    const called: string[] = []
-    const runner = { run: vi.fn(async (_label: string, opts: { fromStage: string }) => {
-      called.push(opts.fromStage)
-      if (opts.fromStage === "captions") await new Promise<void>((resolve) => { finish = resolve })
-    }) }
-    const service = createStageService(runner, bus)
-    service.startStageRun(label, { ...options(), fromStage: "captions", toStage: "captions" })
-    await vi.waitFor(() => expect(finish).toBeDefined())
-    expect(service.startStageRun(label, options()).status).toBe("queued")
-    // Represents an update committed by the admitted earlier job.
-    const changed = store(); changed.putNodeData("page-sectioning", "p7", output(2)); changed.close()
-    finish()
-    await vi.waitFor(() => expect(service.getStatus(label).active?.status).toBe("failed"))
-    expect(called).toEqual(["captions"])
-    expect(service.getStatus(label).active?.error).toContain("Re-run Sectioning")
-  })
-
-  it("blocks the unsafe existing-book CLI/DAG fallback before source replacement", async () => {
+  it("blocks unsafe existing-book CLI/DAG fallback before source replacement", async () => {
     fs.writeFileSync(path.join(dir, `${label}.pdf`), "original PDF")
     const incoming = path.join(root, "incoming.pdf"); fs.copyFileSync(path.resolve("tests/fixtures/raven.pdf"), incoming)
     const before = history()

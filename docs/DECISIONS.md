@@ -958,7 +958,9 @@ separate action after saving. #619 and #626 remain background/deferred.
 
 ---
 
-## 025: Sectioning mode changes preserve content and gate rendering
+<a id="025-sectioning-mode-changes-preserve-content-and-gate-rendering"></a>
+
+## 025: Sectioning generation preferences, scoped reset and per-page publication
 
 **Status**: proposed
 **Date**: 2026-09-22

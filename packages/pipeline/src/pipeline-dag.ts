@@ -5,12 +5,10 @@ import { outputEvidence, inputSignature } from "./output-freshness.js"
 import { reconcileTextCatalog, buildImageInventory } from "./catalog-reconciliation.js"
 import { withBookWriter, withNewBookWriter, resolveBookPaths, recoverSectioningTransition, ExtractionAdmissionError } from "@adt/storage"
 import { prepareExtractionAdmission, extractionOptionsFromConfig } from "./extraction-admission.js"
-import { assertAuthoredReplacement, replacementConfirmed } from "./authored-output.js"
-import { isProtectedContent } from "./manual-edits.js"
+import { selectSectioningPages } from "./authored-output.js"
 import { createSectionIdFactory, retireSectionIds } from "./section-ids.js"
-import { preflightSectioning, SectioningPreflightError } from "./sectioning-preflight.js"
 import { reconcileSpeechInputs } from "./speech-inputs.js"
-import { prepareSectioningRun, completeSectioning, createStoryboardPublication, activeSectioningPages, sectioningInvalidationSteps, effectiveSectioningMode, SectioningSafetyError } from "./sectioning-lifecycle.js"
+import { completeSectioning, createStoryboardPublication, activeSectioningPages, SectioningSafetyError } from "./sectioning-lifecycle.js"
 import fs from "node:fs"
 import path from "node:path"
 import { createBookStorage } from "@adt/storage"
@@ -41,7 +39,7 @@ import type {
   VoiceSlot,
   WebRenderingOutput,
 } from "@adt/types"
-import { isTtsExcluded, voiceSlotEntryId, PIPELINE, STAGE_ORDER, SectioningResumeStage, AuthoredRunOptions, type AuthoredReplacement } from "@adt/types"
+import { isTtsExcluded, voiceSlotEntryId, PIPELINE } from "@adt/types"
 import { extractPDF, figureExtractionFlags, resolveFigureExtractionMode } from "./pdf-extraction.js"
 import {
   resolveFontsCacheDir,
@@ -143,10 +141,6 @@ function progressOnly(p: Progress): Progress {
 }
 
 export interface FullPipelineOptions {
-  fromStage?: SectioningResumeStage
-  toStage?: SectioningResumeStage
-  replaceManual?: boolean
-  protectedReplacements?: AuthoredReplacement[]
   signal?: AbortSignal
   label: string
   pdfPath: string
@@ -186,16 +180,8 @@ export async function runFullPipeline(options: FullPipelineOptions, progress: Pr
       startPage: options.startPage ?? config.start_page,
       endPage: options.endPage ?? config.end_page,
     })
-    const scoped = options.fromStage !== undefined || options.toStage !== undefined
-    if (scoped) {
-      const from = SectioningResumeStage.parse(options.fromStage)
-      const to = SectioningResumeStage.parse(options.toStage)
-      if (STAGE_ORDER.indexOf(from) > STAGE_ORDER.indexOf(to)) throw new Error("Invalid stage range")
-      if (admission.outcome !== "reused") throw new Error("Scoped resume requires completed extraction; run Extract first")
-      AuthoredRunOptions.parse(options)
-      prepareSectioningRun(options.label, options.booksRoot, from, to, options.configPath)
-    } else if (admission.outcome === "reused") {
-      // Other downstream executors still lack a safe resume contract.
+    // Expanded existing-book resume is owned by SPEC-0010, not this increment.
+    if (admission.outcome === "reused" || "fromStage" in options || "toStage" in options) {
       throw new ExtractionAdmissionError("UNSAFE_RESUME_UNAVAILABLE")
     }
     return runAdmittedFullPipeline(options, progress)
@@ -230,22 +216,6 @@ async function runAdmittedFullPipeline(
 
   try {
     const config = loadBookConfig(label, booksRoot, configPath)
-    const fromStage = options.fromStage
-    const toStage = options.toStage
-    const selectedStages = fromStage && toStage ? STAGE_ORDER.slice(STAGE_ORDER.indexOf(fromStage), STAGE_ORDER.indexOf(toStage) + 1) : undefined
-    if (fromStage && toStage) {
-      assertAuthoredReplacement(storage, { ...options, fromStage, toStage })
-      if (storage.getStepRuns().some((run) => run.status === "running")) throw new Error("A pipeline step is running; retry after it stops")
-      if (fromStage === "sectioning") {
-        const completed = new Map(storage.getStepRuns().map((run) => [run.step, run.status]))
-        // These are the stored prerequisites used by the same stage in Studio.
-        const extract = PIPELINE.find((stage) => stage.name === "extract")!
-        if (extract.steps.some((step) => !["done", "skipped"].includes(completed.get(step.name) ?? ""))) {
-          throw new Error("Complete Extract prerequisites in Studio before resuming Sectioning")
-        }
-        storage.clearStepRuns(sectioningInvalidationSteps())
-      }
-    }
     const cacheDir = options.cacheDir ?? path.join(path.resolve(booksRoot), label, ".cache")
     const promptEngine = createPromptEngine([path.join(bookDir, "prompts"), promptsDir], { basePromptModelId: config.base_prompt_model })
     const templateEngine = createTemplateEngine(templatesDir)
@@ -599,15 +569,7 @@ async function runAdmittedFullPipeline(
     executors.set("page-sectioning", async (p) => {
       sectioningPages = activeSectioningPages(storage, config, bookDir)
       previousSectioning = new Map(sectioningPages.map((page) => [page.pageId, storage.getLatestNodeData("page-sectioning", page.pageId)]))
-      const selected = sectioningPages.filter((page) => {
-        const row = previousSectioning.get(page.pageId)
-        return !row || !isProtectedContent(row.data as { source?: "ai" | "manual" }) || replacementConfirmed(options, "page-sectioning", page.pageId, row.version)
-      })
-      const selectedIds = new Set(selected.map((page) => page.pageId))
-      const retained = sectioningPages.filter((page) => !selectedIds.has(page.pageId))
-      const preflight = preflightSectioning(effectiveSectioningMode(config), retained,
-        new Map(retained.map((page) => [page.pageId, previousSectioning.get(page.pageId)?.data])))
-      if (preflight.total) throw new SectioningPreflightError(preflight)
+      const selected = selectSectioningPages(storage, sectioningPages, {})
       if (!selected.length) return
       const model = getModel(pageSectioningConfig.modelId)
       const bookOutline = readBookOutline(storage)
@@ -668,7 +630,7 @@ async function runAdmittedFullPipeline(
         // and render from it. Driven off positioned-text + image-filtering; no
         // LLM call. `page-sectioning` (semantic) is left intact.
         const imageUrlPrefix = `/api/books/${label}/images`
-        processFixedLayoutPages(renderingStorage, imageUrlPrefix)
+        processFixedLayoutPages(renderingStorage, imageUrlPrefix, undefined, { onPage: (id) => { options.signal?.throwIfAborted(); publication.publishPage(id) } })
         options.signal?.throwIfAborted()
         publication.publish(renderingStorage.getPages().map((page) => page.pageId))
         p.emit({ type: "step-progress", step: "web-rendering", message: "fixed-layout pages" })
@@ -1389,7 +1351,7 @@ async function runAdmittedFullPipeline(
       if (event.type === "step-error") storage.recordStepError(event.step, event.error)
       progress.emit(event)
     } }
-    return await runPipelineDAG(executors, persistedProgress, selectedStages)
+    return await runPipelineDAG(executors, persistedProgress)
   } finally {
     storage.close()
   }

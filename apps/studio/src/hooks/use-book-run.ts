@@ -205,6 +205,8 @@ export function useBookRunStatus(label: string): BookRunContextValue {
 
     es.addEventListener("progress", (e) => {
       const d = JSON.parse(e.data)
+      if (d.error) d.error = sectioningErrorMessage(d.error, d.code)
+      if (d.message) d.message = sectioningErrorMessage(d.message, d.code)
       const pipelineStep = d.step as string
       const uiStage = (STEP_TO_STAGE as Record<string, string>)[pipelineStep]
       if (!uiStage) return
@@ -280,7 +282,9 @@ export function useBookRunStatus(label: string): BookRunContextValue {
         // Progressively refresh page data during storyboard steps so the UI
         // can show sections/renderings as they complete (throttled to ~2s).
         // Invalidates both the page list (sidebar) and individual page details.
-        if ((PAGE_PROGRESS_STEPS as ReadonlySet<string>).has(pipelineStep) && (totalPages ?? 0) > 0) {
+        if (pipelineStep === "web-rendering" && typeof d.publishedPageId === "string") {
+          queryClient.invalidateQueries({ queryKey: ["books", label, "pages"] })
+        } else if ((PAGE_PROGRESS_STEPS as ReadonlySet<string>).has(pipelineStep) && (totalPages ?? 0) > 0) {
           const now = Date.now()
           if (now - lastPageInvalidateRef.current > 2000) {
             lastPageInvalidateRef.current = now
@@ -301,7 +305,7 @@ export function useBookRunStatus(label: string): BookRunContextValue {
         // The step finished — its failure toast/beep dedup no longer applies.
         errorCountByStepRef.current.delete(pipelineStep)
         // Mark step as done/skipped, recompute stage state
-        const nextStepState: StepState = d.type === "step-skip" ? "skipped" : "done"
+        const nextStepState: StepState = d.outputComplete === false ? "idle" : d.type === "step-skip" ? "skipped" : "done"
         // Only chime on the transition into done — not on every trailing
         // step event for a stage that's already complete (which would
         // re-register the same completion and beep repeatedly).
@@ -331,7 +335,7 @@ export function useBookRunStatus(label: string): BookRunContextValue {
             ? "done"
             : anyError
               ? "error"
-              : old.stages[uiStage]
+              : d.outputComplete === false ? "idle" : old.stages[uiStage]
           const stages = { ...old.stages, [uiStage]: nextStageState }
 
           // Recompute the run-level error banner from the remaining step errors.
@@ -481,7 +485,7 @@ export function useBookRunStatus(label: string): BookRunContextValue {
       if (me.data) {
         try {
           const d = JSON.parse(me.data)
-          const runError = d.sectioningPreflight ? sectioningErrorMessage(d.sectioningPreflight) : d.error ?? i18n._(msg`Step run failed`)
+          const runError = sectioningErrorMessage(d.error, d.code) ?? i18n._(msg`Step run failed`)
           queryClient.setQueryData<StepStatusResponse>(stepStatusKey(label), (old) => {
             if (!old) return old
             return { ...old, error: runError }
@@ -810,14 +814,14 @@ export function useBookRunStatus(label: string): BookRunContextValue {
       if (progress) return progress
       if (data?.steps?.[step] !== "running") return undefined
       const message = data?.stepMessages?.[step]
-      return message ? { message } : undefined
+      return message ? { message: sectioningErrorMessage(message) } : undefined
     },
     [data?.stepMessages, data?.steps, progressTick]
   )
 
   const stepErrorAccessor = useCallback(
     (step: string): string | undefined => {
-      return data?.stepErrors?.[step]
+      return sectioningErrorMessage(data?.stepErrors?.[step])
     },
     [data]
   )

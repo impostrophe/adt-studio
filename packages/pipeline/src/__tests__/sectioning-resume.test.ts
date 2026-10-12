@@ -45,78 +45,35 @@ async function fixture(layout = "fixed", part = false) {
   return { booksRoot, bookDir, label, pageId, n, previous, options, configFile }
 }
 
-it.each(["fixed", "reflowable", "fixed-part", "reflowable-part"])("resumes the real DAG through verified extraction, protected replacement and %s publication", { timeout: 30_000 }, async (kind) => {
+it.each(["fixed", "reflowable", "fixed-part", "reflowable-part"])("verified extraction does not authorize deferred existing-book resume: %s", { timeout: 30_000 }, async (kind) => {
   const f = await fixture(kind.startsWith("fixed") ? "fixed" : "reflowable", kind.endsWith("part"))
   const manifest = fs.readFileSync(path.join(f.bookDir, "extraction.json"))
-  vi.stubEnv("OPENAI_API_KEY", "fixture-only")
-  const transport = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify(response(f.n)), { headers: { "Content-Type": "application/json" } }))
-  const result = await runFullPipeline(f.options)
-  expect([...result.stages.errors.values()].map((error) => error.message)).toEqual([])
-  expect([...result.stages.statuses.keys()]).toEqual(["sectioning", "storyboard"])
-  expect(transport).toHaveBeenCalledTimes(1)
+  const pdf = fs.readFileSync(path.join(f.bookDir, `${f.label}.pdf`))
+  const transport = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Unexpected provider call"))
+  await expect(runFullPipeline(f.options)).rejects.toThrow("UNSAFE_RESUME_UNAVAILABLE")
+  expect(transport).not.toHaveBeenCalled()
   const s = createBookStorage(f.label, f.booksRoot)
   try {
-    expect(s.getAllNodeVersions("page-sectioning", f.pageId)).toHaveLength(2)
-    expect(s.getAllNodeVersions("page-sectioning", f.pageId)[0].data).toEqual(f.previous)
-    expect(s.getLatestNodeData("page-sectioning", f.pageId)?.data).toMatchObject({ source: "ai", sections: [{ sectionId: `${f.pageId}_sec003` }] })
-    expect(s.getAllNodeVersions("web-rendering", f.pageId)).toHaveLength(2)
-    expect(getRenderSectioning(s, f.pageId)?.sections).toHaveLength(1)
-    expect(readSectioningLifecycle(f.bookDir)?.sectioningReady).toBe(true)
+    expect(s.getAllNodeVersions("page-sectioning", f.pageId)).toEqual([{ version: 1, data: f.previous }])
+    expect(s.getAllNodeVersions("web-rendering", f.pageId)).toHaveLength(1)
   } finally { s.close() }
   expect(fs.readFileSync(path.join(f.bookDir, "extraction.json"))).toEqual(manifest)
+  expect(fs.readFileSync(path.join(f.bookDir, `${f.label}.pdf`))).toEqual(pdf)
 })
 
-it("refuses an incompatible protected page and a stale explicit confirmation without a transport call", { timeout: 30_000 }, async () => {
+it("the actual CLI refuses verified existing extraction without rewriting output", async () => {
   const f = await fixture()
-  const transport = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Unexpected transport"))
-  const kept = await runFullPipeline({ ...f.options, replaceManual: false, protectedReplacements: undefined })
-  expect(kept.stages.errors.get("sectioning")?.message).toContain("explicit replacement")
-  const s = createBookStorage(f.label, f.booksRoot)
-  s.putNodeData("page-sectioning", f.pageId, f.previous); s.close()
-  await expect(runFullPipeline(f.options)).rejects.toMatchObject({ currentVersion: 2 })
-  expect(transport).not.toHaveBeenCalled()
-  expect(readSectioningLifecycle(f.bookDir)?.sectioningReady).toBe(false)
-})
-
-it("cancellation at provider response retains the protected page and prior rendering", { timeout: 30_000 }, async () => {
-  const f = await fixture()
-  const controller = new AbortController()
-  vi.stubEnv("OPENAI_API_KEY", "fixture-only")
-  const transport = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
-    controller.abort()
-    return new Response(JSON.stringify(response(f.n)), { headers: { "Content-Type": "application/json" } })
+  const child = spawnSync(process.execPath, [path.join(repository, "packages/pipeline/dist/cli.js"), f.label, pdfPath, "--books-dir", f.booksRoot], {
+    encoding: "utf8", timeout: 15000, cwd: repository, env: { PATH: process.env.PATH },
   })
-  const result = await runFullPipeline({ ...f.options, signal: controller.signal })
-  expect(result.stages.errors.size).toBeGreaterThan(0)
-  expect(transport).toHaveBeenCalledTimes(1)
+  expect(child.status, child.stderr).toBe(1)
+  expect(child.stderr).toContain("UNSAFE_RESUME_UNAVAILABLE")
+  expect(child.stderr).not.toContain("Use --from-stage")
   const s = createBookStorage(f.label, f.booksRoot)
-  try { expect(s.getAllNodeVersions("page-sectioning", f.pageId)).toHaveLength(1); expect(s.getAllNodeVersions("web-rendering", f.pageId)).toHaveLength(1) }
+  try { expect(s.getAllNodeVersions("page-sectioning", f.pageId)).toEqual([{ version: 1, data: f.previous }]) }
   finally { s.close() }
-  expect(readSectioningLifecycle(f.bookDir)?.sectioningReady).toBe(false)
 })
 
-it("the actual CLI publishes a confirmed replacement and fixed Storyboard with one stubbed transport call", { timeout: 60_000 }, async () => {
-  const f = await fixture()
-  const file = path.join(f.booksRoot, "replace.json")
-  fs.writeFileSync(file, JSON.stringify(f.options.protectedReplacements))
-  const hook = path.join(f.booksRoot, "transport.mjs"), calls = path.join(f.booksRoot, "calls")
-  fs.writeFileSync(hook, `import fs from 'node:fs'; globalThis.fetch = async () => { fs.appendFileSync(${JSON.stringify(calls)}, 'call\\n'); return new Response(${JSON.stringify(JSON.stringify(response(f.n)))}, {headers:{'Content-Type':'application/json'}}); };`)
-  const child = spawnSync(process.execPath, ["--import", pathToFileURL(hook).href, path.join(repository, "packages/pipeline/dist/cli.js"), f.label, pdfPath,
-    "--books-dir", f.booksRoot, "--from-stage", "sectioning", "--to-stage", "storyboard", "--protected-replacements", file],
-  { cwd: repository, encoding: "utf8", timeout: 45_000, env: { ...process.env, OPENAI_API_KEY: "fixture-only" } })
-  expect(child.error).toBeUndefined()
-  expect(child.status, child.stderr).toBe(0)
-  expect(fs.readFileSync(calls, "utf8")).toBe("call\n")
-  const s = createBookStorage(f.label, f.booksRoot)
-  try { expect(s.getAllNodeVersions("web-rendering", f.pageId)).toHaveLength(2); expect(s.getAllNodeVersions("page-sectioning", f.pageId)).toHaveLength(2) }
-  finally { s.close() }
-  expect(readExtractionManifest(f.bookDir)?.status).toBe("complete")
-  expect(readSectioningLifecycle(f.bookDir)?.sectioningReady).toBe(true)
-})
-
-it("validates bounded CLI ranges and requires named replacement input", () => {
-  expect(parseCliArgs(["book", "source.pdf", "--from-stage", "sectioning", "--to-stage", "storyboard", "--protected-replacements", "replace.json"]).fromStage).toBe("sectioning")
-  for (const flags of [["--from-stage", "sectioning"], ["--from-stage", "storyboard", "--to-stage", "sectioning"], ["--from-stage", "captions", "--to-stage", "captions"], ["--protected-replacements", "replace.json"]]) {
-    expect(() => parseCliArgs(["book", "source.pdf", ...flags])).toThrow()
-  }
+it.each(["--from-stage", "--to-stage", "--protected-replacements"])("does not advertise or accept deferred CLI scope: %s", (flag) => {
+  expect(() => parseCliArgs(["book", pdfPath, flag, "sectioning"])).toThrow("Unknown option")
 })

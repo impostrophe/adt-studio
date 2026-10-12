@@ -1,7 +1,7 @@
 import { EditConflictError } from "../services/edit-conflict.js"
 import type { ErrorHandler } from "hono"
 import { BookBusyError, ExtractionAdmissionError } from "@adt/storage"
-import { SectioningPreflightError, SectioningSafetyError, AuthoredReplacementError } from "@adt/pipeline"
+import { SectioningSafetyError, AuthoredReplacementError } from "@adt/pipeline"
 import { HTTPException } from "hono/http-exception"
 import { AiProviderError } from "@adt/llm"
 import type { AiProviderErrorCode } from "@adt/types"
@@ -18,11 +18,10 @@ const PROVIDER_ERROR_STATUS: Record<AiProviderErrorCode, 400 | 422> = {
 
 export const errorHandler: ErrorHandler = (err, c) => {
   if (err instanceof AuthoredReplacementError) return c.json({ error: err.message,
-    ...(err.currentVersion !== undefined ? { code: "VERSION_CONFLICT", currentVersion: err.currentVersion } : {}),
+    code: err.code, currentVersion: err.currentVersion,
   }, err.status)
   if (err instanceof EditConflictError) return c.json({ error: err.message, code: err.code, currentVersion: err.currentVersion }, 409)
   if (err instanceof BookBusyError || err instanceof SectioningSafetyError || err instanceof ExtractionAdmissionError) return c.json({ error: err.message, code: err.code }, 409)
-  if (err instanceof SectioningPreflightError) return c.json({ error: err.message, code: err.code, ...err.details }, 409)
   if (err instanceof HTTPException) {
     return c.json({ error: err.message }, err.status)
   }

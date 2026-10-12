@@ -7,7 +7,6 @@ import type { OutputSkipRequest, PackagingStatus } from "@adt/types"
 import type { OutputStatus, OutputSummary, OutputRunScope, OutputReviewRequest, OutputDisclosureOptions, OutputReplacement } from "@adt/types"
 
 import { sectioningErrorMessage } from "@/lib/sectioning-error"
-import type { SectioningPreflightResult } from "@adt/types"
 import type { SectioningModeState } from "@adt/types"
 import { isElectron } from "@/lib/utils"
 import type {
@@ -124,10 +123,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     const text = await res.text().catch(() => "")
     let message: string | undefined
     try {
-      const details = JSON.parse(text) as Partial<SectioningPreflightResult> & { code?: string; error?: string }
-      message = details.code === "SECTIONING_PREFLIGHT_FAILED" && typeof details.total === "number" && Array.isArray(details.displayedPages)
-        ? sectioningErrorMessage(details as SectioningPreflightResult)
-        : details.error
+      const details = JSON.parse(text) as { code?: string; error?: string }
+      message = sectioningErrorMessage(details.error, details.code)
     } catch {
       message = text || undefined
     }

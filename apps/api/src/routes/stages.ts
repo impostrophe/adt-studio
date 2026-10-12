@@ -4,15 +4,14 @@ import { Hono } from "hono"
 import { streamSSE } from "hono/streaming"
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
-import { createBookStorage, openBookDb, withBookWriter, readSectioningLifecycle } from "@adt/storage"
+import { createBookStorage, openBookDb, withBookWriter } from "@adt/storage"
 import type { Storage } from "@adt/storage"
 import { AuthoredRunOptions, OutputSkipRequest, OutputRunScope, StageName, STAGE_ORDER, PIPELINE, parseBookLabel, getStageRerunClearNodes, getStageClearOrder, PageErrorPolicy, DecisionBody, TTSOutput, WordTimestampOutput, parseVoiceSlotEntryId, sectionIdOfAnswerTextId } from "@adt/types"
 import { assertStageRunModelCredentials } from "@adt/llm"
 import {
-  loadBookConfig,
+  loadBookConfig, activeSectioningPages, selectSectioningPages, storyboardCoverage,
   isFixedLayoutBook,
   prepareSectioningRun,
-  sectioningInvalidationSteps,
   collectSpentSectionIds,
   retireSectionIds,
   NOTHING_RETIRED,
@@ -159,16 +158,15 @@ export function makeBeforeRun(label: string, fromStage: StageName, toStage: Stag
         // clearExtractedData also clears step_runs
         storage.clearExtractedData()
       } else {
-        // Sectioning/Storyboard publish replacements only after successful
-        // generation. Keep paired HTML/positioned trees and downstream work
-        // available throughout failure, cancellation and mode changes.
+        // Content changes belong to the admitted worker: Sectioning has an
+        // explicit reset transaction; ordinary Storyboard publishes per page.
         const nodes = fromStage === "sectioning" || fromStage === "storyboard"
           ? [] : getStageRerunClearNodes(fromStage, toStage)
         if (nodes.length > 0) {
           storage.clearNodesByType(nodes)
         }
         // Clear step run records for all downstream stages
-        const stagesToClear = getStageClearOrder(fromStage)
+        const stagesToClear = fromStage === "sectioning" || fromStage === "storyboard" ? [] : getStageClearOrder(fromStage)
         const stepsToClear = PIPELINE
           .filter((s) => stagesToClear.includes(s.name))
           .flatMap((s) => s.steps.map((step) => step.name))
@@ -243,14 +241,20 @@ export function createStageRoutes(
       withBookWriter(path.join(path.resolve(booksDir), parseBookLabel(label)), () => {
         prepareSectioningRun(label, booksDir, fromStage, toStage, configPath)
         const storage = createBookStorage(label, booksDir)
-        try { assertAuthoredReplacement(storage, { fromStage, toStage, replaceManual, protectedReplacements }) }
+        try {
+          assertAuthoredReplacement(storage, { fromStage, toStage, replaceManual, protectedReplacements })
+          selectSectioningPages(storage, activeSectioningPages(storage, loadBookConfig(label, booksDir, configPath), path.join(path.resolve(booksDir), label)), { replaceManual, protectedReplacements })
+        }
         finally { storage.close() }
       })
     }
     const prepare = makeBeforeRun(label, fromStage, toStage, booksDir, configPath)
     const clearData = () => {
       const storage = createBookStorage(label, booksDir)
-      try { assertAuthoredReplacement(storage, { fromStage, toStage, replaceManual, protectedReplacements }) }
+      try {
+          assertAuthoredReplacement(storage, { fromStage, toStage, replaceManual, protectedReplacements })
+          selectSectioningPages(storage, activeSectioningPages(storage, loadBookConfig(label, booksDir, configPath), path.join(path.resolve(booksDir), label)), { replaceManual, protectedReplacements })
+        }
       finally { storage.close() }
       prepare()
     }
@@ -378,13 +382,6 @@ export function createStageRoutes(
     }
 
     const stepRunMap = new Map(stepRunRows.map((r) => [r.step, r]))
-    const lifecycle = readSectioningLifecycle(path.join(resolvedDir, safeLabel))
-    if (lifecycle && !lifecycle.sectioningReady) {
-      for (const step of sectioningInvalidationSteps()) {
-        const status = stepRunMap.get(step)?.status
-        if (status === "done" || status === "skipped") stepRunMap.delete(step)
-      }
-    }
 
     // Build steps
     const steps: Record<string, string> = {}
@@ -408,6 +405,15 @@ export function createStageRoutes(
           stepMessages[step.name] = row.message
         }
       }
+    }
+
+    let coverage: ReturnType<typeof storyboardCoverage> | undefined
+    if (fs.existsSync(dbPath)) {
+      const storage = createBookStorage(safeLabel, booksDir)
+      try {
+        coverage = storyboardCoverage(storage, activeSectioningPages(storage, loadBookConfig(safeLabel, booksDir, configPath), path.dirname(dbPath)).map((page) => page.pageId))
+        if (!coverage.complete && ["done", "skipped"].includes(steps["web-rendering"])) steps["web-rendering"] = "idle"
+      } finally { storage.close() }
     }
 
     // Derive stage state from steps.
@@ -437,7 +443,7 @@ export function createStageRoutes(
 
     // Check if ADT is packaged (preview stage)
     const adtDir = path.join(resolvedDir, safeLabel, "adt")
-    if (fs.existsSync(adtDir) && (!lifecycle || (lifecycle.sectioningReady && stages.package === "done"))) stages.preview = "done"
+    if (fs.existsSync(adtDir) && coverage?.complete && coverage.rendered > 0) stages.preview = "done"
 
     const hasStepErrors = Object.keys(stepErrors).length > 0
     const hasStepMessages = Object.keys(stepMessages).length > 0
@@ -453,12 +459,13 @@ export function createStageRoutes(
     if (fs.existsSync(dbPath)) {
       const storage = createBookStorage(safeLabel, booksDir)
       try {
-        const numbers = new Map(storage.getPages().map((p) => [p.pageId, p.pageNumber]))
-        protectedWork = protectedAuthoredRecords(storage).map((record) => ({ ...record, pageNumber: numbers.get(record.itemId) }))
+        const numbers = new Map(activeSectioningPages(storage, loadBookConfig(safeLabel, booksDir, configPath), path.dirname(dbPath)).map((p) => [p.pageId, p.pageNumber]))
+        protectedWork = protectedAuthoredRecords(storage).filter((record) => record.node !== "page-sectioning" || numbers.has(record.itemId)).map((record) => ({ ...record, pageNumber: numbers.get(record.itemId) }))
       } finally { storage.close() }
     }
     return c.json({
       protectedWork,
+      coverage,
       stages,
       steps,
       error,
@@ -520,7 +527,7 @@ export function createStageRoutes(
                   data: JSON.stringify({
                     label: event.label,
                     error: event.error,
-                    sectioningPreflight: event.sectioningPreflight,
+                    code: event.code,
                   }),
                 })
               } else if (event.type === "stage-run-cancelled") {

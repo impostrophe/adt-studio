@@ -184,7 +184,7 @@ export function SectioningLandingPage({ bookLabel }: { bookLabel: string }) {
 
       {modeConfirmation.dialog}
       {updateMode.error && <p role="alert" className="text-sm text-destructive">{t`Could not save Sectioning mode.`} {updateMode.error.message}</p>}
-      {modeConfirmation.state?.stale && <p role="status" className="text-sm text-muted-foreground"><Trans>Saved output is retained, but Sectioning and later stages are not current.</Trans></p>}
+      {modeConfirmation.state?.preferenceChanged && <p role="status" className="text-sm text-muted-foreground"><Trans>Generation preferences changed or their history is unknown. Saved content remains usable. Existing pages are kept unless you explicitly replace them.</Trans></p>}
       <SettingsCard>
         <SettingsField
           label={<Trans>Sectioning Mode</Trans>}

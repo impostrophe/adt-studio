@@ -88,17 +88,15 @@ describe("Storyboard layout publication", () => {
     before.close()
     fs.writeFileSync(configPath, config)
     if (entry === "stage") await run()
-    else await reRenderPages([{ ...options(), label, pageId: "p2" }])
+    else await reRenderPages(["p2", "p7"].map((pageId) => ({ ...options(), label, pageId })))
     const after = store()
     try {
       expect(getRenderSectioning(after, "p2")?.reasoning).toBe("semantic")
       expect(after.getAllNodeVersions("fixed-layout-sectioning", "p2")).toContainEqual(fixed)
       expect(after.getAllNodeVersions("web-rendering", "p2")).toHaveLength(2)
       expect(after.getAllNodeVersions("page-sectioning", "p2")).toHaveLength(1)
-      if (entry === "targeted") {
-        expect(after.getLatestNodeData("web-rendering", "p7")).toEqual(other)
-        expect(getRenderSectioning(after, "p7")?.sections[0].sectionType).toBe("fixed-layout-page")
-      }
+      expect(after.getLatestNodeData("web-rendering", "p7")?.version).toBe((other?.version ?? 0) + 1)
+      expect(getRenderSectioning(after, "p7")?.reasoning).toBe("semantic")
     } finally { after.close() }
   })
 
@@ -114,7 +112,7 @@ describe("Storyboard layout publication", () => {
       finally { concurrent.close() }
       return { sections: [] }
     })
-    await expect(run()).rejects.toThrow(/changed after preflight/)
+    await expect(run()).rejects.toThrow(/changed during rendering/)
     const after = store()
     try {
       expect(after.getAllNodeVersions("web-rendering", "p2")).toEqual(oldRendering)
@@ -129,7 +127,7 @@ describe("Storyboard layout publication", () => {
     const oldRendering = before.getAllNodeVersions("web-rendering", "p2")
     before.close()
     fs.writeFileSync(configPath, config)
-    await expect(reRenderPages([{ ...options(), label, pageId: "p2", sectionIndex: 0 }])).rejects.toThrow(/as a whole/)
+    await expect(reRenderPages([{ ...options(), label, pageId: "p2", sectionIndex: 0 }])).rejects.toThrow(/every active page/)
     expect(render).not.toHaveBeenCalled()
     const after = store()
     try {
@@ -211,7 +209,7 @@ describe("Storyboard layout publication", () => {
     db.run("DELETE FROM images WHERE page_id = ?", ["p7"])
     db.close()
     fs.writeFileSync(configPath, config + fixedConfig)
-    await expect(run()).rejects.toThrow(/every requested page/)
+    await expect(run()).rejects.toThrow(/every active page/)
     const after = store()
     try {
       expect(["p2", "p7"].map((id) => after.getAllNodeVersions("web-rendering", id))).toEqual(old)

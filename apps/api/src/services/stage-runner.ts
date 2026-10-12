@@ -1,3 +1,4 @@
+import { PageSectioningOutput } from "@adt/types"
 import { retainedTranslation, isProtectedContent, createSectionIdFactory, retireSectionIds } from "@adt/pipeline"
 import { assertEditVersion } from "./catalog-output-service.js"
 import { assertAuthoredReplacement, replacementConfirmed } from "./authored-output-service.js"
@@ -7,8 +8,8 @@ import { retainedCoreTts, retainedEasyRead } from "@adt/pipeline"
 import { outputIdentityKey } from "@adt/pipeline"
 import { createHash } from "node:crypto"
 import { speechPageId, reconcileSpeechInputs, translateCatalog, inputSignature, reconcileTextCatalog, readOutputCatalog, buildImageInventory, selectedForGeneration, outputEvidence, assertOutputPublication, timestampInputSignature, deriveOutputStatus } from "@adt/pipeline"
-import { prepareSectioningRun, completeSectioning, createStoryboardPublication, activeSectioningPages } from "@adt/pipeline"
-import { preflightSectioning, effectiveSectioningMode, SectioningPreflightError, SectioningSafetyError } from "@adt/pipeline"
+import { prepareSectioningRun, completeSectioning, storyboardCoverage, createStoryboardPublication, activeSectioningPages } from "@adt/pipeline"
+import { selectSectioningPages, resetSectioningStoryboard, SectioningSafetyError } from "@adt/pipeline"
 import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
@@ -149,7 +150,6 @@ import { beginSpeechRun, endSpeechRun } from "./speech-progress.js"
 import type {
   AppConfig,
   ImageClassificationOutput,
-  PageSectioningOutput,
   QuizGenerationOutput,
   WebRenderingOutput,
   ImageCaptioningOutput,
@@ -932,7 +932,10 @@ export function createStageRunner(): StageRunner {
       return withBookWriter(bookDir, async () => {
         prepareSectioningRun(label, options.booksDir, options.fromStage as StageName, options.toStage as StageName, options.configPath)
         const storage = createBookStorage(label, options.booksDir)
-        try { assertAuthoredReplacement(storage, options) } finally { storage.close() }
+        try {
+          assertAuthoredReplacement(storage, options)
+          selectSectioningPages(storage, activeSectioningPages(storage, loadBookConfig(label, options.booksDir, options.configPath), bookDir), options)
+        } finally { storage.close() }
         return runner.run(label, options, progress)
       })
     },
@@ -976,6 +979,9 @@ function createAdmittedStageRunner(): StageRunner {
               runningSteps.add(event.step)
               completionStorage.markStepStarted(event.step)
             } else if (event.type === "step-complete") {
+              if (event.step === "web-rendering") {
+                event = { ...event, outputComplete: storyboardCoverage(completionStorage, activeSectioningPages(completionStorage, loadBookConfig(label, booksDir, options.configPath), bookDir).map((page) => page.pageId)).complete }
+              }
               runningSteps.delete(event.step)
               completionStorage.markStepCompleted(event.step, event.message)
             } else if (event.type === "step-skip") {
@@ -1383,19 +1389,25 @@ async function runSectioningStep(
   try {
     const config = loadBookConfig(label, booksDir, configPath)
     const allPages = activeSectioningPages(storage, config, path.join(path.resolve(booksDir), label))
-    const previous = new Map(allPages.map((page) => [page.pageId, storage.getLatestNodeData("page-sectioning", page.pageId)]))
-    const pages = allPages.filter((page) => {
-      const row = previous.get(page.pageId)
-      return !row || !isProtectedContent(row.data as { source?: "ai" | "manual" }) || replacementConfirmed(options, "page-sectioning", page.pageId, row.version)
-    })
-    const selected = new Set(pages.map((page) => page.pageId))
-    const retained = allPages.filter((page) => !selected.has(page.pageId))
-    const protectedPreflight = preflightSectioning(effectiveSectioningMode(config), retained,
-      new Map(retained.map((page) => [page.pageId, previous.get(page.pageId)?.data])))
-    if (protectedPreflight.total) throw new SectioningPreflightError(protectedPreflight)
+    const pages = selectSectioningPages(storage, allPages, options)
+    const unreadable = new Set<string>()
+    const previous = new Map(pages.map((page) => {
+      try { return [page.pageId, storage.getLatestNodeData("page-sectioning", page.pageId)] as const }
+      catch (error) {
+        if (!(error instanceof SyntaxError)) throw error
+        unreadable.add(page.pageId)
+        return [page.pageId, null] as const
+      }
+    }))
+    const previousVersions = new Map(pages.map((page) => [page.pageId, storage.getSelectedNodeVersion("page-sectioning", page.pageId)]))
+    options.signal?.throwIfAborted()
+    resetSectioningStoryboard(storage, options)
+    const outputVersions = new Map(pages.map(({ pageId }) => [pageId, [
+      storage.getSelectedNodeVersion("web-rendering", pageId),
+      storage.getSelectedNodeVersion("fixed-layout-sectioning", pageId),
+    ]]))
     if (!pages.length) {
       options.signal?.throwIfAborted()
-      completeSectioning(label, booksDir, config, configPath)
       progress.emit({ type: "step-skip", step: "page-sectioning" })
       progress.emit({ type: "step-skip", step: "translation" })
       return
@@ -1530,6 +1542,7 @@ async function runSectioningStep(
             imageBase64: storage.getImageBase64(imageId),
           }))
 
+          if (unreadable.has(page.pageId)) throw new Error(`SECTIONING_INPUT_UNREADABLE: ${page.pageId}`)
           const structuringResult = await sectionPage(
             {
               pageId: page.pageId,
@@ -1575,8 +1588,13 @@ async function runSectioningStep(
               || JSON.stringify(activeSectioningPages(storage, config, path.join(path.resolve(booksDir), label))) !== JSON.stringify(allPages)) {
               throw new SectioningSafetyError("STORYBOARD_INPUT_CHANGED", "Configuration or source pages changed during Sectioning. Previous page output is kept; retry against current inputs.")
             }
+            const resetVersions = outputVersions.get(page.pageId)!
+            if (storage.getSelectedNodeVersion("web-rendering", page.pageId) !== resetVersions[0]
+              || storage.getSelectedNodeVersion("fixed-layout-sectioning", page.pageId) !== resetVersions[1]) {
+              throw new SectioningSafetyError("STORYBOARD_INPUT_CHANGED", "Storyboard changed after the confirmed reset. Saved content is retained.")
+            }
             const before = previous.get(page.pageId)
-            assertEditVersion(storage.getLatestNodeData("page-sectioning", page.pageId)?.version, before?.version ?? 0)
+            assertEditVersion(storage.getSelectedNodeVersion("page-sectioning", page.pageId) ?? undefined, previousVersions.get(page.pageId) ?? 0)
             const mint = createSectionIdFactory(storage, page.pageId)
             const sections = result.sections.map((section) => ({ ...section, sectionId: mint() }))
             const old = before?.data as PageSectioningOutput | undefined
@@ -1648,9 +1666,21 @@ async function runStoryboardStep(
       const { processFixedLayoutPages } = await import("@adt/pipeline")
       if (options.signal?.aborted) throw new RunCancelledError()
       const imageUrlPrefix = `/api/books/${label}/images`
-      processFixedLayoutPages(storage, imageUrlPrefix)
+      const unavailable: string[] = []
+      processFixedLayoutPages(storage, imageUrlPrefix, undefined, {
+        onPage: (id) => {
+          if (options.signal?.aborted) throw new RunCancelledError()
+          publication.publishPage(id)
+          progress.emit({ type: "step-progress", step: "web-rendering", message: id, publishedPageId: publication.layoutSwitch ? undefined : id })
+        },
+        onUnavailable: (id) => {
+          unavailable.push(id)
+          progress.emit({ type: "step-progress", step: "web-rendering", message: `STORYBOARD_PAGE_INPUT_MISSING: ${id}` })
+        },
+      })
       if (options.signal?.aborted) throw new RunCancelledError()
-      publication.publish(pages.map((page) => page.pageId))
+      publication.publish()
+      if (unavailable.length) throw new StepError("web-rendering", `STORYBOARD_PAGE_INPUT_MISSING: ${unavailable.join(", ")}`)
       progress.emit({ type: "step-complete", step: "web-rendering" })
       console.log(`[stage-run] ${label}: fixed-layout rendering complete`)
       return
@@ -1774,22 +1804,17 @@ async function runStoryboardStep(
         try {
           if (options.signal?.aborted) throw new RunCancelledError()
 
-          const structuringRow = storage.getLatestNodeData("page-sectioning", page.pageId)
-          if (!structuringRow) {
-            console.log(
-              `[stage-run] ${label}: skipping ${page.pageId} (no page-sectioning)`
-            )
-            completedRendering++
-            progress.emit({
-              type: "step-progress",
-              step: "web-rendering",
-              message: `${completedRendering}/${totalPages}`,
-              page: completedRendering,
-              totalPages,
-            })
+          let structuringRow: ReturnType<Storage["getLatestNodeData"]> = null
+          try { structuringRow = storage.getLatestNodeData("page-sectioning", page.pageId) } catch (error) { if (!(error instanceof SyntaxError)) throw error }
+          const parsedSectioning = PageSectioningOutput.safeParse(structuringRow?.data)
+          if (!parsedSectioning.success) {
+            const skipped = skippedByStep.get("web-rendering") ?? new Set<string>()
+            skipped.add(page.pageId)
+            skippedByStep.set("web-rendering", skipped)
+            progress.emit({ type: "step-progress", step: "web-rendering", message: `STORYBOARD_PAGE_INPUT_MISSING: ${page.pageId}`, page: ++completedRendering, totalPages })
             return
           }
-          const sectioning = structuringRow.data as PageSectioningOutput
+          const sectioning = parsedSectioning.data
 
           const imageClassificationRow = storage.getLatestNodeData(
             "image-filtering",
@@ -1857,10 +1882,12 @@ async function runStoryboardStep(
             // Switch away from a positioned tree only with its replacement HTML.
             if (storage.getLatestNodeData("fixed-layout-sectioning", page.pageId)) storage.putNodeData("fixed-layout-sectioning", page.pageId, null)
           })
+          publication.publishPage(page.pageId)
           completedRendering++
           progress.emit({
             type: "step-progress",
             step: "web-rendering",
+            publishedPageId: publication.layoutSwitch ? undefined : page.pageId,
             message: `${completedRendering}/${totalPages}`,
             page: completedRendering,
             totalPages,
@@ -1871,6 +1898,7 @@ async function runStoryboardStep(
               `[stage-run] ${label}: ${page.pageId} failed at web-rendering: ${toErrorMessage(err)}`
             )
           }
+          publication.discardPage(page.pageId)
           await reportPageFailure(pageFailureDeps, progress, "web-rendering", page.pageId, err)
         }
       },
@@ -1881,12 +1909,12 @@ async function runStoryboardStep(
       throw new StepError("web-rendering", "Stopped by a page-error decision")
     }
 
-    // A skipped/failed/cancelled page cannot publish a partial replacement.
-    if (failedPages.length || (skippedByStep.get("web-rendering")?.size ?? 0) > 0) {
+    // Only a layout switch requires whole-window success.
+    if (publication.layoutSwitch && (failedPages.length || (skippedByStep.get("web-rendering")?.size ?? 0) > 0)) {
       throw new StepError("web-rendering", "Storyboard was not published because one or more pages did not finish. Previous output is kept.")
     }
     if (options.signal?.aborted) throw new RunCancelledError()
-    publication.publish(pages.map((page) => page.pageId))
+    publication.publish()
     finishPageStep(progress, "web-rendering", pageFailureDeps)
     console.log(`[stage-run] ${label}: storyboard complete`)
   } finally {

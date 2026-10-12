@@ -116,14 +116,14 @@ export function createBookRoutes(
   app.use("/books/:label", bookWriterMiddleware(booksDir))
 
   app.get("/books", (c) => {
-    const books = listBooks(booksDir)
+    const books = listBooks(booksDir, configPath)
     return c.json(books)
   })
 
   app.get("/books/:label", (c) => {
     const { label } = c.req.param()
     try {
-      const book = getBook(label, booksDir)
+      const book = getBook(label, booksDir, configPath)
       return c.json(book)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -339,7 +339,7 @@ export function createBookRoutes(
       const hasOutput = nodes.some((node) => storage.getNodeItemIds(node).length > 0)
         || storage.getStepRuns().some((row) => steps.includes(row.step as never) && ["done", "skipped"].includes(row.status))
       const lifecycle = readSectioningLifecycle(bookDir)
-      return c.json({ effectiveMode, hasOutput, stale: hasOutput && (!lifecycle?.sectioningReady || lifecycle.mode !== effectiveMode) })
+      return c.json({ effectiveMode, hasOutput, preferenceChanged: hasOutput && (!lifecycle?.sectioningReady || lifecycle.mode !== effectiveMode) })
     } finally { storage.close() }
   })
 

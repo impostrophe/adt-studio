@@ -3,28 +3,6 @@ import { z } from "zod"
 export const SectioningMode = z.enum(["dynamic", "page"])
 export type SectioningMode = z.infer<typeof SectioningMode>
 
-/** B1 exposes only the downstream subgraph whose preservation is implemented. */
-export const SectioningResumeStage = z.enum(["sectioning", "storyboard"])
-export type SectioningResumeStage = z.infer<typeof SectioningResumeStage>
-
-export const SectioningSourcePage = z.object({
-  pageId: z.string(),
-  pageNumber: z.number().int(),
-})
-export type SectioningSourcePage = z.infer<typeof SectioningSourcePage>
-
-export const SectioningPreflightFailure = SectioningSourcePage.extend({
-  reason: z.enum(["missing", "empty", "multiple", "invalid-data"]),
-})
-export type SectioningPreflightFailure = z.infer<typeof SectioningPreflightFailure>
-
-export const SectioningPreflightResult = z.object({
-  total: z.number().int().nonnegative(),
-  failures: z.array(SectioningPreflightFailure),
-  displayedPages: z.array(SectioningPreflightFailure).max(20),
-})
-export type SectioningPreflightResult = z.infer<typeof SectioningPreflightResult>
-
 export const SectioningLifecycle = z.object({
   version: z.literal(1), mode: SectioningMode, sectioningReady: z.boolean(),
   storyboardPending: z.boolean().optional(),
@@ -44,6 +22,15 @@ export type SectioningTransition = z.infer<typeof SectioningTransition>
 export const SectioningModeState = z.object({
   effectiveMode: SectioningMode,
   hasOutput: z.boolean(),
-  stale: z.boolean(),
+  preferenceChanged: z.boolean(),
 })
 export type SectioningModeState = z.infer<typeof SectioningModeState>
+
+export const StoryboardCoverage = z.object({
+  complete: z.boolean(),
+  included: z.number().int().nonnegative(),
+  rendered: z.number().int().nonnegative(),
+  missingPages: z.array(z.string()),
+  missingSections: z.array(z.object({ pageId: z.string(), sectionId: z.string() })),
+})
+export type StoryboardCoverage = z.infer<typeof StoryboardCoverage>

@@ -69,12 +69,12 @@ export function BookView({ bookLabel }: ViewProps) {
   const { data: signLanguageData } = useSignLanguageVideos(bookLabel)
   const { data: packageStatus } = usePackageAdtStatus(bookLabel)
   const { tasks } = useBookTasks(bookLabel)
-  const modeCompatible = packageStatus?.modeCompatible !== false
-  const validationCompleted = modeCompatible && Boolean(accessibilityAssessment?.assessment)
+  const outputComplete = packageStatus?.complete !== false
+  const validationCompleted = outputComplete && Boolean(accessibilityAssessment?.assessment)
   const signLanguageCompleted =
     signLanguageData?.videos?.some((v) => v.sectionId !== null) ?? false
-  const previewCompleted = modeCompatible && (packageStatus?.hasAdt ?? false)
-  const exportCompleted = modeCompatible && tasks.some(
+  const previewCompleted = outputComplete && (packageStatus?.hasAdt ?? false)
+  const exportCompleted = outputComplete && tasks.some(
     (t) => t.kind === "prepare-export" && t.status === "completed",
   )
   const completionOverrides: Record<string, boolean> = {

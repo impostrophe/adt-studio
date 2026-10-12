@@ -425,6 +425,10 @@ export function createBookStorage(label: string, booksRoot: string): Storage {
 
     /** The active version pointer for (node, itemId), or null when unset
      *  (in which case current == MAX(version)). */
+    getSelectedNodeVersion(node: string, itemId: string): number | null {
+      return readCurrentNodeRow(db, node, itemId, { includeInvalidated: true })?.version ?? null
+    },
+
     getCurrentNodeVersion(node: string, itemId: string): number | null {
       const rows = db.all(
         "SELECT version FROM node_current WHERE node = ? AND item_id = ?",

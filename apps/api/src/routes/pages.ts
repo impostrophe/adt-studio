@@ -2,7 +2,7 @@ import { stampManualEdits } from "@adt/pipeline"
 import { AuthoredSaveGuard } from "@adt/types"
 import { assertAuthoredIdle } from "../services/authored-output-service.js"
 import { captureOutputReferences } from "@adt/pipeline"
-import { scopeLegacyActivityIds, renderedSectionId } from "@adt/pipeline"
+import { storyboardCoverage, scopeLegacyActivityIds, renderedSectionId, resolveRenderedSection } from "@adt/pipeline"
 import { saveAuthoredImageAlts } from "../services/authored-captions.js"
 import { catalogOutputs, editSourceSignature, assertEditSource, assertEditVersion } from "../services/catalog-output-service.js"
 import { OutputEditGuard } from "@adt/types"
@@ -10,7 +10,6 @@ import { outputEvidence } from "@adt/pipeline"
 import { restoreSpeechOutput } from "@adt/storage"
 import { reconcileTextCatalog, assignActivityIds, buildTextCatalogSnapshot, inputSignature } from "@adt/pipeline"
 import { randomUUID } from "node:crypto"
-import { assertSectioningCurrent } from "@adt/pipeline"
 import { bookWriterMiddleware } from "../middleware/book-writer.js"
 import crypto from "node:crypto"
 import fs from "node:fs"
@@ -641,6 +640,16 @@ function mintSectionId(storage: Storage, pageId: string): string {
   }
 }
 
+/** Historical HTML with no unambiguous owner is never input to a structural
+ * edit. Its raw version remains recoverable; only verified owners are projected
+ * onto the current tree before applying an explicitly requested edit. */
+function ownedRendering(rendering: z.infer<typeof WebRenderingOutput>, tree: z.infer<typeof PageSectioningOutput>) {
+  return { sections: rendering.sections.flatMap((entry) => {
+    const owner = resolveRenderedSection(entry, tree.sections)
+    return owner ? [{ ...entry, sectionIndex: tree.sections.indexOf(owner) }] : []
+  }) }
+}
+
 /** Point each rendering entry's data-section-id at its (re)numbered section. */
 function rewriteRenderingSectionIds(
   entries: Array<{ sectionIndex: number; sectionId?: string; html: string }>,
@@ -914,6 +923,12 @@ export function createPageRoutes(
         }
       }
 
+      const coverageStorage = createBookStorage(safeLabel, booksDir)
+      try {
+        for (const page of pages) {
+          if (storyboardCoverage(coverageStorage, [page.page_id]).rendered === 0) rendered.delete(page.page_id)
+        }
+      } finally { coverageStorage.close() }
       const result: PageSummary[] = pages.map((p) => ({
         pageId: p.page_id,
         pageNumber: p.page_number,
@@ -1715,7 +1730,6 @@ export function createPageRoutes(
 
     const storage = createBookStorage(safeLabel, booksDir)
     try {
-      assertSectioningCurrent(storage, loadBookConfig(safeLabel, booksDir, configPath), path.join(path.resolve(booksDir), safeLabel))
       const existingPageIds = new Set(storage.getPages().map((page) => page.pageId))
       for (const pageId of pageIds) {
         if (!existingPageIds.has(pageId)) {
@@ -1820,7 +1834,6 @@ export function createPageRoutes(
 
     const storage = createBookStorage(safeLabel, booksDir)
     try {
-      assertSectioningCurrent(storage, loadBookConfig(safeLabel, booksDir, configPath), path.join(path.resolve(booksDir), safeLabel))
       const pages = storage.getPages()
       const page = pages.find((p) => p.pageId === pageId)
       if (!page) {
@@ -2166,12 +2179,12 @@ export function createPageRoutes(
         let updatedRendering: z.infer<typeof WebRenderingOutput> | null = null
         let renderingVersion: number | null = null
         const renderingRow = storage.getLatestNodeData("web-rendering", pageId)
-        if (renderingRow) {
+        if (renderingRow?.data != null) {
           const renderingParsed = WebRenderingOutput.safeParse(renderingRow.data)
           if (!renderingParsed.success) {
             throw new HTTPException(400, { message: "Invalid web-rendering data" })
           }
-          const rendering = renderingParsed.data
+          const rendering = ownedRendering(renderingParsed.data, sectioning)
 
           // Shift sectionIndex for entries after the cloned position
           const shifted = rendering.sections.map((s) =>
@@ -2382,12 +2395,12 @@ export function createPageRoutes(
         let updatedRendering: z.infer<typeof WebRenderingOutput> | null = null
         let renderingVersion: number | null = null
         const renderingRow = storage.getLatestNodeData("web-rendering", pageId)
-        if (renderingRow) {
+        if (renderingRow?.data != null) {
           const renderingParsed = WebRenderingOutput.safeParse(renderingRow.data)
           if (!renderingParsed.success) {
             throw new HTTPException(400, { message: "Invalid web-rendering data" })
           }
-          const rendering = renderingParsed.data
+          const rendering = ownedRendering(renderingParsed.data, sectioning)
 
           const shifted = rendering.sections
             .filter((s) => s.sectionIndex !== idx)
@@ -2523,12 +2536,12 @@ export function createPageRoutes(
         let updatedRendering: z.infer<typeof WebRenderingOutput> | null = null
         let renderingVersion: number | null = null
         const renderingRow = storage.getLatestNodeData("web-rendering", pageId)
-        if (renderingRow) {
+        if (renderingRow?.data != null) {
           const renderingParsed = WebRenderingOutput.safeParse(renderingRow.data)
           if (!renderingParsed.success) {
             throw new HTTPException(400, { message: "Invalid web-rendering data" })
           }
-          const rendering = renderingParsed.data
+          const rendering = ownedRendering(renderingParsed.data, sectioning)
 
           const shifted = [...rendering.sections]
 
@@ -2817,12 +2830,12 @@ export function createPageRoutes(
         let updatedRendering: z.infer<typeof WebRenderingOutput> | null = null
         let renderingVersion: number | null = null
         const renderingRow = storage.getLatestNodeData("web-rendering", pageId)
-        if (renderingRow) {
+        if (renderingRow?.data != null) {
           const renderingParsed = WebRenderingOutput.safeParse(renderingRow.data)
           if (!renderingParsed.success) {
             throw new HTTPException(400, { message: "Invalid web-rendering data" })
           }
-          const rendering = renderingParsed.data
+          const rendering = ownedRendering(renderingParsed.data, sectioning)
 
           const shifted = [...rendering.sections]
 

@@ -36,7 +36,7 @@ export function useSectioningModeConfirmation(label: string, saving: boolean) {
       affectedStages={[]}
       headerStageSlug="sectioning"
       title={<Trans>Change Sectioning mode?</Trans>}
-      description={<Trans>Sectioning and later stages will need to run again. Saved versions are kept.</Trans>}
+      description={<Trans>This changes how new Sectioning is generated. Saved content and Storyboard stay available. Replacing existing pages requires a separate confirmation.</Trans>}
       confirmLabel={<Trans>Change mode</Trans>}
       confirmColorClass="bg-sky-600 hover:bg-sky-700"
       confirmDisabledReason={busy ? t`Wait for the current operation to finish.` : undefined}

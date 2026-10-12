@@ -19,15 +19,13 @@ import type {
   AppConfig,
   ContentNodeData,
   DrawItem,
-  ImageClassificationOutput,
   NodePlacement,
   PageSectioningOutput,
   PageSectioningSection,
   SectionTextSegment,
   WebRenderingOutput,
-  PositionedTextOutput,
 } from "@adt/types"
-import { AUTO_FIT_SCRIPT_SRC } from "@adt/types"
+import { ImageClassificationOutput as ImageClassificationSchema, PositionedTextOutput as PositionedTextSchema, AUTO_FIT_SCRIPT_SRC } from "@adt/types"
 import { escapeHtml } from "./html-escape.js"
 
 /**
@@ -485,6 +483,7 @@ export function processFixedLayoutPages(
   storage: Storage,
   imageUrlPrefix: string,
   targetPageIds?: readonly string[],
+  events?: { onPage?: (pageId: string) => void; onUnavailable?: (pageId: string) => void },
 ): void {
   const pages = storage.getPages()
   const targets = targetPageIds ? new Set(targetPageIds) : undefined
@@ -509,16 +508,29 @@ export function processFixedLayoutPages(
     // double-draw the page).
     const allImages = storage.getPageImages(page.pageId)
     const pageRender = allImages.find((img) => img.imageId.endsWith("_page"))
-    const classRow = storage.getLatestNodeData("image-filtering", page.pageId)
-    const classification = classRow ? (classRow.data as ImageClassificationOutput) : null
+    let classRow, posTextRow
+    try {
+      classRow = storage.getLatestNodeData("image-filtering", page.pageId)
+      posTextRow = storage.getLatestNodeData("positioned-text", page.pageId)
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error
+      if (!targets || targets.has(page.pageId)) events?.onUnavailable?.(page.pageId)
+      continue
+    }
+    const classParsed = ImageClassificationSchema.safeParse(classRow?.data)
+    const posParsed = PositionedTextSchema.safeParse(posTextRow?.data)
+    if ((classRow?.data != null && !classParsed.success) || (posTextRow?.data != null && !posParsed.success)) {
+      if (!targets || targets.has(page.pageId)) events?.onUnavailable?.(page.pageId)
+      continue
+    }
+    const classification = classParsed.success ? classParsed.data : null
     const availableImageIds = new Set(
       classification
         ? classification.images.filter((c) => !c.isPruned).map((c) => c.imageId)
         : []
     )
 
-    const posTextRow = storage.getLatestNodeData("positioned-text", page.pageId)
-    const positionedText = posTextRow ? (posTextRow.data as PositionedTextOutput) : null
+    const positionedText = posParsed.success ? posParsed.data : null
 
     // Viewport comes from the positioned-text extraction (authoritative PDF
     // page dimensions). Fall back to the page render's pixel size only when
@@ -528,7 +540,10 @@ export function processFixedLayoutPages(
       : pageRender
         ? { width: pageRender.width, height: pageRender.height }
         : null
-    if (!viewport) continue
+    if (!viewport) {
+      if (!targets || targets.has(page.pageId)) events?.onUnavailable?.(page.pageId)
+      continue
+    }
 
     const drawItems: DrawItem[] = positionedText?.drawItems ?? []
     totalDrawItems += drawItems.length
@@ -564,6 +579,7 @@ export function processFixedLayoutPages(
       referenceWidth,
     )
     storage.putNodeData("web-rendering", page.pageId, rendering)
+    events?.onPage?.(page.pageId)
   }
 
   // Positioned text is produced by the Extract stage only when the book is
