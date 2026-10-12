@@ -135,11 +135,12 @@ describe("Page routes", () => {
   })
 
   describe("GET /api/books/:label/pages", () => {
-    it("does not resurrect invalidated rendering or its activity flags, and respects a restored pointer", async () => {
+    it.each(["SQL", "JSON"])("does not resurrect %s NULL rendering or its activity flags, and respects a restored pointer", async (kind) => {
       const storage = createBookStorage(label, tmpDir)
       const pageId = `${label}_p1`
       const version = storage.putNodeData("web-rendering", pageId, { sections: [{ sectionIndex: 0, sectionType: "content", html: "<p>Old activity</p>", activityAnswers: { answer: "old" } }] })
-      storage.clearNodesByType(["web-rendering"])
+      if (kind === "SQL") storage.clearNodesByType(["web-rendering"])
+      else storage.putNodeData("web-rendering", pageId, null)
       storage.close()
       const pages = await (await app.request(`/api/books/${label}/pages`)).json()
       expect(pages[0].hasRendering).toBe(false)
@@ -150,6 +151,28 @@ describe("Page routes", () => {
       const restored = await (await app.request(`/api/books/${label}/pages`)).json()
       expect(restored[0].hasRendering).toBe(true)
       expect(restored[0].sections[0].isActivity).toBe(true)
+    })
+
+    it.each(["SQL", "JSON"])("uses selected caption output rather than historical rows after %s NULL invalidation", async (kind) => {
+      const storage = createBookStorage(label, tmpDir)
+      const pageId = `${label}_p1`
+      const version = storage.putNodeData("image-captioning", pageId, { captions: [{ imageId: "image", caption: "Saved manual caption", source: "manual" }] })
+      const invalidVersion = storage.putNodeData("image-captioning", pageId, null)
+      storage.close()
+      if (kind === "SQL") {
+        // Legacy invalidation can be a SQL NULL; current writers also store
+        // JSON null. Ordinary catalog clearing intentionally retains captions.
+        const legacy = openBookDb(path.join(tmpDir, label, `${label}.db`))
+        legacy.run("UPDATE node_data SET data = NULL WHERE node = ? AND item_id = ? AND version = ?", ["image-captioning", pageId, invalidVersion])
+        legacy.close()
+      }
+      const pages = await (await app.request(`/api/books/${label}/pages`)).json()
+      expect(pages[0].hasCaptioning).toBe(false)
+      const restore = createBookStorage(label, tmpDir)
+      restore.setCurrentNodeVersion("image-captioning", pageId, version)
+      restore.close()
+      const restored = await (await app.request(`/api/books/${label}/pages`)).json()
+      expect(restored[0].hasCaptioning).toBe(true)
     })
 
     it("returns list of pages", async () => {

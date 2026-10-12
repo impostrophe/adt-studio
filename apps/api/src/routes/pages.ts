@@ -760,7 +760,7 @@ export function createPageRoutes(
         if (seenRenderings.has(row.item_id)) continue
         seenRenderings.add(row.item_id)
         // The selected NULL row invalidates output; history is not a fallback.
-        if (row.data === null) continue
+        if (row.data === null || row.data.trim() === "null") continue
         rendered.add(row.item_id)
         try {
           const parsed = JSON.parse(row.data) as {
@@ -786,11 +786,18 @@ export function createPageRoutes(
       // Check which pages have image-captioning output
       const captioned = new Set<string>()
       const captionRows = db.all(
-        "SELECT DISTINCT item_id FROM node_data WHERE node = ?",
+        `SELECT nd.item_id AS item_id, nd.data AS data
+         FROM node_data nd
+         LEFT JOIN node_current nc ON nc.node = nd.node AND nc.item_id = nd.item_id
+         WHERE nd.node = ?
+         ORDER BY nd.item_id, ${CURRENT_VERSION_ORDER}`,
         ["image-captioning"]
-      ) as Array<{ item_id: string }>
+      ) as Array<{ item_id: string; data: string | null }>
+      const seenCaptions = new Set<string>()
       for (const row of captionRows) {
-        captioned.add(row.item_id)
+        if (seenCaptions.has(row.item_id)) continue
+        seenCaptions.add(row.item_id)
+        if (row.data !== null && row.data.trim() !== "null") captioned.add(row.item_id)
       }
 
       // Get image counts per page from image-filtering node data
