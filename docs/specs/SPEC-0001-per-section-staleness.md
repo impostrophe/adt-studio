@@ -149,6 +149,23 @@ Resolve warnings only against the reviewed output and relevant inputs; reject ac
 
 **Legacy walkthrough:** Open a book with audio/translation but no trustworthy input evidence. Keep usable content with a warning and preserve known provenance; unknown authorship is protected. Keep existing content establishes a review baseline, not fabricated generation history. Missing/invalid files remain Missing. Opening the book performs no generation or deletion; metadata migration is allowed. Downgrade support is not assumed.
 
+**Implementation assumption / proposed compatibility clarification (2026-10-12;
+human spec review pending):** Some legacy rendered sections have neither a
+persisted owner nor one unambiguous owner in their HTML, or the two contradict
+each other. Current array position and moved text/image leaves cannot establish
+ownership: using either can attach retained manual activity answers to a different
+section after a reorder. For this case, the implementation retains all raw
+renderings, entity versions and assets, omits only sections whose owner cannot be
+proved from preview/export, and displays an ownership warning. It does not
+fabricate ownership or generation provenance. Ordinary legacy content with a
+known owner but missing freshness/provenance remains usable and protected under
+the walkthrough above. The user delegated this safety choice with an explicit
+requirement to document the assumption. This is an additional compatibility
+restriction, not an amendment silently folded into AC-7 or AC-12: those criteria
+remain qualified for this edge until the spec owner ratifies the clarification
+or a safe repair workflow is implemented. Original acceptance criteria are
+unchanged; neither this note nor implementation constitutes specification approval.
+
 Preview/export may include usable stale or review-needed content under existing eligibility rules. Show outdated content included, missing content omitted, and actual fallback use. Warnings introduce no extra approval popup or freshness gate; exporting does not clear them. Disabled/excluded features do not warn about work not included. Apart from Core TTS fallback, this spec adds no new export fallback.
 
 ### 7. Preserve physical assets

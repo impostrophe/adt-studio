@@ -23,3 +23,13 @@ showed that merely calling the next handler was insufficient: the rendering
 handler itself opens creating storage. This adapter returns 404 before either
 admission or the handler can recreate a deleted book. Collection import routes
 keep their existing exemption. No other #886 code or history is imported.
+
+The completion pass applies SPEC-0012 PR #888's strict rendered-owner rule from
+`sectioning-sync.ts` at `d9dac25357dd971e4c970ebf19edc778468fb976`: retained HTML
+is associated by its stable root identity, never a new source array position.
+The existing `render-sectioning.ts` resolver now shares this rule with catalog,
+image inventory, Easy Read and reading order/packaging. New rendering producers
+also record that owner explicitly. This is identity metadata, not synchronization
+proof or generated provenance; #888's evidence/schema subsystem is not copied.
+Unverifiable legacy ownership stays retained with omission disclosure. No
+subsystem or history from the descendant is merged into #879.
