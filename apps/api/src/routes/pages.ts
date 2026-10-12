@@ -1,3 +1,4 @@
+import { stampManualEdits } from "@adt/pipeline"
 import { AuthoredSaveGuard } from "@adt/types"
 import { assertAuthoredIdle } from "../services/authored-output-service.js"
 import { captureOutputReferences } from "@adt/pipeline"
@@ -543,19 +544,24 @@ function saveStoryboardNode(
   node: "page-sectioning" | "web-rendering",
   itemId: string,
   data: unknown,
-  { renderingInSync = false }: { renderingInSync?: boolean } = {}
+  { renderingInSync = false, renderingChanged = false }: { renderingInSync?: boolean; renderingChanged?: boolean } = {}
 ): number {
   if (node === "page-sectioning") assertNoActivePipelineRun(storage)
   return storage.transaction(() => {
     const conflictsBefore = buildTextCatalogSnapshot(storage, storage.getPages()).conflicts ?? []
     const parsed = node === "web-rendering" ? WebRenderingOutput.safeParse(data) : null
+    const priorSectioning = node === "page-sectioning" ? PageSectioningOutput.safeParse(storage.getLatestNodeData(node, itemId)?.data) : null
     const saved = parsed?.success ? {
       ...parsed.data,
       sections: parsed.data.sections.map((section) => {
         const owner = renderedSectionId(section)
         return owner ? { ...scopeLegacyActivityIds(section, owner), sectionId: owner } : section
       }),
-    } : node === "page-sectioning" ? { ...PageSectioningOutput.parse(data), source: "manual" } : data
+    } : node === "page-sectioning" ? stampManualEdits(
+      priorSectioning?.success ? [priorSectioning.data] : [],
+      [PageSectioningOutput.parse(data)], () => itemId,
+      (before, after) => !renderingChanged && inputSignature(before.sections) === inputSignature(after.sections),
+    )[0] : data
     if (node === "page-sectioning") {
       const before = PageSectioningOutput.safeParse(storage.getLatestNodeData(node, itemId)?.data)
       const after = PageSectioningOutput.parse(saved)
@@ -1961,7 +1967,8 @@ export function createPageRoutes(
                   ),
                 }
                 const sectioning = storage.getLatestNodeData("page-sectioning", pageId)
-                if (sectioning) saveStoryboardNode(storage, "page-sectioning", pageId, sectioning.data, { renderingInSync: true })
+                const renderingChanged = inputSignature(renderingParsed.data.sections.map(({ html, activityAnswers }) => ({ html, activityAnswers }))) !== inputSignature(updated.sections.map(({ html, activityAnswers }) => ({ html, activityAnswers })))
+                if (sectioning) saveStoryboardNode(storage, "page-sectioning", pageId, sectioning.data, { renderingInSync: true, renderingChanged })
                 saveStoryboardNode(storage, "web-rendering", pageId, updated)
               }
               return result

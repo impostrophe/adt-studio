@@ -90,7 +90,7 @@ afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
 
 async function saveProtected() {
   for (const id of ["pg001", "pg002", "pg003"]) {
-    expect((await send(`pages/${id}/sectioning`, { ...read("page-sectioning", id)!.data as object, baseVersion: 1 })).status).toBe(200)
+    expect((await send(`pages/${id}/sectioning`, { ...read("page-sectioning", id)!.data as object, sections: [{ ...section(id, "Saved page text"), textColor: "#111111" }], baseVersion: 1 })).status).toBe(200)
   }
   const toc = await json("toc")
   expect((await send("toc", { ...toc, entries: [{ ...toc.entries[0], title: "Manual contents" }], baseVersion: toc.version })).status).toBe(200)
@@ -499,7 +499,7 @@ it.each(["clone", "split", "merge"])("guards and stamps %s as a whole manual pag
     { ...section("pg001", "Last"), sectionId: "pg001_sec002", nodes: [{ nodeId: "pg001_t003", role: "section_text", text: "Last", isPruned: false }] },
   ] })
   db.close()
-  for (const id of ["pg002", "pg003"]) expect((await send(`pages/${id}/sectioning`, { ...read("page-sectioning", id)!.data as object, baseVersion: 1 })).status).toBe(200)
+  for (const id of ["pg002", "pg003"]) expect((await send(`pages/${id}/sectioning`, { ...read("page-sectioning", id)!.data as object, sections: [{ ...section(id, "Saved page text"), textColor: "#111111" }], baseVersion: 1 })).status).toBe(200)
   const url = `pages/pg001/sections/0/${operation}${operation === "merge" ? "?direction=next" : ""}`
   const details = operation === "split" ? { beforeNodeIndex: 1 } : {}
   expect((await send(url, details, "POST")).status).toBe(400)
@@ -575,7 +575,7 @@ it("cancels section replacement before publication and rejects a queued stale co
 })
 
 it("regenerates only explicitly AI pages on an ordinary run and keeps protected neighbors exact", async () => {
-  expect((await send("pages/pg001/sectioning", { ...read("page-sectioning", "pg001")!.data as object, baseVersion: 1 })).status).toBe(200)
+  expect((await send("pages/pg001/sectioning", { ...read("page-sectioning", "pg001")!.data as object, sections: [section("pg001", "Manual source")], baseVersion: 1 })).status).toBe(200)
   const protectedPage = read("page-sectioning", "pg001")
   const db = book()
   for (const stage of PIPELINE.filter((s) => s.name === "extract")) for (const step of stage.steps) db.markStepCompleted(step.name)
@@ -621,4 +621,165 @@ it("guards the queued AI edit at admission and publication and stamps its owning
   await vi.waitFor(() => expect(errors.join(" ")).toContain("Content changed"))
   expect(read("web-rendering", "pg001")).toEqual(before)
   dispose()
+})
+
+function finishExtract() {
+  const db = book()
+  for (const stage of PIPELINE.filter((s) => s.name === "extract")) for (const step of stage.steps) db.markStepCompleted(step.name)
+  db.putNodeData("book-outline", "book", { entries: [], styleClusters: [], reasoning: "fixture" })
+  db.close()
+}
+
+it("F1: a replaced section URL never borrows retained HTML; restore recovers the actual owner", async () => {
+  await saveProtected()
+  finishExtract()
+  const oldRendering = read("web-rendering", "pg001")
+  sectionPage.mockImplementation(async ({ pageId }: { pageId: string }) => ({ reasoning: "replacement", sections: [section(pageId, "Replacement source")] }))
+  const status = await json("step-status")
+  const protectedReplacements = status.protectedWork.filter((r: { node: string }) => r.node === "page-sectioning").map(({ node, itemId, version }: import("@adt/types").AuthoredReplacement) => ({ node, itemId, version }))
+  expect((await run("sectioning", { replaceManual: true, protectedReplacements })).status).toBe("completed")
+  expect(read("web-rendering", "pg001")).toEqual(oldRendering)
+  const replacement = await app.request(`/books/${label}/adt-preview/pg001_sec002.html`)
+  expect(replacement.status).toBe(404)
+  expect((await app.request(`/books/${label}/adt-preview/pg001_sec001.html`)).status).toBe(404)
+  expect((await send("versions/page-sectioning/pg001/restore", { version: 2, baseVersion: 3 }, "POST")).status).toBe(200)
+  const restored = await app.request(`/books/${label}/adt-preview/pg001_sec001.html`)
+  expect(restored.status).toBe(200)
+  expect(await restored.text()).toContain("Saved page text")
+  expect(read("web-rendering", "pg001")).toEqual(oldRendering)
+})
+
+it.each(["success", "failure", "cancellation"])("F3: %s on a neighboring page retains the protected fixed-layout HTML/tree pair across reopen and export", async (outcome) => {
+  // The rendered positioned owner deliberately differs from the semantic one.
+  const db = book()
+  db.putNodeData("page-sectioning", "pg001", { source: "manual", reasoning: "semantic", sections: [section("pg001", "Semantic text")] })
+  db.putNodeData("fixed-layout-sectioning", "pg001", { reasoning: "positioned", sections: [{ ...section("pg001", "Positioned text"), sectionId: "pg001_sec009" }] })
+  db.putNodeData("web-rendering", "pg001", { sections: [{ sectionIndex: 0, sectionType: "text_only", reasoning: "fixed", html: '<section data-section-id="pg001_sec009"><p data-id="pg001_t001">Positioned text</p></section>' }] })
+  db.close()
+  finishExtract()
+  const pair = [read("fixed-layout-sectioning", "pg001"), read("web-rendering", "pg001")]
+  expect((await app.request(`/books/${label}/adt-preview/pg001_sec009.html`)).status).toBe(200)
+  if (outcome === "failure") sectionPage.mockRejectedValue(new Error("Provider failure"))
+  let release: (() => void) | undefined
+  if (outcome === "cancellation") sectionPage.mockImplementation(async () => { await new Promise<void>((resolve) => { release = resolve }); return { reasoning: "", sections: [] } })
+  // Serial generation makes cancellation deterministic, without sleeping.
+  fs.appendFileSync(configPath, "concurrency: 1\n")
+  const running = run("sectioning")
+  if (outcome === "cancellation") {
+    await vi.waitFor(() => expect(release).toBeDefined())
+    expect((await send("stages/cancel", {}, "POST")).status).toBe(202)
+    release!()
+  }
+  expect((await running).status).toBe(outcome === "success" ? "completed" : outcome === "failure" ? "failed" : "cancelled")
+  expect([read("fixed-layout-sectioning", "pg001"), read("web-rendering", "pg001")]).toEqual(pair)
+  // Every read opens a new SQLite connection; package from another reopened one.
+  expect((await app.request(`/books/${label}/adt-preview/pg001_sec009.html`)).status).toBe(200)
+  const reopened = book()
+  try {
+    await packageAdtWeb(reopened, { bookDir: reopened.bookDir!, label, language: "en", outputLanguages: ["en"], title: "Fixed", webAssetsDir: assets, promptsDir: prompts, configDir: path.resolve("config"), config: loadBookConfig(label, root, configPath) })
+    expect(fs.readFileSync(path.join(reopened.bookDir!, "adt/pg001_sec009.html"), "utf8")).toContain("Positioned text")
+  } finally { reopened.close() }
+}, 60_000)
+
+it("F4: combined confirmed Sectioning to TOC replaces the consented document after same-run retirement and rejects an external writer", async () => {
+  await saveProtected()
+  finishExtract()
+  const before = read("toc-generation")!
+  let release!: () => void
+  fs.appendFileSync(configPath, "concurrency: 1\n")
+  sectionPage.mockImplementation(async ({ pageId }: { pageId: string }) => {
+    if (pageId === "pg001") await new Promise<void>((resolve) => { release = resolve })
+    return { reasoning: "new", sections: [section(pageId, "New source")] }
+  })
+  generateToc.mockImplementation(async () => ({ entries: [{ id: "toc_001", title: "New chapter", sectionId: "pg001_sec002", href: "pg001_sec002.html", chapterId: "ch1", level: 1 }], pageCount: 3, generatedAt: "new" }))
+  const status = await json("step-status")
+  const running = run("sectioning", { toStage: "toc", replaceManual: true, protectedReplacements: status.protectedWork.map(({ node, itemId, version }: import("@adt/types").AuthoredReplacement) => ({ node, itemId, version })) })
+  await vi.waitFor(() => expect(release).toBeDefined())
+  expect((await send("toc", { ...before.data as object, baseVersion: before.version })).status).toBe(409)
+  release()
+  expect((await running).status).toBe("completed")
+  expect(generateToc).toHaveBeenCalledTimes(1)
+  expect(read("toc-generation")!.data).toMatchObject({ source: "ai", entries: [expect.objectContaining({ title: "New chapter", sectionId: "pg001_sec002" })] })
+  const history = await json("debug/versions/toc-generation/book?includeData=true")
+  expect(history.versions).toEqual(expect.arrayContaining([expect.objectContaining({ version: before.version, data: before.data })]))
+})
+
+it.each(["ai", "manual", undefined] as const)("no-op whole-record saves preserve %s authorship, ignoring forged client provenance", async (source) => {
+  const db = book()
+  const page = { source, reasoning: "", sections: [section("pg001", "Saved page text")] }
+  const toc = { source, entries: [], pageCount: 3, generatedAt: "before" }
+  const pageVersion = db.putNodeData("page-sectioning", "pg001", page)
+  const tocVersion = db.putNodeData("toc-generation", "book", toc)
+  db.close()
+  expect((await send("pages/pg001/sectioning", { ...page, source: source === "ai" ? "manual" : "ai", baseVersion: pageVersion })).status).toBe(200)
+  expect((await send("toc", { ...toc, source: source === "ai" ? "manual" : "ai", baseVersion: tocVersion })).status).toBe(200)
+  expect((read("page-sectioning", "pg001")!.data as { source?: string }).source).toBe(source)
+  expect((read("toc-generation")!.data as { source?: string }).source).toBe(source)
+  expect(sectionPage).not.toHaveBeenCalled()
+  expect(generateToc).not.toHaveBeenCalled()
+})
+
+it("rejects ambiguous legacy translation mutation before provider calls and retains both corrections for reads and history", async () => {
+  const db = book()
+  const entries = [
+    { id: "pg001_t001", text: "First manual correction", source: "manual" },
+    { id: "pg001_t001", text: "Second manual correction", source: "manual" },
+  ]
+  db.putNodeData("text-catalog-translation", "fr", { entries, generatedAt: "legacy" })
+  db.close()
+  const before = read("text-catalog-translation", "fr")
+  const catalog = await json("text-catalog")
+  expect((await send("text-catalog-translation/fr", { entries: [entries[1]], baseVersion: 1, sourceVersion: catalog.version, sourceSignature: catalog.translations.fr.sourceSignature })).status).toBe(409)
+  expect((await run("translate")).status).toBe("failed")
+  expect(generateObject).not.toHaveBeenCalled()
+  expect(read("text-catalog-translation", "fr")).toEqual(before)
+  expect((await json("text-catalog")).translations.fr.entries).toEqual(entries)
+  expect((await json("debug/versions/text-catalog-translation/fr?includeData=true")).versions).toHaveLength(1)
+})
+
+it("F1: HTTP source reorder/prune/restore preserves activity owners, corrections, physical audio and neighboring output", async () => {
+  const db = book()
+  const sections = [section("pg001", "Question A"), { ...section("pg001", "Question B"), sectionId: "pg001_sec002", nodes: [{ nodeId: "pg001_t002", role: "section_text", text: "Question B", isPruned: false }] }]
+  db.putNodeData("page-sectioning", "pg001", { source: "ai", reasoning: "", sections })
+  db.putNodeData("web-rendering", "pg001", { sections: sections.map((s, sectionIndex) => ({ sectionIndex, sectionType: "activity_fill_in_the_blank", reasoning: "", html: `<section data-section-id="${s.sectionId}"><p>${sectionIndex ? "Owner B" : "Owner A"}</p><input data-activity-item="item-1" /></section>`, activityAnswers: { "item-1": sectionIndex ? "moon" : "sun" } })) })
+  const ids = sections.map((s) => `${s.sectionId}_ans_item-1`)
+  db.putNodeData("text-catalog-translation", "fr", { generatedAt: "manual", entries: ids.map((id, index) => ({ id, text: index ? "Lune corrigée" : "Soleil corrigé", source: "manual" })) })
+  db.putNodeData("tts", "en", { entries: ids.map((textId) => ({ textId, language: "en", fileName: `${textId}.mp3`, provider: "manual", model: "manual", voice: "manual", voiceSlot: "primary", cached: false })) })
+  fs.mkdirSync(path.join(db.bookDir!, "audio/en"), { recursive: true })
+  for (const id of ids) fs.writeFileSync(path.join(db.bookDir!, `audio/en/${id}.mp3`), `RECORDING ${id}`)
+  db.close()
+  const retained = [read("web-rendering", "pg001"), read("text-catalog-translation", "fr"), read("tts", "en"), read("page-sectioning", "pg002")]
+  expect((await send("pages/pg001/sectioning", { reasoning: "", sections: [...sections].reverse(), baseVersion: 2 })).status).toBe(200)
+  for (const [index, s] of sections.entries()) {
+    const response = await app.request(`/books/${label}/adt-preview/${s.sectionId}.html`)
+    expect(response.status).toBe(200)
+    const html = await response.text()
+    expect(html).toContain(index ? "Owner B" : "Owner A")
+    expect(html).toContain(index ? '"item-1":"moon"' : '"item-1":"sun"')
+  }
+  expect([read("web-rendering", "pg001"), read("text-catalog-translation", "fr"), read("tts", "en"), read("page-sectioning", "pg002")]).toEqual(retained)
+  expect((await send("pages/pg001/sectioning", { reasoning: "", sections: [...sections].reverse().map((s) => ({ ...s, isPruned: s.sectionId === sections[0].sectionId })), baseVersion: 3 })).status).toBe(200)
+  expect((await app.request(`/books/${label}/adt-preview/pg001_sec001.html`)).status).toBe(404)
+  expect((await app.request(`/books/${label}/adt-preview/pg001_sec002.html`)).status).toBe(200)
+  expect((await send("versions/page-sectioning/pg001/restore", { version: 3, baseVersion: 4 }, "POST")).status).toBe(200)
+  const reopened = book()
+  try {
+    await packageAdtWeb(reopened, { bookDir: reopened.bookDir!, label, language: "en", outputLanguages: ["en", "fr"], title: "Owners", webAssetsDir: assets, promptsDir: prompts, configDir: path.resolve("config"), config: loadBookConfig(label, root, configPath) })
+    expect(fs.readFileSync(path.join(reopened.bookDir!, "adt/pg001_sec001.html"), "utf8")).toContain('"item-1":"sun"')
+    expect(fs.readFileSync(path.join(reopened.bookDir!, "adt/pg001_sec002.html"), "utf8")).toContain('"item-1":"moon"')
+    for (const id of ids) expect(fs.readFileSync(path.join(reopened.bookDir!, `audio/en/${id}.mp3`), "utf8")).toBe(`RECORDING ${id}`)
+    expect(reopened.getAllNodeVersions("page-sectioning", "pg001")).toHaveLength(4)
+  } finally { reopened.close() }
+}, 60_000)
+
+it.each(["unknown", "conflicting"])("F1: %s rendered ownership stays inspectable in history but cannot be served under a guessed URL", async (kind) => {
+  const db = book()
+  const html = kind === "unknown" ? '<section><p>Unverifiable owner</p></section>' : '<section data-section-id="pg001_sec001"><p>Contradictory owner</p></section>'
+  const data = { sections: [{ sectionIndex: 0, sectionType: "text_only", reasoning: "", html, ...(kind === "conflicting" ? { sectionId: "pg001_sec999" } : {}) }] }
+  db.putNodeData("web-rendering", "pg001", data)
+  db.close()
+  expect((await app.request(`/books/${label}/adt-preview/pg001_sec001.html`)).status).toBe(404)
+  expect(read("web-rendering", "pg001")!.data).toEqual(data)
+  expect((await json("debug/versions/web-rendering/pg001?includeData=true")).versions).toHaveLength(2)
+  expect((await app.request(`/books/${label}/adt-preview/pg002_sec001.html`)).status).toBe(200)
 })

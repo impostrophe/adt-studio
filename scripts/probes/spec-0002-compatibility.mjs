@@ -105,7 +105,7 @@ if (process.argv[2] === "--read-only") {
       storage.putNodeData("web-rendering", "pg001", rendering)
     } finally { storage.close() }
     const app = await routes(currentTree, booksDir, true)
-    await request(app, "pages/pg001/sectioning", { ...sectioning, baseVersion: 1 })
+    await request(app, "pages/pg001/sectioning", { ...sectioning, sections: sectioning.sections.map((section) => ({ ...section, textColor: "#111111" })), baseVersion: 1 })
     await request(app, "toc", { baseVersion: 0, entries: [{ id: "toc1", title: "Manual contents", sectionId: "pg001_sec001", href: "pg001_sec001.html", chapterId: "ch1", level: 1 }], pageCount: 1, generatedAt: "fixture" })
     await request(app, "quizzes", { baseVersion: 0, generatedAt: "fixture", language: "en", pagesPerQuiz: 1, quizzes: [{ quizIndex: 0, afterPageId: "pg001", pageIds: ["pg001"], question: "Manual question", answerIndex: 0, reasoning: "", options: ["One", "Two", "Three"].map((text) => ({ text, explanation: "" })) }] })
     const catalog = JSON.parse(await request(app, "text-catalog"))

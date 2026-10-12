@@ -218,6 +218,46 @@ the refreshed baseline, dependencies, implemented behavior and verification limi
   stale full document or relabel another writer's content as manual. Admission
   must cover queued execution and recheck captured versions at publication.
 
+### Integration clarifications — 2026-10-12
+
+The owner authorized implementation against refreshed SPEC-0001 before either PR
+is approved or merged. PR #880 remains a separate PR stacked on #879. Approval
+metadata and the original AC checklist below remain pending.
+
+- **No-op saves (AC-5/7):** the older wording “Saving … stamps manual” is read with
+  the owner's explicit requirement to stamp only genuinely changed/new content.
+  A TOC or page save with unchanged authored content retains its previous AI,
+  manual or absent provenance. A real edit still protects the whole document or
+  page; this does not narrow the protection unit. A user-requested AI edit which
+  changes rendered content protects its owning page even if its semantic tree
+  did not change. Client-supplied authorship never overrides the server.
+- **TOC draft recovery (AC-18):** generated positional IDs do not establish chapter
+  identity. Replacement, changed chapter targets, membership/order changes and
+  ambiguous identities require an explicit whole-document choice. Preserve the
+  original draft; lock editing during that choice and explain that loading the
+  latest document discards the whole draft. Independent field edits merge only
+  while the document/target identities remain verifiable. No new persistent ID
+  scheme is introduced.
+- **Combined replacement (AC-6/14/18):** exact named consent may follow a TOC version
+  created by that same run's committed section retirement. It cannot follow an
+  external version. A mismatching confirmation fails explicitly instead of
+  reporting successful replacement after skipping generation.
+- **Retained fixed-layout output:** preserve positioned tree and HTML together
+  through Sectioning success, failure, cancellation and restart. Adapt the
+  minimal pair-retention rule from SPEC-0003 #884 and the preview resolver from
+  SPEC-0012 #888. This is not full Storyboard-rerun preservation or the complete
+  mode-transition lifecycle owned by those downstream specifications.
+- **Legacy output qualification:** carry SPEC-0001's documented safety decision:
+  retain unverifiable/contradictory rendered ownership in raw content, history
+  and physical assets, omit that rendering from preview/export and disclose why.
+  Never guess ownership from current source positions or moved leaves. Original
+  SPEC-0001 AC-7/12 remain qualified pending ratification or safe repair; affected
+  SPEC-0002 AC-9/11/17 cannot claim unrestricted legacy preview/export acceptance.
+- **Ambiguous legacy translations:** reads preserve duplicate protected entries;
+  generation and saves refuse ambiguous identities before provider calls or
+  publication. Restore a known unambiguous version or repair the book before
+  continuing. No automatic choice between corrections is authorized.
+
 ## Acceptance criteria
 
 - [ ] AC-1 Saving a translation document through `PUT …/text-catalog-translation/:language` stamps `source: "manual"` on exactly the entries whose `text` differs from the current version; every other entry keeps its prior `source`; the response version increments.

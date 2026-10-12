@@ -1,4 +1,4 @@
-export { isProtectedContent, stampManualEdits, mergePreservingManual } from "./manual-edits.js"
+export { indexPreservedEntries, isProtectedContent, stampManualEdits, mergePreservingManual } from "./manual-edits.js"
 
 export {
   type Progress,

@@ -671,6 +671,7 @@ export function LanguageView({
   }, [selectedVoiceSlot, timestampMap]);
 
   // Pending state for edits (keyed by language)
+  const [restoring, setRestoring] = useState(false);
   const [saving, setSaving] = useState(false);
   const pendingVersions = useRef({ baseVersion: 0, sourceVersion: 0, sourceSignature: "" });
   const [generateErrorById, setGenerateErrorById] = useState<
@@ -1540,6 +1541,7 @@ export function LanguageView({
             itemId={translationItemId ?? selectedLang}
             currentVersion={translationVersion}
             saving={saving}
+          onRestoringChange={setRestoring}
             dirty={dirty}
             bookLabel={bookLabel}
             pendingLabel={pendingLabel}
@@ -1895,7 +1897,7 @@ export function LanguageView({
       {headerSlotEl &&
         headerControls &&
         createPortal(headerControls, headerSlotEl)}
-      <fieldset disabled={saving} className="flex min-w-0 flex-col h-full border-0 p-0">
+      <fieldset disabled={saving || restoring} className="flex min-w-0 flex-col h-full border-0 p-0">
         {/* Fixed header: alerts, language tabs, column headers */}
         <div className="shrink-0 px-4 pt-4 space-y-3">
           {isSpeechStage && hasStageError && runError && (

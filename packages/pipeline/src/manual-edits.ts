@@ -6,7 +6,7 @@ export function isProtectedContent(content: AuthoredContent): boolean {
   return content.source !== "ai"
 }
 
-function indexByKey<T>(entries: readonly T[], keyOf: (entry: T) => string): Map<string, T> {
+export function indexPreservedEntries<T>(entries: readonly T[], keyOf: (entry: T) => string): Map<string, T> {
   const indexed = new Map<string, T>()
   for (const entry of entries) {
     const key = keyOf(entry)
@@ -30,8 +30,8 @@ export function stampManualEdits<T extends AuthoredContent>(
   keyOf: (entry: T) => string,
   isEqual: (previous: Omit<T, "source">, next: Omit<T, "source">) => boolean,
 ): Array<Omit<T, "source"> & AuthoredContent> {
-  const priorByKey = indexByKey(previous, keyOf)
-  indexByKey(next, keyOf)
+  const priorByKey = indexPreservedEntries(previous, keyOf)
+  indexPreservedEntries(next, keyOf)
   const withoutSource = (entry: T): Omit<T, "source"> => {
     const { source: _source, ...content } = entry
     return content
@@ -64,8 +64,8 @@ export function mergePreservingManual<T extends AuthoredContent>(
   existing: readonly T[],
   keyOf: (entry: T) => string,
 ): Array<Omit<T, "source"> & AuthoredContent> {
-  const generatedByKey = indexByKey(generated, keyOf)
-  const existingByKey = indexByKey(existing, keyOf)
+  const generatedByKey = indexPreservedEntries(generated, keyOf)
+  const existingByKey = indexPreservedEntries(existing, keyOf)
   return [
     ...generated.map((entry): Omit<T, "source"> & AuthoredContent => {
       const prior = existingByKey.get(keyOf(entry))

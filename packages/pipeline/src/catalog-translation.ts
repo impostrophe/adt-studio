@@ -1,3 +1,4 @@
+import { indexPreservedEntries } from "./manual-edits.js"
 import type { OutputReference } from "@adt/types"
 import { outputSkipped } from "./output-freshness.js"
 import { z } from "zod"
@@ -168,7 +169,7 @@ export async function translateCatalog(options: {
   references?: OutputReference[]
 }): Promise<TextCatalogOutput> {
   const { entries, config, language, llmModel } = options
-  const previous = new Map((options.previous?.entries ?? []).map((entry) => [entry.id, entry]))
+  const previous = indexPreservedEntries(options.previous?.entries ?? [], (entry) => entry.id)
   const pending = new Set(entries.filter((entry) => {
     if (!entry.text.trim()) return false
     const prior = previous.get(entry.id)

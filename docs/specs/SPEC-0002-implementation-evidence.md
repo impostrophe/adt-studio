@@ -1,5 +1,11 @@
 # SPEC-0002 implementation evidence
 
+> **2026-10-12 audit in progress:** the earlier completion reports below are
+> historical. [The refreshed integration audit](../verification/spec-0002-oct12-audit.md)
+> supersedes them for the updated prerequisite, F1–F4 and independent findings.
+> Publication and complete platform acceptance have not yet passed this audit.
+
+
 ## Review preparation after manual testing — 2026-10-11
 
 The owner considers the manual product walkthrough complete. The confirmations

@@ -1,4 +1,5 @@
 import { AuthorshipBadge } from "../../components/AuthorshipBadge"
+import { rebaseTocDraft } from "@/lib/rebase-toc-draft"
 import { useGuardedDraft } from "@/hooks/use-guarded-draft"
 import { DraftConflict } from "../../components/DraftConflict"
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
@@ -155,8 +156,10 @@ export function TocView({ bookLabel }: { bookLabel: string }) {
     if (!latest) throw new Error(t`Saved content is unavailable; your draft is retained`)
     queryClient.setQueryData(["books", bookLabel, "toc"], latest)
     return { value: latest, version: latest.version ?? 0 }
-  })
+  }, rebaseTocDraft)
   const { pending, setPending } = draft
+  const wholeDocumentConflict = draft.conflict?.paths.includes("/entries") ?? false
+  const [restoring, setRestoring] = useState(false);
   const [saving, setSaving] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
 
@@ -219,6 +222,7 @@ export function TocView({ bookLabel }: { bookLabel: string }) {
           itemId="book"
           currentVersion={data.version}
           saving={saving}
+          onRestoringChange={setRestoring}
           dirty={dirty}
           bookLabel={bookLabel}
           pendingLabel={pendingLabel}
@@ -341,9 +345,9 @@ export function TocView({ bookLabel }: { bookLabel: string }) {
         />
       }
     >
-      <DraftConflict error={draft.error} paths={draft.conflict?.paths} onResolve={draft.resolve} />
+      <DraftConflict error={draft.error} paths={draft.conflict?.paths} onResolve={draft.resolve} wholeDocument={wholeDocumentConflict} />
 
-      <fieldset disabled={saving} className="flex min-w-0 flex-1 flex-col overflow-y-auto border-0 p-0">
+      <fieldset disabled={saving || restoring || wholeDocumentConflict} className="flex min-w-0 flex-1 flex-col overflow-y-auto border-0 p-0">
         <TocHintBanner />
         {data && data.source !== "ai" && (
           <div className="flex items-center px-4 pt-3">

@@ -931,6 +931,9 @@ export function createStageRunner(): StageRunner {
     ): Promise<void> {
       const bookDir = resolveBookPaths(label, options.booksDir).bookDir
       if (!ownsBookWriter(bookDir)) return withBookWriter(bookDir, () => createStageRunner().run(label, options, progress))
+      // Consent belongs to this invocation. Only an exact, committed retirement
+      // below can advance it; never mutate the caller's queued request snapshot.
+      options = { ...options, protectedReplacements: options.protectedReplacements?.map((record) => ({ ...record })) }
       const { fromStage, toStage, booksDir } = options
       console.log(`[stage-run] ${label}: starting ${fromStage}→${toStage}`)
 
@@ -1543,16 +1546,24 @@ async function runSectioningStep(
             })
           }
           options.signal?.throwIfAborted()
-          storage.transaction(() => {
+          const tocRetirement = storage.transaction(() => {
             const before = previous.get(page.pageId)
             assertEditVersion(storage.getLatestNodeData("page-sectioning", page.pageId)?.version, before?.version ?? 0)
             const mint = createSectionIdFactory(storage, page.pageId)
             const sections = result.sections.map((section) => ({ ...section, sectionId: mint() }))
             const old = before?.data as PageSectioningOutput | undefined
+            const tocBefore = storage.getLatestNodeData("toc-generation", "book")
+            const consent = options.protectedReplacements?.find((record) => record.node === "toc-generation" && record.itemId === "book")
+            if (options.replaceManual && consent) assertEditVersion(tocBefore?.version, consent.version)
+            const ownsTocChange = !!tocBefore && replacementConfirmed(options, "toc-generation", "book", tocBefore.version)
             retireSectionIds(storage, (old?.sections ?? []).flatMap((section) => section.sectionId ? [section.sectionId] : []))
             storage.putNodeData("page-sectioning", page.pageId, { ...result, sections, source: "ai" })
             reconcileTextCatalog(storage)
+            // Return the exact version produced by this synchronous transaction.
+            // The caller advances consent only after SQLite commits successfully.
+            return ownsTocChange && consent ? { consent, version: storage.getLatestNodeData("toc-generation", "book")!.version } : undefined
           })
+          if (tocRetirement) tocRetirement.consent.version = tocRetirement.version
         } catch (err) {
           const step = err instanceof StepError ? err.step : "page-sectioning"
           console.error(`[stage-run] ${label}: ${page.pageId} failed at ${step}: ${toErrorMessage(err)}`)
@@ -1687,7 +1698,13 @@ async function runStoryboardStep(
       progress.emit({ type: "step-start", step: "web-rendering" })
       const { processFixedLayoutPages } = await import("@adt/pipeline")
       const imageUrlPrefix = `/api/books/${label}/images`
-      processFixedLayoutPages(storage, imageUrlPrefix)
+      // Keep the rendering/tree pair intact on a failed synchronous publication.
+      // This is the pair-retention rule from PR #884, without its mode lifecycle.
+      storage.transaction(() => {
+        options.signal?.throwIfAborted()
+        processFixedLayoutPages(storage, imageUrlPrefix)
+        options.signal?.throwIfAborted()
+      })
       progress.emit({ type: "step-complete", step: "web-rendering" })
       console.log(`[stage-run] ${label}: fixed-layout rendering complete`)
       return
@@ -1803,7 +1820,11 @@ async function runStoryboardStep(
             { signal: options.signal },
           )
           if (options.signal?.aborted) throw new RunCancelledError()
-          storage.putNodeData("web-rendering", page.pageId, renderResult)
+          storage.transaction(() => {
+            storage.putNodeData("web-rendering", page.pageId, renderResult)
+            // Switch away from a positioned tree only with its replacement HTML.
+            if (storage.getLatestNodeData("fixed-layout-sectioning", page.pageId)) storage.putNodeData("fixed-layout-sectioning", page.pageId, null)
+          })
           completedRendering++
           progress.emit({
             type: "step-progress",
@@ -2283,6 +2304,10 @@ async function runTocStep(
 
   try {
     const previous = storage.getLatestNodeData("toc-generation", "book")
+    const confirmed = options.replaceManual && options.protectedReplacements?.find((record) => record.node === "toc-generation" && record.itemId === "book")
+    // A named replacement that no longer matches is an error, never a successful
+    // no-op. Only the exact same-run retirement path may advance this snapshot.
+    if (confirmed) assertEditVersion(previous?.version, confirmed.version)
     if (previous && isProtectedContent(previous.data as { source?: "ai" | "manual" }) && !replacementConfirmed(options, "toc-generation", "book", previous.version)) {
       progress.emit({ type: "step-skip", step: "toc-generation" })
       return

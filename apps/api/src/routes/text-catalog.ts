@@ -1,5 +1,5 @@
 import { assertAuthoredIdle } from "../services/authored-output-service.js"
-import { captureOutputReferences } from "@adt/pipeline"
+import { indexPreservedEntries, captureOutputReferences } from "@adt/pipeline"
 import { catalogOutputs, editSourceSignature, assertEditSource, assertEditVersion } from "../services/catalog-output-service.js"
 import fs from "node:fs"
 import path from "node:path"
@@ -174,7 +174,9 @@ export function createTextCatalogRoutes(booksDir: string, promptsDir = path.reso
         }
         const outputs = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath)
         assertEditSource(editSourceSignature(outputs, "translation", language), parsed.data.sourceSignature)
-        const previousEntries = new Map(((previous?.data as { entries?: Array<{ id: string; text: string }> })?.entries ?? []).map((entry) => [entry.id, entry]))
+        let previousEntries: Map<string, { id: string; text: string }>
+        try { previousEntries = indexPreservedEntries((previous?.data as { entries?: Array<{ id: string; text: string }> })?.entries ?? [], (entry) => entry.id) }
+        catch { throw new HTTPException(409, { message: "Saved translations have ambiguous identities. Keep the draft and repair or restore the translation document before saving." }) }
         const previousData = previous?.data && typeof previous.data === "object"
           ? previous.data as { generatedAt?: unknown }
           : null

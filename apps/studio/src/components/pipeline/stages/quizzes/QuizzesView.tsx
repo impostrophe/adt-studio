@@ -155,6 +155,7 @@ export function QuizzesView({
     return { value: latest.quizzes, version: latest.version ?? 0 }
   })
   const { pending, setPending } = draft
+  const [restoring, setRestoring] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [lightboxPageId, setLightboxPageId] = useState<string | null>(null);
@@ -323,6 +324,7 @@ export function QuizzesView({
           currentVersion={data.historyVersion ?? data.version}
           currentVersionInactive={data.quizzes === null}
           saving={saving}
+          onRestoringChange={setRestoring}
           dirty={dirty}
           bookLabel={bookLabel}
           pendingLabel={pendingLabel}
@@ -521,7 +523,7 @@ export function QuizzesView({
           subtitle={t`Quizzes are linked to other pages in this book`}
         />
       ) : (
-        <fieldset disabled={saving || deleting} className="flex min-w-0 flex-1 flex-col border-0 p-0">
+        <fieldset disabled={saving || restoring || deleting} className="flex min-w-0 flex-1 flex-col border-0 p-0">
           <QuizzesHintBanner />
           <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-border/60 bg-background/95 px-4 py-3 backdrop-blur-md">
             <div className="relative max-w-md flex-1">

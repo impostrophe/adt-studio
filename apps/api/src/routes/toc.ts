@@ -8,7 +8,7 @@ import { HTTPException } from "hono/http-exception"
 import { TocGenerationOutput, isHeadingRole, parseBookLabel } from "@adt/types"
 import type { ContentNodeData } from "@adt/types"
 import { openBookDb, createBookStorage, readCurrentNodeRow } from "@adt/storage"
-import { resolveReadingOrder, readingOrderHref } from "@adt/pipeline"
+import { stampManualEdits, inputSignature, resolveReadingOrder, readingOrderHref } from "@adt/pipeline"
 
 function safeParseLabel(label: string): string {
   try {
@@ -92,9 +92,13 @@ export function createTocRoutes(booksDir: string): Hono {
     const storage = createBookStorage(safeLabel, booksDir)
     try {
       assertAuthoredIdle(storage)
-      assertEditVersion(storage.getLatestNodeData("toc-generation", "book")?.version, parsed.data.baseVersion)
+      const previous = storage.getLatestNodeData("toc-generation", "book")
+      assertEditVersion(previous?.version, parsed.data.baseVersion)
       const { baseVersion: _base, ...content } = parsed.data
-      const version = storage.putNodeData("toc-generation", "book", { ...content, source: "manual" })
+      const prior = TocGenerationOutput.safeParse(previous?.data)
+      const [stamped] = stampManualEdits<TocGenerationOutput>(prior.success ? [prior.data] : [], [content], () => "book",
+        (before, after) => inputSignature({ entries: before.entries, pageCount: before.pageCount }) === inputSignature({ entries: after.entries, pageCount: after.pageCount }))
+      const version = storage.putNodeData("toc-generation", "book", stamped)
       return c.json({ version })
     } finally {
       storage.close()

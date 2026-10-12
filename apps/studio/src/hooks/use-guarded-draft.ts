@@ -3,13 +3,13 @@ import { ApiError } from "@/api/client"
 import { rebaseDraft } from "@/lib/rebase-draft"
 
 /** Capture the version when editing starts, never from a later query refresh. */
-export function useGuardedDraft<T>(current: T | null | undefined, version: number | null | undefined, reload: () => Promise<{ value: T; version: number }>) {
+export function useGuardedDraft<T>(current: T | null | undefined, version: number | null | undefined, reload: () => Promise<{ value: T; version: number }>, merge: typeof rebaseDraft<T> = rebaseDraft) {
   const [pending, update] = useState<T | null>(null)
   const base = useRef<{ value: T; version: number } | null>(null)
   const epoch = useRef(0)
   const pendingRef = useRef(pending)
-  const currentRef = useRef({ current, version, reload })
-  currentRef.current = { current, version, reload }
+  const currentRef = useRef({ current, version, reload, merge })
+  currentRef.current = { current, version, reload, merge }
   const [conflict, setConflict] = useState<{ mine: T; latest: T; paths: string[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const setPending = useCallback((action: SetStateAction<T | null>) => {
@@ -32,8 +32,8 @@ export function useGuardedDraft<T>(current: T | null | undefined, version: numbe
       return
     }
     if (revision !== epoch.current) return
-    const mine = rebaseDraft(before.value, draft, latest.value)
-    const theirs = rebaseDraft(before.value, draft, latest.value, "latest")
+    const mine = currentRef.current.merge(before.value, draft, latest.value)
+    const theirs = currentRef.current.merge(before.value, draft, latest.value, "latest")
     base.current = latest
     pendingRef.current = mine.value
     update(mine.value)
@@ -44,7 +44,7 @@ export function useGuardedDraft<T>(current: T | null | undefined, version: numbe
     // The editor stays usable while a conflict is shown. Apply the choice to
     // that conflict without dropping unrelated edits typed since it appeared.
     const selected = choice === "draft" ? conflict.mine : conflict.latest
-    pendingRef.current = rebaseDraft(conflict.mine, pendingRef.current ?? conflict.mine, selected, choice).value
+    pendingRef.current = currentRef.current.merge(conflict.mine, pendingRef.current ?? conflict.mine, selected, choice).value
     epoch.current++
     update(pendingRef.current)
     setConflict(null)
