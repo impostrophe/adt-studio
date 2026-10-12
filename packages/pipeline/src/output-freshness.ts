@@ -130,7 +130,7 @@ export function needsOutputGeneration(status: OutputStatus, _metadata?: OutputMe
 
 export function withOutputLocations(status: OutputStatus, entry: TextCatalogEntry): OutputStatus {
   const locations = entry.locations ?? []
-  return { ...status, sourceText: entry.text,
+  return { ...status, sourceText: entry.text, locations,
     pageIds: [...new Set(locations.flatMap((location) => location.pageId ? [location.pageId] : []))],
     sectionIds: [...new Set(locations.flatMap((location) => location.sectionId ? [location.sectionId] : []))],
     group: locations.find((location) => location.group)?.group,

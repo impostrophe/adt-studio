@@ -52,6 +52,15 @@ export const OutputWarning = z.object({
 })
 export type OutputWarning = z.infer<typeof OutputWarning>
 
+/** Actual source references; page and section membership must stay paired. */
+export const OutputLocation = z.object({
+  pageId: z.string().optional(),
+  sectionId: z.string().optional(),
+  group: z.enum(["glossary", "quizzes"]).optional(),
+  role: z.string().optional(),
+})
+export type OutputLocation = z.infer<typeof OutputLocation>
+
 export const OutputStatus = z.object({
   included: z.boolean().optional(),
   text: z.string().optional(),
@@ -67,6 +76,7 @@ export const OutputStatus = z.object({
   missing: z.boolean(),
   updateNeeded: z.boolean(),
   warnings: z.array(OutputWarning),
+  locations: z.array(OutputLocation).optional(),
   pageIds: z.array(z.string()).default([]),
   sectionIds: z.array(z.string()).default([]),
   group: z.enum(["glossary", "quizzes"]).optional(),

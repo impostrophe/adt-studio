@@ -10,6 +10,17 @@ import { ReviewRow } from "./ReviewRow"
 import { identityKey, needsAttention } from "./review-plan"
 import { reviewStatus } from "./review-status"
 
+// Older projections expose only flat memberships. A single page is unambiguous;
+// for multiple pages, keep page-only/section-only filtering but never invent pairs.
+function sectionsOnPage(output: OutputStatus | CatalogConflict, page: string): string[] {
+  if (!page) return output.sectionIds
+  if (output.locations) return output.locations.flatMap((location) => location.pageId === page && location.sectionId ? [location.sectionId] : [])
+  return output.pageIds.length === 1 && output.pageIds[0] === page ? output.sectionIds : []
+}
+function matchesLocation(output: OutputStatus | CatalogConflict, page: string, section: string): boolean {
+  return (!page || output.pageIds.includes(page)) && (!section || sectionsOnPage(output, page).includes(section))
+}
+
 export function OutputReviewPanel({ bookLabel, outputs, catalog, conflicts = [], disclosure, renderDetail, defaultOpen = false }: {
   bookLabel: string; outputs: OutputStatus[]; catalog: OutputStatus[]; disclosure: boolean
   defaultOpen?: boolean
@@ -29,15 +40,15 @@ export function OutputReviewPanel({ bookLabel, outputs, catalog, conflicts = [],
   const categories = [...new Set([...affected.map(group), ...conflicts.map((item) => getEntryCategory(item.id))])].sort()
   const languages = [...new Set(affected.flatMap((output) => output.identity.language ? [output.identity.language] : []))].sort()
   const pages = [...new Set([...affected, ...conflicts].flatMap((output) => output.pageIds))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-  const sections = [...new Set([...affected, ...conflicts].filter((output) => !page || output.pageIds.includes(page)).flatMap((output) => output.sectionIds))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+  const sections = [...new Set([...affected, ...conflicts].flatMap((output) => sectionsOnPage(output, page)))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
   const categoryLabel = (value: string) => value === "glossary" ? t`Glossary` : value === "quizzes" ? t`Quizzes` : value === "captions" ? t`Captions` : value === "easy-read" ? t`Easy Read` : value === "answers" ? t`Answers` : t`Page text`
   const languageLabel = (value: string) => {
     try { return new Intl.DisplayNames([i18n.locale || "en"], { type: "language" }).of(value) ?? value } catch { return value }
   }
   const scoped = affected.filter((output) => (!category || group(output) === category) && (!language || output.identity.language === language) &&
-    (!page || output.pageIds.includes(page)) && (!section || output.sectionIds.includes(section)))
+    matchesLocation(output, page, section))
   const scopedConflicts = conflicts.filter((item) => (!category || getEntryCategory(item.id) === category) &&
-    (!page || item.pageIds.includes(page)) && (!section || item.sectionIds.includes(section)))
+    matchesLocation(item, page, section))
   const issues = [
     { value: "update", label: t`Out of sync`, description: t`Generated content needs updating.` },
     { value: "review", label: t`Needs review`, description: t`Decide whether to keep or replace protected content.` },

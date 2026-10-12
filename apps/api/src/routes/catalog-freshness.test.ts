@@ -42,6 +42,22 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); fs.rmSync(root, { recursive: true, force: true }) })
 
 describe("catalog freshness through real API/storage boundaries", () => {
+  it("projects actual page/section pairs for shared text, image outputs and legacy conflicts", async () => {
+    const db = storage()
+    db.putExtractedPage({ pageId: "pg002", pageNumber: 2, text: "Second", pageImage: { imageId: "pg002_page", buffer: Buffer.from("page2"), format: "png", hash: "page2", width: 100, height: 100 }, images: [] })
+    db.putNodeData("page-sectioning", "pg002", { reasoning: "", sections: [{ sectionId: "other-owner", sectionType: "text", backgroundColor: "white", textColor: "black", pageNumber: 2, isPruned: false, nodes: [] }] })
+    db.putNodeData("web-rendering", "pg002", { sections: [{ sectionIndex: 0, sectionId: "other-owner", sectionType: "text", reasoning: "", html: '<section data-section-id="other-owner"><p data-id="pg001_t001">Conflicting legacy text</p><img data-id="pg001_im001" /></section>' }] })
+    db.close()
+    const projection = await (await app.request(`/books/${label}/outputs`)).json()
+    const pairs = (item: { locations: { pageId?: string; sectionId?: string }[] }) => item.locations.map(({ pageId, sectionId }) => ({ pageId, sectionId }))
+    const expected = [{ pageId: "pg001", sectionId: "pg001_sec001" }, { pageId: "pg002", sectionId: "other-owner" }]
+    for (const [kind, id] of [["translation", "pg001_t001"], ["caption", "pg001_im001"], ["image-translation", "pg001_im001"], ["audio", "pg001_t001"]]) {
+      const item = projection.outputs.find((output: OutputStatus) => output.identity.kind === kind && output.identity.id === id)
+      expect(item, kind).toBeDefined()
+      expect(pairs(item)).toEqual(expected)
+    }
+    expect(pairs(projection.conflicts[0])).toEqual(expected)
+  })
   it("AC-11 invalidates packaging reuse when image bytes change with identical size and mtime", () => {
     const db = storage()
     try {

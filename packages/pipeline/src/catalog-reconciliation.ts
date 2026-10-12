@@ -1,7 +1,7 @@
 import { TTSOutput, WordTimestampOutput, voiceSlotEntryId } from "@adt/types"
 import { parseDocument, DomUtils } from "htmlparser2"
 import { publishSpeechOutput, readBookAsset, type Storage } from "@adt/storage"
-import { WebRenderingOutput, type TextCatalogOutput, type GlossaryOutput, type SectionRendering } from "@adt/types"
+import { WebRenderingOutput, type TextCatalogOutput, type GlossaryOutput, type SectionRendering, type OutputLocation } from "@adt/types"
 import { buildTextCatalogSnapshot } from "./text-catalog.js"
 import { inputSignature } from "./output-freshness.js"
 import { extractImageIds } from "./image-captioning.js"
@@ -58,12 +58,13 @@ export function reconcileTextCatalog(storage: Storage): TextCatalogOutput {
 /** Discover source assets before a caption exists, including glossary-only
  * images. Shared images keep one identity with all referring selection groups. */
 export function buildImageInventory(storage: Storage) {
-  const references = new Map<string, { pageIds: Set<string>; sectionIds: Set<string>; glossary: boolean; catalogLocations: Array<{ pageId?: string; sectionId?: string; role: string }> }>()
+  const references = new Map<string, { pageIds: Set<string>; sectionIds: Set<string>; glossary: boolean; locations: OutputLocation[]; catalogLocations: Array<{ pageId?: string; sectionId?: string; role: string }> }>()
   const add = (id: string, pageId: string | undefined, sectionId?: string, glossary = false) => {
-    const entry = references.get(id) ?? { pageIds: new Set<string>(), sectionIds: new Set<string>(), glossary: false, catalogLocations: [] }
+    const entry = references.get(id) ?? { pageIds: new Set<string>(), sectionIds: new Set<string>(), glossary: false, locations: [], catalogLocations: [] }
     if (pageId) entry.pageIds.add(pageId)
     if (sectionId) entry.sectionIds.add(sectionId)
     entry.glossary ||= glossary
+    entry.locations.push({ pageId, sectionId, ...(glossary ? { group: "glossary" as const } : {}), role: "caption" })
     if (!glossary) entry.catalogLocations.push({ pageId, sectionId, role: "caption" })
     references.set(id, entry)
   }
@@ -85,7 +86,7 @@ export function buildImageInventory(storage: Storage) {
     const meta = storage.getImageMeta(id)
     let assetHash: string | null = null
     try { if (meta) assetHash = inputSignature(storage.getImageBase64(id)) } catch { /* Missing input affects this image only. */ }
-    return { id, pageId: meta?.pageId, assetHash, pageIds: [...refs.pageIds], sectionIds: [...refs.sectionIds], glossary: refs.glossary, catalogLocations: refs.catalogLocations }
+    return { id, pageId: meta?.pageId, assetHash, pageIds: [...refs.pageIds], sectionIds: [...refs.sectionIds], glossary: refs.glossary, locations: refs.locations, catalogLocations: refs.catalogLocations }
   })
 }
 

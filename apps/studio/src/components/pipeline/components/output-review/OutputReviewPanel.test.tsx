@@ -98,7 +98,7 @@ it("shows distinct issue totals and lets the summary chips filter without double
 })
 
 it("narrows sections by page and sends only matching identities to a bulk update, including shared locations", async () => {
-  const shared = output("shared", { pageIds: ["pg002", "pg003"], sectionIds: ["section-shared"] })
+  const shared = output("shared", { pageIds: ["pg002", "pg003"], sectionIds: ["section-shared"], locations: [{ pageId: "pg002", sectionId: "section-shared" }, { pageId: "pg003", sectionId: "section-shared" }] })
   const otherSection = output("other-section", { pageIds: ["pg002"], sectionIds: ["section-two"] })
   const otherPage = output("other-page", { pageIds: ["pg010"], sectionIds: ["section-ten"] })
   setup([shared, otherSection, otherPage, output("glossary", { group: "glossary" })])
@@ -215,4 +215,37 @@ it("shows one legacy source-conflict warning without offering keep or generation
   expect(screen.getByText("Duplicate source ID: pg001_tx001")).toBeTruthy()
   expect(screen.queryByRole("button", { name: "Update all", exact: true })).toBeNull()
   expect(screen.queryByRole("button", { name: "Keep all existing content", exact: true })).toBeNull()
+})
+
+
+it("preserves actual page/section pairs for shared text, images and conflict warnings", async () => {
+  const locations = [{ pageId: "pg001", sectionId: "A" }, { pageId: "pg002", sectionId: "B" }]
+  const shared = output("shared", { pageIds: ["pg001", "pg002"], sectionIds: ["A", "B"], locations })
+  const image = output("shared-image", { ...shared, identity: { kind: "caption", id: "shared-image" } })
+  const local = output("local", { pageIds: ["pg001"], sectionIds: ["A"], locations: [locations[0]] })
+  setup([shared, image, local], undefined, false, [{ id: "conflict", texts: ["first", "second"], pageIds: shared.pageIds, sectionIds: shared.sectionIds, locations }])
+  fireEvent.click(screen.getByRole("button", { name: "Review items" }))
+  const page = screen.getByRole("combobox", { name: "Page" }) as HTMLSelectElement
+  const section = screen.getByRole("combobox", { name: "Section" }) as HTMLSelectElement
+  fireEvent.change(page, { target: { value: "pg001" } })
+  expect(Array.from(section.options).map((option) => option.value)).toEqual(["", "A"])
+  fireEvent.change(section, { target: { value: "A" } })
+  expect(screen.getByText("Items needing attention: 4")).toBeTruthy()
+  fireEvent.click(screen.getByRole("button", { name: "Update filtered items" }))
+  await waitFor(() => expect(calls.run).toHaveBeenCalledTimes(2))
+  expect(calls.run.mock.calls.flatMap((args) => args[2].outputScope.selection.identities)).toEqual(expect.arrayContaining([shared.identity, image.identity, local.identity]))
+  expect(calls.run.mock.calls.flatMap((args) => args[2].outputScope.selection.identities)).toHaveLength(3)
+  fireEvent.change(page, { target: { value: "pg002" } })
+  expect(Array.from(section.options).map((option) => option.value)).toEqual(["", "B"])
+  fireEvent.change(section, { target: { value: "B" } })
+  expect(screen.getByText("Items needing attention: 3")).toBeTruthy()
+  expect(screen.queryByText("local")).toBeNull()
+})
+
+it("does not invent page/section pairs for older multi-page projections", () => {
+  setup([output("old", { pageIds: ["pg001", "pg002"], sectionIds: ["A", "B"] })])
+  fireEvent.click(screen.getByRole("button", { name: "Review items" }))
+  fireEvent.change(screen.getByRole("combobox", { name: "Page" }), { target: { value: "pg001" } })
+  expect(Array.from((screen.getByRole("combobox", { name: "Section" }) as HTMLSelectElement).options).map((option) => option.value)).toEqual([""])
+  expect(screen.getByText("Items needing attention: 1")).toBeTruthy()
 })

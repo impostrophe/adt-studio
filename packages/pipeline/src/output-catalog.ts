@@ -64,7 +64,7 @@ export function readOutputCatalog(options: {
       content: previous ? { caption: previous.caption, decorative: previous.decorative === true } : undefined,
       metadata: previous, usable: !!previous && (previous.decorative === true || !!previous.caption.trim()),
     })
-    add({ ...status, pageIds: image.pageIds, sectionIds: image.sectionIds, group: image.glossary ? "glossary" : undefined })
+    add({ ...status, locations: image.locations, pageIds: image.pageIds, sectionIds: image.sectionIds, group: image.glossary ? "glossary" : undefined })
   }
   const imageConfig = buildImageTranslationConfig(config)
   for (const image of inventory) for (const language of getTargetLanguages(languages, sourceLanguage)) {
@@ -78,7 +78,7 @@ export function readOutputCatalog(options: {
       signature: inputSignature({ image: image.assetHash, sourceLanguage, language, model: imageConfig.modelId, prompt: prompt(config.image_translation?.prompt ?? "image_translation", imageConfig.modelId) }),
       content: hash, metadata: previous, usable: !!actual && (!hash || actual.startsWith(hash)),
       excluded: !imageConfig.enabled || !imageConfig.selectedImageIds.includes(image.id),
-    }), pageIds: image.pageIds, sectionIds: image.sectionIds, group: image.glossary ? "glossary" : undefined })
+    }), locations: image.locations, pageIds: image.pageIds, sectionIds: image.sectionIds, group: image.glossary ? "glossary" : undefined })
   }
   const snapshot = buildTextCatalogSnapshot(storage, storage.getPages())
   options.onConflicts?.(snapshot.conflicts ?? [])

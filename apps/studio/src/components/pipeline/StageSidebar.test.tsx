@@ -12,6 +12,8 @@ const cancelRunMock = vi.fn()
 const toastInfoMock = vi.fn()
 const matchRouteMock = vi.fn(() => true)
 const searchMock = { tab: "reviewer-checklist" }
+const ttsMock = vi.fn((): { data?: import("@/api/client").TTSResponse } => ({}))
+vi.mock("@/hooks/use-tts", () => ({ useTTSData: () => ttsMock() }))
 const outputsMock = vi.fn((): { data?: { summaries: { stages: Record<string, { applicable: number; current: boolean; updates: number; warnings: number; missing: number }> } } } => ({}))
 vi.mock("./components/OutputReview", () => ({ useOutputs: () => outputsMock(), CatalogSummary: () => <div>Selected stage outputs</div> }))
 
@@ -144,6 +146,7 @@ afterEach(() => {
   vi.clearAllMocks()
   stageStateMock.mockImplementation(defaultStageState)
   outputsMock.mockReturnValue({})
+  ttsMock.mockReturnValue({})
 })
 
 describe("StageSidebar", () => {
@@ -154,6 +157,17 @@ describe("StageSidebar", () => {
     render(<StageSidebar bookLabel="demo-book" activeStep="book" />)
     const button = screen.queryByRole("button", { name: /Review Speech outputs/ })
     expect(!!button).toBe(state === "done" || state === "error")
+  })
+  it("keeps failed-only speech visible after an attempt reset, then hides it after Delete all speech", async () => {
+    outputsMock.mockReturnValue({ data: { summaries: { stages: { speech: { applicable: 3, current: false, updates: 0, warnings: 0, missing: 3 } } } } })
+    stageStateMock.mockReturnValue("idle")
+    ttsMock.mockReturnValue({ data: { languages: { en: { entries: [], failed: [{ textId: "stable", error: "Unavailable" }], generatedAt: "before", version: 1 } } } })
+    const { StageSidebar } = await import("./components/StageSidebar")
+    const view = render(<StageSidebar bookLabel="demo-book" activeStep="book" />)
+    expect(screen.getByRole("button", { name: /Review Speech outputs.*Missing: 3/ })).toBeTruthy()
+    ttsMock.mockReturnValue({ data: { languages: { en: { entries: [], failed: [], generatedAt: "after", version: 2 } } } })
+    view.rerender(<StageSidebar bookLabel="demo-book" activeStep="book" />)
+    expect(screen.queryByRole("button", { name: /Review Speech outputs/ })).toBeNull()
   })
   it("AC-15 shows existing stale/protected outputs despite a completed job and opens the affected items", async () => {
     stageStateMock.mockReturnValue("done")

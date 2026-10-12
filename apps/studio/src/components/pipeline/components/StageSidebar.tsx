@@ -18,6 +18,8 @@ import type { MessageDescriptor } from "@lingui/core"
 import { Button } from "@/components/ui/button"
 import { toast } from "@/components/ui/sonner"
 import { useBookRun } from "@/hooks/use-book-run"
+import { useTTSData } from "@/hooks/use-tts"
+import { shouldShowMissingSpeech } from "../stages/languages/lib/speech-review-state"
 import { useAccessibilityAssessment } from "@/hooks/use-debug"
 import { useBookTasks } from "@/hooks/use-book-tasks"
 import { useOutputs } from "./OutputReview"
@@ -85,6 +87,7 @@ export function StageSidebar({
   const { data: packageStatus } = usePackageAdtStatus(bookLabel)
   const { tasks } = useBookTasks(bookLabel)
   const { data: catalog } = useOutputs(bookLabel)
+  const { data: speech } = useTTSData(bookLabel)
   const activeDirtyTabs = useDirtyTabsForStage(activeStep)
   const { data: sidebarPages } = usePages(bookLabel, { enabled: false })
   const hasNoTextLayer = (sidebarPages ?? []).some((p) => p.extractionWarning)
@@ -92,7 +95,6 @@ export function StageSidebar({
     msg`Some pages have no embedded text layer — text was recovered from the page image. Prefer a text-based PDF.`
   )
 
-  const hasStoredSpeech = (catalog?.outputs ?? []).some((output) => output.identity.kind === "audio" && (output.usable || output.protected))
   const currentState = stageState(activeStep)
   // A stale Storyboard still has its renderings — staleness is a step_runs flag,
   // not a delete. Closing the pages panel on stage status alone took the page
@@ -179,7 +181,7 @@ export function StageSidebar({
     const content = catalog?.summaries?.stages[step.slug]
     // Keep complete expected counts in the read model. Optional speech only
     // surfaces missing-output attention after an attempt, and not during it.
-    const hideMissingSpeech = step.slug === "speech" && (state === "running" || state === "queued" || (state === "idle" && !hasStoredSpeech))
+    const hideMissingSpeech = step.slug === "speech" && !shouldShowMissingSpeech(state, speech)
     const visibleContent = content && hideMissingSpeech ? { ...content, missing: 0 } : content
     const stageCompleted = content ? content.current : state === "done"
     // Overview is the stage's landing page, and its Run button. It is normally

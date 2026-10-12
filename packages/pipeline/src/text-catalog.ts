@@ -278,7 +278,7 @@ export function buildTextCatalogSnapshot(storage: Storage, pages: PageData[]): T
     texts.set(entry.id, values)
   }
   const conflicts = [...texts].filter(([, values]) => values.size > 1).map(([id, values]) => ({
-    id, texts: [...values],
+    id, texts: [...values], locations: byId.get(id)!.locations,
     pageIds: [...new Set(byId.get(id)!.locations?.flatMap((location) => location.pageId ? [location.pageId] : []) ?? [])],
     sectionIds: [...new Set(byId.get(id)!.locations?.flatMap((location) => location.sectionId ? [location.sectionId] : []) ?? [])],
   }))

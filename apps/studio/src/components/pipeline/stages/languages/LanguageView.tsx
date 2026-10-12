@@ -1,3 +1,4 @@
+import { useTTSData } from "@/hooks/use-tts";
 import { OutputReview, useOutputs } from "../../components/OutputReview"
 import { useState, useEffect, useRef, useCallback, useMemo, type ChangeEvent } from "react"
 import { createPortal } from "react-dom"
@@ -363,11 +364,7 @@ export function LanguageView({
   });
 
   const { data: outputCatalog } = useOutputs(bookLabel);
-  const { data: ttsData } = useQuery({
-    queryKey: ["books", bookLabel, "tts"],
-    queryFn: () => api.getTTS(bookLabel),
-    enabled: !!bookLabel,
-  });
+  const { data: ttsData } = useTTSData(bookLabel);
   const showMissingSpeech = shouldShowMissingSpeech(speechState, ttsData);
   const { data: voiceMappings } = useQuery({
     queryKey: ["voice-mappings"],
