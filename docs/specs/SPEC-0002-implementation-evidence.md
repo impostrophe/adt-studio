@@ -1,5 +1,38 @@
 # SPEC-0002 implementation evidence
 
+## Single-page revert and clearer Sectioning consent — 2026-10-11
+
+The owner confirmed the quiz correction works, French translation edits survive,
+and Sectioning edits survive with the manual badge visible. They located and
+tested the rerun dialog, but found the preservation/replacement wording confusing.
+They requested a single-page way to remove saved manual edits in Sectioning,
+explicitly declining a full version-history interface there.
+
+- **Revert manual edits** appears beside a manual page's badge. The existing
+  confirmation names the page, explains restoration and future rerun eligibility,
+  and lists affected downstream stages. The shortcut uses the existing guarded
+  restore API to select the most recent explicitly AI-authored version older than
+  the current version. It retains edited history, restores the whole page, and
+  does not modify neighboring page records or call a model. No schema/API change.
+- Unsaved local edits and local mutations disable the action. The API still
+  rejects stale/busy restores. A failed history read can be retried; absent AI
+  history is explained without guessing that legacy content was generated.
+- The rerun dialog now says listed pages keep their saved content by default,
+  while other pages regenerate, and labels the opt-in as also regenerating the
+  listed pages. All new copy is translated in all five locales.
+
+Verification: 34 tests passed across `RevertSectioningEdits.test.tsx`,
+`SectioningPageDetail.test.tsx` and `manual-edit-survival.test.ts`. The new HTTP/
+SQLite regression restores one page, checks both neighboring page records and
+retained manual history, then runs Sectioning and verifies exactly one model
+adapter call. Component tests cover cancel, the nearest earlier AI version,
+legacy/missing history, unsaved drafts, stale/busy rejection and read retry.
+`pnpm typecheck` passed; `pnpm lint` passed with the existing eight warnings;
+`pnpm --filter @adt/studio extract` reports zero missing translations in every
+locale. No full-suite, paid-provider, browser, desktop or release run is claimed
+for this addition; the new UI still needs the owner's hands-on check. No user
+book was modified. The invariant lint command remains planned and unavailable.
+
 ## Quiz rerun correction from product testing — 2026-10-11
 
 The owner tested the published `373619dd2` implementation and saw the generated
@@ -41,7 +74,7 @@ Verification for this correction:
 | `git diff --check` | Passed. |
 
 No full-suite, paid-provider, browser, packaged desktop or release acceptance run
-is claimed for this correction. The user's post-fix UI check is pending. No
+is claimed for this correction. The user subsequently confirmed “quizzes work now.” No
 user book was modified during development; test storage used temporary copies.
 The invariant lint command remains planned and unavailable.
 

@@ -140,6 +140,30 @@ it("saves, runs real admission/preparation/workers, reads history, previews and 
   } finally { db.close() }
 }, 60_000)
 
+it("AC-12: reverting one manual page keeps other pages and history, and makes only that page eligible on rerun", async () => {
+  const db = book()
+  for (const stage of PIPELINE.filter((s) => s.name === "extract")) for (const step of stage.steps) db.markStepCompleted(step.name)
+  db.putNodeData("book-outline", "book", { entries: [], styleClusters: [], reasoning: "fixture" })
+  db.close()
+  const generated = read("page-sectioning", "pg001")!
+  await saveProtected()
+  const edited = { ...read("page-sectioning", "pg001")!.data as object, sections: [section("pg001", "My correction")] }
+  expect((await send("pages/pg001/sectioning", { ...edited, baseVersion: 2 })).status).toBe(200)
+  const neighbors = [read("page-sectioning", "pg002"), read("page-sectioning", "pg003")]
+
+  expect((await send("versions/page-sectioning/pg001/restore", { version: generated.version, baseVersion: 3 }, "POST")).status).toBe(200)
+  expect(read("page-sectioning", "pg001")).toEqual(generated)
+  expect([read("page-sectioning", "pg002"), read("page-sectioning", "pg003")]).toEqual(neighbors)
+  const history = await json("debug/versions/page-sectioning/pg001?includeData=true")
+  expect(history.versions).toEqual(expect.arrayContaining([expect.objectContaining({ version: 3, data: expect.objectContaining({ source: "manual", sections: edited.sections }) })]))
+  expect(sectionPage).not.toHaveBeenCalled()
+
+  expect((await run("sectioning")).status).toBe("completed")
+  expect(sectionPage).toHaveBeenCalledTimes(1)
+  expect(read("page-sectioning", "pg001")!.version).toBeGreaterThan(3)
+  expect([read("page-sectioning", "pg002"), read("page-sectioning", "pg003")]).toEqual(neighbors)
+})
+
 it("requires versions, returns the current version on conflict, rejects a concurrent writer and keeps restored authorship", async () => {
   await saveProtected()
   const cases = [

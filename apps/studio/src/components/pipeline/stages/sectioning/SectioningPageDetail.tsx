@@ -35,6 +35,7 @@ import { usePendingChanges } from "../../components/change-summary"
 import { useFloatingSave } from "../../components/floating-save"
 import { CascadeResetDialog } from "../../components/CascadeResetDialog"
 import { useDownstreamWithOutput } from "@/hooks/use-downstream-with-output"
+import { RevertSectioningEdits } from "./RevertSectioningEdits"
 
 export function SectioningPageDetail({
   bookLabel,
@@ -458,7 +459,26 @@ export function SectioningPageDetail({
         )}
       </div>
       <div className="w-1/2 min-w-0 overflow-auto p-4 space-y-4">
-        {page.sectioningTree && <AuthorshipBadge source={page.sectioningTree.source} />}
+        {page.sectioningTree && page.sectioningTree.source !== "ai" && (
+          <div className="flex flex-wrap items-center gap-2">
+            <AuthorshipBadge source={page.sectioningTree.source} />
+            {page.sectioningTree.source === "manual" && page.versions.sectioning != null && (
+              <RevertSectioningEdits
+                key={`${bookLabel}:${pageId}:${page.versions.sectioning}`}
+                bookLabel={bookLabel}
+                pageId={pageId}
+                pageNumber={page.pageNumber}
+                currentVersion={page.versions.sectioning}
+                disabledReason={dirty
+                  ? t`Save or discard your edits first`
+                  : saving || structuralBusy
+                    ? t`Please wait for the current operation to finish`
+                    : undefined}
+                onBusyChange={setStructuralBusy}
+              />
+            )}
+          </div>
+        )}
         {page.extractionWarning && (
           <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
             <Eye className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />

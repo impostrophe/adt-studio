@@ -11476,3 +11476,42 @@ msgstr "Përdor vlerat më të fundit në konflikt"
 
 msgid "Your draft is retained. Review the refreshed content before saving again."
 msgstr "Drafti yt ruhet. Shqyrto përmbajtjen e rifreskuar para se ta ruash sërish."
+
+msgid "Also regenerate these pages and replace their saved content"
+msgstr "Rigjenero edhe këto faqe dhe zëvendëso përmbajtjen e tyre të ruajtur"
+
+msgid "Could not load saved content."
+msgstr "Përmbajtja e ruajtur nuk mund të ngarkohej."
+
+msgid "Could not load saved content. Retry"
+msgstr "Përmbajtja e ruajtur nuk mund të ngarkohej. Provo përsëri"
+
+msgid "Could not revert this page. Your edits were kept. Try again."
+msgstr "Ndryshimet e kësaj faqeje nuk mund të zhbëheshin. Ndryshimet tuaja u ruajtën. Provoni përsëri."
+
+msgid "Loading saved content…"
+msgstr "Duke ngarkuar përmbajtjen e ruajtur…"
+
+msgid "Manual edits reverted for page {pageNumber}"
+msgstr "Ndryshimet manuale të faqes {pageNumber} u zhbënë"
+
+msgid "No earlier AI-generated version is available for this page."
+msgstr "Nuk ka version të mëparshëm të gjeneruar nga IA-ja për këtë faqe."
+
+msgid "Pages listed below will keep their saved content unless you choose to replace them. All other pages will be regenerated."
+msgstr "Faqet e renditura më poshtë do ta ruajnë përmbajtjen e tyre, përveç nëse zgjidhni ta zëvendësoni. Të gjitha faqet e tjera do të rigjenerohen."
+
+msgid "Pages with manual edits or unknown authorship:"
+msgstr "Faqe me ndryshime manuale ose autorësi të panjohur:"
+
+msgid "Revert manual edits"
+msgstr "Zhbëj ndryshimet manuale"
+
+msgid "Revert manual edits on page {pageNumber}?"
+msgstr "Të zhbëhen ndryshimet manuale të faqes {pageNumber}?"
+
+msgid "This page changed or a run started. Your edits were kept. Try again."
+msgstr "Kjo faqe ndryshoi ose filloi një ekzekutim. Ndryshimet tuaja u ruajtën. Provoni përsëri."
+
+msgid "This restores the last generated sectioning for this page. Your edited version stays in history. Other pages keep their edits. This page can be regenerated on the next Re-run."
+msgstr "Kjo rikthen ndarjen e fundit në seksione të gjeneruar për këtë faqe. Versioni juaj i redaktuar mbetet në historik. Faqet e tjera i ruajnë ndryshimet e tyre. Kjo faqe mund të rigjenerohet në ekzekutimin e ardhshëm."

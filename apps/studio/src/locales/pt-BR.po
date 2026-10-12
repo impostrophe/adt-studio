@@ -11474,3 +11474,42 @@ msgstr "Usar os valores conflitantes mais recentes"
 
 msgid "Your draft is retained. Review the refreshed content before saving again."
 msgstr "Seu rascunho foi mantido. Revise o conteúdo atualizado antes de salvar novamente."
+
+msgid "Also regenerate these pages and replace their saved content"
+msgstr "Regenerar também estas páginas e substituir seu conteúdo salvo"
+
+msgid "Could not load saved content."
+msgstr "Não foi possível carregar o conteúdo salvo."
+
+msgid "Could not load saved content. Retry"
+msgstr "Não foi possível carregar o conteúdo salvo. Tentar novamente"
+
+msgid "Could not revert this page. Your edits were kept. Try again."
+msgstr "Não foi possível reverter esta página. Suas edições foram mantidas. Tente novamente."
+
+msgid "Loading saved content…"
+msgstr "Carregando conteúdo salvo…"
+
+msgid "Manual edits reverted for page {pageNumber}"
+msgstr "Edições manuais revertidas na página {pageNumber}"
+
+msgid "No earlier AI-generated version is available for this page."
+msgstr "Não há uma versão anterior gerada por IA disponível para esta página."
+
+msgid "Pages listed below will keep their saved content unless you choose to replace them. All other pages will be regenerated."
+msgstr "As páginas listadas abaixo manterão seu conteúdo salvo, a menos que você escolha substituí-lo. Todas as outras páginas serão regeneradas."
+
+msgid "Pages with manual edits or unknown authorship:"
+msgstr "Páginas com edições manuais ou autoria desconhecida:"
+
+msgid "Revert manual edits"
+msgstr "Reverter edições manuais"
+
+msgid "Revert manual edits on page {pageNumber}?"
+msgstr "Reverter as edições manuais da página {pageNumber}?"
+
+msgid "This page changed or a run started. Your edits were kept. Try again."
+msgstr "Esta página mudou ou uma execução foi iniciada. Suas edições foram mantidas. Tente novamente."
+
+msgid "This restores the last generated sectioning for this page. Your edited version stays in history. Other pages keep their edits. This page can be regenerated on the next Re-run."
+msgstr "Isso restaura a última divisão em seções gerada para esta página. Sua versão editada permanece no histórico. As outras páginas mantêm suas edições. Esta página poderá ser regenerada na próxima execução."

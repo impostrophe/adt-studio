@@ -11474,3 +11474,42 @@ msgstr "Usar los valores más recientes en conflicto"
 
 msgid "Your draft is retained. Review the refreshed content before saving again."
 msgstr "Tu borrador se conserva. Revisa el contenido actualizado antes de volver a guardar."
+
+msgid "Also regenerate these pages and replace their saved content"
+msgstr "También regenerar estas páginas y reemplazar su contenido guardado"
+
+msgid "Could not load saved content."
+msgstr "No se pudo cargar el contenido guardado."
+
+msgid "Could not load saved content. Retry"
+msgstr "No se pudo cargar el contenido guardado. Reintentar"
+
+msgid "Could not revert this page. Your edits were kept. Try again."
+msgstr "No se pudieron deshacer los cambios de esta página. Se conservaron tus cambios. Inténtalo de nuevo."
+
+msgid "Loading saved content…"
+msgstr "Cargando contenido guardado…"
+
+msgid "Manual edits reverted for page {pageNumber}"
+msgstr "Se deshicieron los cambios manuales de la página {pageNumber}"
+
+msgid "No earlier AI-generated version is available for this page."
+msgstr "No hay ninguna versión anterior generada por IA disponible para esta página."
+
+msgid "Pages listed below will keep their saved content unless you choose to replace them. All other pages will be regenerated."
+msgstr "Las páginas indicadas abajo conservarán su contenido guardado a menos que elijas reemplazarlo. Todas las demás páginas se regenerarán."
+
+msgid "Pages with manual edits or unknown authorship:"
+msgstr "Páginas con cambios manuales o autoría desconocida:"
+
+msgid "Revert manual edits"
+msgstr "Deshacer cambios manuales"
+
+msgid "Revert manual edits on page {pageNumber}?"
+msgstr "¿Deshacer los cambios manuales de la página {pageNumber}?"
+
+msgid "This page changed or a run started. Your edits were kept. Try again."
+msgstr "Esta página cambió o se inició una ejecución. Se conservaron tus cambios. Inténtalo de nuevo."
+
+msgid "This restores the last generated sectioning for this page. Your edited version stays in history. Other pages keep their edits. This page can be regenerated on the next Re-run."
+msgstr "Esto restaura la última división en secciones generada para esta página. Tu versión editada permanece en el historial. Las demás páginas conservan sus cambios. Esta página podrá regenerarse en la próxima ejecución."

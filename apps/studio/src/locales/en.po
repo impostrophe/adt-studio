@@ -11474,3 +11474,42 @@ msgstr "Use latest conflicting values"
 
 msgid "Your draft is retained. Review the refreshed content before saving again."
 msgstr "Your draft is retained. Review the refreshed content before saving again."
+
+msgid "Also regenerate these pages and replace their saved content"
+msgstr "Also regenerate these pages and replace their saved content"
+
+msgid "Could not load saved content."
+msgstr "Could not load saved content."
+
+msgid "Could not load saved content. Retry"
+msgstr "Could not load saved content. Retry"
+
+msgid "Could not revert this page. Your edits were kept. Try again."
+msgstr "Could not revert this page. Your edits were kept. Try again."
+
+msgid "Loading saved content…"
+msgstr "Loading saved content…"
+
+msgid "Manual edits reverted for page {pageNumber}"
+msgstr "Manual edits reverted for page {pageNumber}"
+
+msgid "No earlier AI-generated version is available for this page."
+msgstr "No earlier AI-generated version is available for this page."
+
+msgid "Pages listed below will keep their saved content unless you choose to replace them. All other pages will be regenerated."
+msgstr "Pages listed below will keep their saved content unless you choose to replace them. All other pages will be regenerated."
+
+msgid "Pages with manual edits or unknown authorship:"
+msgstr "Pages with manual edits or unknown authorship:"
+
+msgid "Revert manual edits"
+msgstr "Revert manual edits"
+
+msgid "Revert manual edits on page {pageNumber}?"
+msgstr "Revert manual edits on page {pageNumber}?"
+
+msgid "This page changed or a run started. Your edits were kept. Try again."
+msgstr "This page changed or a run started. Your edits were kept. Try again."
+
+msgid "This restores the last generated sectioning for this page. Your edited version stays in history. Other pages keep their edits. This page can be regenerated on the next Re-run."
+msgstr "This restores the last generated sectioning for this page. Your edited version stays in history. Other pages keep their edits. This page can be regenerated on the next Re-run."

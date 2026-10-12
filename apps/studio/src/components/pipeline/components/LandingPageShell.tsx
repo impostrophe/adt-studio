@@ -244,12 +244,14 @@ export function LandingPageShell({
         affectedStages={downstreamAffected}
         headerStageSlug={stageSlug}
         title={<Trans>Re-run {stageLabel}?</Trans>}
-        description={
+        description={stageSlug === "sectioning" && protectedSnapshot.length > 0 ? (
+          <Trans>Pages listed below will keep their saved content unless you choose to replace them. All other pages will be regenerated.</Trans>
+        ) : (
           <Trans>
             The completed stages below will be reset and need to run again
             before final outputs are available.
           </Trans>
-        }
+        )}
         confirmLabel={rerunLabel}
         confirmColorClass={hasError ? errorColorClass : colorClass}
         onConfirm={handleConfirm}
@@ -258,8 +260,8 @@ export function LandingPageShell({
           <p className="text-sm"><Trans>This replaces the manually edited or legacy table of contents. Its saved version remains in history.</Trans></p>
         ) : (
           <div className="space-y-2 text-sm">
-            <p><Trans>Protected pages:</Trans> {protectedSnapshot.map((r) => r.pageNumber ?? r.itemId).join(", ")}</p>
-            <label className="flex gap-2"><input type="checkbox" checked={replaceManual} onChange={(e) => setReplaceManual(e.target.checked)} /><Trans>Replace the protected pages listed above</Trans></label>
+            <p><Trans>Pages with manual edits or unknown authorship:</Trans> {protectedSnapshot.map((r) => r.pageNumber ?? r.itemId).join(", ")}</p>
+            <label className="flex gap-2"><input type="checkbox" checked={replaceManual} onChange={(e) => setReplaceManual(e.target.checked)} /><Trans>Also regenerate these pages and replace their saved content</Trans></label>
           </div>
         ))}
       </CascadeResetDialog>

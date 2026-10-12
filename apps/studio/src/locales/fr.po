@@ -11476,3 +11476,42 @@ msgstr "Utiliser les dernières valeurs en conflit"
 
 msgid "Your draft is retained. Review the refreshed content before saving again."
 msgstr "Votre brouillon est conservé. Vérifiez le contenu actualisé avant d’enregistrer à nouveau."
+
+msgid "Also regenerate these pages and replace their saved content"
+msgstr "Régénérer aussi ces pages et remplacer leur contenu enregistré"
+
+msgid "Could not load saved content."
+msgstr "Impossible de charger le contenu enregistré."
+
+msgid "Could not load saved content. Retry"
+msgstr "Impossible de charger le contenu enregistré. Réessayer"
+
+msgid "Could not revert this page. Your edits were kept. Try again."
+msgstr "Impossible d’annuler les modifications de cette page. Vos modifications ont été conservées. Réessayez."
+
+msgid "Loading saved content…"
+msgstr "Chargement du contenu enregistré…"
+
+msgid "Manual edits reverted for page {pageNumber}"
+msgstr "Modifications manuelles annulées pour la page {pageNumber}"
+
+msgid "No earlier AI-generated version is available for this page."
+msgstr "Aucune version antérieure générée par l’IA n’est disponible pour cette page."
+
+msgid "Pages listed below will keep their saved content unless you choose to replace them. All other pages will be regenerated."
+msgstr "Les pages ci-dessous conserveront leur contenu enregistré, sauf si vous choisissez de le remplacer. Toutes les autres pages seront régénérées."
+
+msgid "Pages with manual edits or unknown authorship:"
+msgstr "Pages avec des modifications manuelles ou d’origine inconnue :"
+
+msgid "Revert manual edits"
+msgstr "Annuler les modifications manuelles"
+
+msgid "Revert manual edits on page {pageNumber}?"
+msgstr "Annuler les modifications manuelles de la page {pageNumber} ?"
+
+msgid "This page changed or a run started. Your edits were kept. Try again."
+msgstr "Cette page a changé ou un traitement a démarré. Vos modifications ont été conservées. Réessayez."
+
+msgid "This restores the last generated sectioning for this page. Your edited version stays in history. Other pages keep their edits. This page can be regenerated on the next Re-run."
+msgstr "Cela restaure le dernier découpage en sections généré pour cette page. Votre version modifiée reste dans l’historique. Les autres pages conservent leurs modifications. Cette page pourra être régénérée lors de la prochaine relance."
