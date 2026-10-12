@@ -2908,33 +2908,35 @@ export function StoryboardSectionDetail({
             )}
           </>
         ) : !section?.isPruned && skippedPageIds.has(pageId) ? (
-          <StageEmptyState
-            icon={SkipForward}
-            color="violet"
-            title={t`Page skipped`}
-            subtitle={
-              storyboardRunning
-                ? t`This page will not be rendered in this run`
-                : t`This page was skipped during storyboard rendering`
-            }
-            cta={
-              !storyboardRunning && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={renderSkippedPage}
-                  disabled={rerendering || !hasStructuredTextProvider}
-                >
-                  {rerendering ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <RotateCcw className="mr-2 h-4 w-4" />
-                  )}
-                  {rerendering ? t`Re-rendering...` : t`Render this page`}
-                </Button>
-              )
-            }
-          />
+          <div className="flex h-full w-full flex-col">
+            <StageEmptyState
+              icon={SkipForward}
+              color="violet"
+              title={t`Page skipped`}
+              subtitle={
+                storyboardRunning
+                  ? t`This page will not be rendered in this run`
+                  : t`This page was skipped during storyboard rendering`
+              }
+              cta={
+                !storyboardRunning && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={renderSkippedPage}
+                    disabled={rerendering || !hasStructuredTextProvider}
+                  >
+                    {rerendering ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                    )}
+                    {rerendering ? t`Re-rendering...` : t`Render this page`}
+                  </Button>
+                )
+              }
+            />
+          </div>
         ) : storyboardRunning && !section?.isPruned ? (
           <div className="flex h-full w-full flex-col items-center pb-8">
             <LoadingState stageSlug="storyboard" label={t`Rendering this section...`} />
