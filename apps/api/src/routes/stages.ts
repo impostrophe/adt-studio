@@ -347,6 +347,27 @@ export function createStageRoutes(
     return c.json({ ok: true })
   })
 
+  app.post("/books/:label/stages/resume-pages", async (c) => {
+    const { label } = c.req.param()
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      throw new HTTPException(400, { message: "Invalid JSON body" })
+    }
+    const parsed = SkipPagesBody.safeParse(body)
+    if (!parsed.success) {
+      throw new HTTPException(400, {
+        message: `Invalid resume request: ${parsed.error.message}`,
+      })
+    }
+    if (stageService.getStatus(label).active?.status !== "running") {
+      throw new HTTPException(409, { message: "No active run to resume pages in" })
+    }
+    decisions.resumePages(label, parsed.data.pageIds)
+    return c.json({ ok: true })
+  })
+
   // GET /books/:label/step-status — Unified stage + step status
   // DB step_runs is the single source of truth for step/stage state.
   // Only "queued" comes from the in-memory run queue.

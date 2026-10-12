@@ -95,6 +95,7 @@ export interface BookRunContextValue {
   resolveDecision(decisionId: string, action: "skip" | "stop", applyToAll?: boolean): void
   skippedPageIds: ReadonlySet<string>
   skipPages(pageIds: string[]): void
+  resumePages(pageIds: string[]): void
 }
 
 const BookRunContext = createContext<BookRunContextValue | null>(null)
@@ -872,6 +873,20 @@ export function useBookRunStatus(label: string): BookRunContextValue {
     [label, queryClient]
   )
 
+  const resumePages = useCallback(
+    (pageIds: string[]) => {
+      if (pageIds.length === 0) return
+      const resuming = new Set(pageIds)
+      queryClient.setQueryData<StepStatusResponse>(stepStatusKey(label), (old) =>
+        old ? { ...old, skippedPages: (old.skippedPages ?? []).filter((id) => !resuming.has(id)) } : old
+      )
+      void api.resumePages(label, pageIds).catch(() => {
+        queryClient.invalidateQueries({ queryKey: stepStatusKey(label) })
+      })
+    },
+    [label, queryClient]
+  )
+
   const polledSkippedPages = data?.skippedPages
   const skippedPageIds = useMemo(() => new Set(polledSkippedPages ?? []), [polledSkippedPages])
 
@@ -923,6 +938,7 @@ export function useBookRunStatus(label: string): BookRunContextValue {
     resolveDecision,
     skippedPageIds,
     skipPages,
+    resumePages,
   }
 }
 

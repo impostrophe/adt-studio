@@ -128,6 +128,25 @@ describe("page-error decisions broker", () => {
     expect(notified).toEqual(["pg001", "pg002"])
   })
 
+  it("resumePages unskips the pages and notifies resume listeners only for skipped ones", () => {
+    const { bus } = withListener()
+    const broker = createPageErrorDecisions(bus)
+    const resumed: string[] = []
+    const unsubscribe = broker.onPageResume(LABEL, (pageId) => resumed.push(pageId))
+
+    broker.skipPages(LABEL, ["pg001", "pg002"])
+    broker.resumePages(LABEL, ["pg001", "pg003"])
+
+    expect(resumed).toEqual(["pg001"])
+    expect(broker.isPageSkipped(LABEL, "pg001")).toBe(false)
+    expect(broker.getSkippedPages(LABEL)).toEqual(["pg002"])
+
+    unsubscribe()
+    broker.resumePages(LABEL, ["pg002"])
+    expect(resumed).toEqual(["pg001"])
+    expect(broker.getSkippedPages(LABEL)).toEqual([])
+  })
+
   it("keeps skipped pages after the run ends until clearSkippedPages", () => {
     const { bus } = withListener()
     const broker = createPageErrorDecisions(bus)

@@ -70,6 +70,7 @@ export interface StageRunOptions {
   pageSkips?: {
     isSkipped(pageId: string): boolean
     onSkip(listener: (pageId: string) => void): () => void
+    onResume?(listener: (pageId: string) => void): () => void
   }
 }
 
@@ -150,6 +151,7 @@ export function createStageService(
         ? {
             isSkipped: (pageId) => decisions.isPageSkipped(label, pageId),
             onSkip: (listener) => decisions.onPageSkip(label, listener),
+            onResume: (listener) => decisions.onPageResume(label, listener),
           }
         : undefined,
     }

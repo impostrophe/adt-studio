@@ -1554,6 +1554,7 @@ async function runStoryboardStep(
   const storage = createBookStorage(label, booksDir)
   let visualRefinement: VisualRefinementDeps | undefined
   let unsubscribeSkips: (() => void) | undefined
+  let unsubscribeResumes: (() => void) | undefined
 
   try {
     const config = loadBookConfig(label, booksDir, configPath)
@@ -1686,106 +1687,43 @@ async function runStoryboardStep(
       stepController,
     })
     const pageControllers = new Map<string, AbortController>()
+    const pagesById = new Map(pages.map((page) => [page.pageId, page]))
+    const settledSkips = new Set<string>()
+    const resumedRenders: Promise<void>[] = []
+    const settleSkip = (pageId: string): void => {
+      recordSkippedPage(skippedByStep, "web-rendering", pageId)
+      settledSkips.add(pageId)
+    }
     unsubscribeSkips = options.pageSkips?.onSkip((pageId) => {
       pageControllers.get(pageId)?.abort()
     })
+    unsubscribeResumes = options.pageSkips?.onResume?.((pageId) => {
+      skippedByStep.get("web-rendering")?.delete(pageId)
+      if (!settledSkips.delete(pageId) || stepController.signal.aborted) return
+      const page = pagesById.get(pageId)
+      if (!page) return
+      console.log(`[stage-run] ${label}: ${pageId} resumed by user at web-rendering`)
+      resumedRenders.push(renderOne(page))
+    })
 
-    await processWithConcurrency(
-      pages,
-      effectiveConcurrency,
-      async (page: PageData) => {
-        if (options.pageSkips?.isSkipped(page.pageId)) {
-          recordSkippedPage(skippedByStep, "web-rendering", page.pageId)
-          return
-        }
-        const pageController = new AbortController()
-        pageControllers.set(page.pageId, pageController)
-        const pageSignal = options.signal
-          ? AbortSignal.any([options.signal, pageController.signal])
-          : pageController.signal
-        try {
-          if (options.signal?.aborted) throw new RunCancelledError()
+    const renderOne = async (page: PageData): Promise<void> => {
+      if (options.pageSkips?.isSkipped(page.pageId)) {
+        settleSkip(page.pageId)
+        return
+      }
+      const pageController = new AbortController()
+      pageControllers.set(page.pageId, pageController)
+      const pageSignal = options.signal
+        ? AbortSignal.any([options.signal, pageController.signal])
+        : pageController.signal
+      try {
+        if (options.signal?.aborted) throw new RunCancelledError()
 
-          const structuringRow = storage.getLatestNodeData("page-sectioning", page.pageId)
-          if (!structuringRow) {
-            console.log(
-              `[stage-run] ${label}: skipping ${page.pageId} (no page-sectioning)`
-            )
-            completedRendering++
-            progress.emit({
-              type: "step-progress",
-              step: "web-rendering",
-              message: `${completedRendering}/${totalPages}`,
-              page: completedRendering,
-              totalPages,
-            })
-            return
-          }
-          const sectioning = structuringRow.data as PageSectioningOutput
-
-          const imageClassificationRow = storage.getLatestNodeData(
-            "image-filtering",
-            page.pageId
+        const structuringRow = storage.getLatestNodeData("page-sectioning", page.pageId)
+        if (!structuringRow) {
+          console.log(
+            `[stage-run] ${label}: skipping ${page.pageId} (no page-sectioning)`
           )
-          const imageClassification = (imageClassificationRow?.data as ImageClassificationOutput) ?? { images: [] }
-          const unprunedImageIds = imageClassificationRow
-            ? imageClassification.images.filter((img) => !img.isPruned).map((img) => img.imageId)
-            : storage.getPageImages(page.pageId).map((img) => img.imageId)
-
-          const pageDims = new Map(
-            storage.getPageImages(page.pageId).map((img) => [img.imageId, { width: img.width, height: img.height }])
-          )
-          const renderImages = new Map<string, { base64: string; width?: number; height?: number }>()
-          for (const imageId of unprunedImageIds) {
-            if (options.signal?.aborted) throw new RunCancelledError()
-            const dims = pageDims.get(imageId)
-            renderImages.set(imageId, { base64: storage.getImageBase64(imageId), width: dims?.width, height: dims?.height })
-          }
-          // Sections can reference images extracted on other pages (cross-page
-          // merges, images added from another page) — those are not in this
-          // page's image-filtering output, so pull them in by walking the tree.
-          for (const imageId of collectReferencedImageIds(sectioning.sections)) {
-            if (renderImages.has(imageId)) continue
-            try {
-              const dims = storage.getImageDimensions(imageId)
-              renderImages.set(imageId, { base64: storage.getImageBase64(imageId), width: dims?.width ?? undefined, height: dims?.height ?? undefined })
-            } catch {
-              // Image file no longer exists — leave it out; the renderer emits
-              // the URL reference without pixels.
-            }
-          }
-
-          if (options.signal?.aborted) throw new RunCancelledError()
-          const pageImageBase64 = storage.getPageImageBase64(page.pageId)
-          // Page images for content merged in from other pages (cross-page
-          // merges) — per-section provenance recorded in sourcePageIds.
-          const sourcePageImages = collectSourcePageImages(
-            sectioning.sections,
-            (id) => storage.getPageImageBase64(id)
-          )
-
-          console.log(`[stage-run] ${label}: rendering ${page.pageId}`)
-          const renderResult = await renderPage(
-            {
-              label,
-              pageId: page.pageId,
-              pageImageBase64,
-              sectioning: sectioning,
-              images: renderImages,
-              sourcePageImages,
-              styleguide: styleguideContent,
-              bookFonts: buildBookFontsPromptContext(storage),
-              typography,
-            },
-            resolveRenderConfig,
-            resolveRenderModel,
-            templateEngine,
-            visualRefinement,
-            { signal: pageSignal },
-          )
-          if (options.signal?.aborted) throw new RunCancelledError()
-          pageController.signal.throwIfAborted()
-          storage.putNodeData("web-rendering", page.pageId, renderResult)
           completedRendering++
           progress.emit({
             type: "step-progress",
@@ -1794,24 +1732,112 @@ async function runStoryboardStep(
             page: completedRendering,
             totalPages,
           })
-        } catch (err) {
-          if (pageController.signal.aborted && !options.signal?.aborted) {
-            console.log(`[stage-run] ${label}: ${page.pageId} skipped by user at web-rendering`)
-            recordSkippedPage(skippedByStep, "web-rendering", page.pageId)
-            return
-          }
-          if (!isCancellation(err, [options.signal])) {
-            console.error(
-              `[stage-run] ${label}: ${page.pageId} failed at web-rendering: ${toErrorMessage(err)}`
-            )
-          }
-          await reportPageFailure(pageFailureDeps, progress, "web-rendering", page.pageId, err)
-        } finally {
-          pageControllers.delete(page.pageId)
+          return
         }
-      },
-      { runSignal: options.signal, stopSignal: stepController.signal, gate },
-    )
+        const sectioning = structuringRow.data as PageSectioningOutput
+
+        const imageClassificationRow = storage.getLatestNodeData(
+          "image-filtering",
+          page.pageId
+        )
+        const imageClassification = (imageClassificationRow?.data as ImageClassificationOutput) ?? { images: [] }
+        const unprunedImageIds = imageClassificationRow
+          ? imageClassification.images.filter((img) => !img.isPruned).map((img) => img.imageId)
+          : storage.getPageImages(page.pageId).map((img) => img.imageId)
+
+        const pageDims = new Map(
+          storage.getPageImages(page.pageId).map((img) => [img.imageId, { width: img.width, height: img.height }])
+        )
+        const renderImages = new Map<string, { base64: string; width?: number; height?: number }>()
+        for (const imageId of unprunedImageIds) {
+          if (options.signal?.aborted) throw new RunCancelledError()
+          const dims = pageDims.get(imageId)
+          renderImages.set(imageId, { base64: storage.getImageBase64(imageId), width: dims?.width, height: dims?.height })
+        }
+        // Sections can reference images extracted on other pages (cross-page
+        // merges, images added from another page) — those are not in this
+        // page's image-filtering output, so pull them in by walking the tree.
+        for (const imageId of collectReferencedImageIds(sectioning.sections)) {
+          if (renderImages.has(imageId)) continue
+          try {
+            const dims = storage.getImageDimensions(imageId)
+            renderImages.set(imageId, { base64: storage.getImageBase64(imageId), width: dims?.width ?? undefined, height: dims?.height ?? undefined })
+          } catch {
+            // Image file no longer exists — leave it out; the renderer emits
+            // the URL reference without pixels.
+          }
+        }
+
+        if (options.signal?.aborted) throw new RunCancelledError()
+        const pageImageBase64 = storage.getPageImageBase64(page.pageId)
+        // Page images for content merged in from other pages (cross-page
+        // merges) — per-section provenance recorded in sourcePageIds.
+        const sourcePageImages = collectSourcePageImages(
+          sectioning.sections,
+          (id) => storage.getPageImageBase64(id)
+        )
+
+        console.log(`[stage-run] ${label}: rendering ${page.pageId}`)
+        const renderResult = await renderPage(
+          {
+            label,
+            pageId: page.pageId,
+            pageImageBase64,
+            sectioning: sectioning,
+            images: renderImages,
+            sourcePageImages,
+            styleguide: styleguideContent,
+            bookFonts: buildBookFontsPromptContext(storage),
+            typography,
+          },
+          resolveRenderConfig,
+          resolveRenderModel,
+          templateEngine,
+          visualRefinement,
+          { signal: pageSignal },
+        )
+        if (options.signal?.aborted) throw new RunCancelledError()
+        pageController.signal.throwIfAborted()
+        storage.putNodeData("web-rendering", page.pageId, renderResult)
+        completedRendering++
+        progress.emit({
+          type: "step-progress",
+          step: "web-rendering",
+          message: `${completedRendering}/${totalPages}`,
+          page: completedRendering,
+          totalPages,
+        })
+      } catch (err) {
+        if (pageController.signal.aborted && !options.signal?.aborted) {
+          if (options.pageSkips?.isSkipped(page.pageId)) {
+            console.log(`[stage-run] ${label}: ${page.pageId} skipped by user at web-rendering`)
+            settleSkip(page.pageId)
+          } else {
+            resumedRenders.push(renderOne(page))
+          }
+          return
+        }
+        if (!isCancellation(err, [options.signal])) {
+          console.error(
+            `[stage-run] ${label}: ${page.pageId} failed at web-rendering: ${toErrorMessage(err)}`
+          )
+        }
+        await reportPageFailure(pageFailureDeps, progress, "web-rendering", page.pageId, err)
+      } finally {
+        if (pageControllers.get(page.pageId) === pageController) pageControllers.delete(page.pageId)
+      }
+    }
+
+    await processWithConcurrency(pages, effectiveConcurrency, renderOne, {
+      runSignal: options.signal,
+      stopSignal: stepController.signal,
+      gate,
+    })
+    while (resumedRenders.length > 0) {
+      await Promise.all(resumedRenders.splice(0))
+    }
+    unsubscribeResumes?.()
+    unsubscribeResumes = undefined
 
     if (stepController.signal.aborted) {
       throw new StepError("web-rendering", "Stopped by a page-error decision")
@@ -1821,6 +1847,7 @@ async function runStoryboardStep(
     console.log(`[stage-run] ${label}: storyboard complete`)
   } finally {
     unsubscribeSkips?.()
+    unsubscribeResumes?.()
     if (visualRefinement) {
       await visualRefinement.screenshotRenderer.close()
     }

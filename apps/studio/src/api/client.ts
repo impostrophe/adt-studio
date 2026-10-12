@@ -1290,6 +1290,17 @@ export const api = {
     throw new Error(text || `Skip failed: ${res.status}`)
   },
 
+  resumePages: async (label: string, pageIds: string[]): Promise<void> => {
+    const res = await fetch(`${BASE_URL}/books/${label}/stages/resume-pages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pageIds }),
+    })
+    if (res.ok || res.status === 409) return
+    const text = await res.text().catch(() => "")
+    throw new Error(text || `Resume failed: ${res.status}`)
+  },
+
   getPages: (label: string) =>
     request<PageSummaryItem[]>(`/books/${label}/pages`),
 

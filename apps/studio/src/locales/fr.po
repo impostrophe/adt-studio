@@ -8059,6 +8059,9 @@ msgstr "Cible de reprise"
 msgid "Resume target: page {0}"
 msgstr "Cible de reprise : page {0}"
 
+msgid "Resume this page"
+msgstr "Reprendre cette page"
+
 msgid "Retries"
 msgstr "Tentatives"
 

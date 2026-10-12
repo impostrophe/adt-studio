@@ -8057,6 +8057,9 @@ msgstr "Punto de reanudación"
 msgid "Resume target: page {0}"
 msgstr "Punto de reanudación: página {0}"
 
+msgid "Resume this page"
+msgstr "Reanudar esta página"
+
 msgid "Retries"
 msgstr "Retries"
 

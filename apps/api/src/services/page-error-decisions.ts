@@ -38,6 +38,8 @@ export interface PageErrorDecisions {
   getSkippedPages(label: string): string[]
   clearSkippedPages(label: string): void
   onPageSkip(label: string, listener: (pageId: string) => void): () => void
+  resumePages(label: string, pageIds: string[]): void
+  onPageResume(label: string, listener: (pageId: string) => void): () => void
 }
 
 interface PendingEntry {
@@ -60,6 +62,21 @@ export function createPageErrorDecisions(
   const bulkPolicy = new Map<string, PageErrorAction>()
   const skippedPages = new Map<string, Set<string>>()
   const skipListeners = new Map<string, Set<(pageId: string) => void>>()
+  const resumeListeners = new Map<string, Set<(pageId: string) => void>>()
+
+  function subscribe(
+    registry: Map<string, Set<(pageId: string) => void>>,
+    label: string,
+    listener: (pageId: string) => void,
+  ): () => void {
+    const listeners = registry.get(label) ?? new Set<(pageId: string) => void>()
+    registry.set(label, listeners)
+    listeners.add(listener)
+    return () => {
+      listeners.delete(listener)
+      if (listeners.size === 0) registry.delete(label)
+    }
+  }
 
   function markSkipped(label: string, pageId: string): void {
     const skipped = skippedPages.get(label) ?? new Set<string>()
@@ -205,13 +222,19 @@ export function createPageErrorDecisions(
     },
 
     onPageSkip(label: string, listener: (pageId: string) => void): () => void {
-      const listeners = skipListeners.get(label) ?? new Set<(pageId: string) => void>()
-      skipListeners.set(label, listeners)
-      listeners.add(listener)
-      return () => {
-        listeners.delete(listener)
-        if (listeners.size === 0) skipListeners.delete(label)
+      return subscribe(skipListeners, label, listener)
+    },
+
+    resumePages(label: string, pageIds: string[]): void {
+      const skipped = skippedPages.get(label)
+      const resumed = [...new Set(pageIds)].filter((pageId) => skipped?.delete(pageId))
+      for (const listener of [...(resumeListeners.get(label) ?? [])]) {
+        for (const pageId of resumed) listener(pageId)
       }
+    },
+
+    onPageResume(label: string, listener: (pageId: string) => void): () => void {
+      return subscribe(resumeListeners, label, listener)
     },
   }
 }

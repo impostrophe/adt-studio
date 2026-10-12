@@ -813,11 +813,17 @@ describe("createStageRunner storyboard render-only", () => {
   function createPageSkips() {
     const skipped = new Set<string>()
     const listeners = new Set<(pageId: string) => void>()
+    const resumeListeners = new Set<(pageId: string) => void>()
     return {
       listeners,
+      resumeListeners,
       skip(pageId: string) {
         skipped.add(pageId)
         for (const listener of listeners) listener(pageId)
+      },
+      resume(pageId: string) {
+        skipped.delete(pageId)
+        for (const listener of resumeListeners) listener(pageId)
       },
       pageSkips: {
         isSkipped: (pageId: string) => skipped.has(pageId),
@@ -825,6 +831,12 @@ describe("createStageRunner storyboard render-only", () => {
           listeners.add(listener)
           return () => {
             listeners.delete(listener)
+          }
+        },
+        onResume: (listener: (pageId: string) => void) => {
+          resumeListeners.add(listener)
+          return () => {
+            resumeListeners.delete(listener)
           }
         },
       },
@@ -898,6 +910,46 @@ describe("createStageRunner storyboard render-only", () => {
       step: "web-rendering",
       message: "Completed — 1 page(s) skipped",
     })
+  })
+
+  it("re-renders a page resumed after it was settled as skipped", async () => {
+    const skips = createPageSkips()
+    skips.skip("pg001")
+    const isSkipped = skips.pageSkips.isSkipped
+    let resumeScheduled = false
+    skips.pageSkips.isSkipped = (pageId: string) => {
+      if (!resumeScheduled) {
+        resumeScheduled = true
+        queueMicrotask(() => skips.resume(pageId))
+      }
+      return isSkipped(pageId)
+    }
+    renderPageMock.mockClear()
+
+    const { events, rendering } = await runStoryboard("resume-after-skip", skips.pageSkips)
+
+    expect(renderPageMock).toHaveBeenCalledTimes(1)
+    expect(rendering).not.toBeNull()
+    expect(events).toContainEqual({ type: "step-complete", step: "web-rendering", message: undefined })
+    expect(skips.resumeListeners.size).toBe(0)
+  })
+
+  it("keeps rendering a page resumed while its skip was still aborting", async () => {
+    const skips = createPageSkips()
+    renderPageMock.mockClear()
+    renderPageMock.mockImplementationOnce(async (...args: unknown[]) => {
+      const { signal } = args[5] as { signal: AbortSignal }
+      skips.skip("pg001")
+      skips.resume("pg001")
+      signal.throwIfAborted()
+      return { sections: [] }
+    })
+
+    const { events, rendering } = await runStoryboard("resume-in-flight", skips.pageSkips)
+
+    expect(renderPageMock).toHaveBeenCalledTimes(2)
+    expect(rendering).not.toBeNull()
+    expect(events).toContainEqual({ type: "step-complete", step: "web-rendering", message: undefined })
   })
 })
 

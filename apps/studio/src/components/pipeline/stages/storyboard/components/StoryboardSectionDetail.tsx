@@ -450,7 +450,7 @@ export function StoryboardSectionDetail({
   const hasStructuredTextProvider = useBookStructuredTextAvailability(bookLabel)
   const hasAgentProvider = useBookAgentAvailability(bookLabel)
   const { headerSlotEl } = useStepHeader()
-  const { stageState, skippedPageIds, skipPages } = useBookRun()
+  const { stageState, skippedPageIds, skipPages, resumePages } = useBookRun()
   const storyboardRunning = stageState("storyboard") === "running" || stageState("storyboard") === "queued"
   const { data: activeConfigData } = useActiveConfig(bookLabel)
   // Resolved reflowable base font (gated server-side; null for fixed-layout /
@@ -2919,7 +2919,12 @@ export function StoryboardSectionDetail({
                   : t`This page was skipped during storyboard rendering`
               }
               cta={
-                !storyboardRunning && (
+                storyboardRunning ? (
+                  <Button variant="outline" size="sm" onClick={() => resumePages([pageId])}>
+                    <Play className="mr-2 h-4 w-4" />
+                    {t`Resume this page`}
+                  </Button>
+                ) : (
                   <Button
                     variant="outline"
                     size="sm"

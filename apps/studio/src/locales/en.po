@@ -8057,6 +8057,9 @@ msgstr "Resume target"
 msgid "Resume target: page {0}"
 msgstr "Resume target: page {0}"
 
+msgid "Resume this page"
+msgstr "Resume this page"
+
 msgid "Retries"
 msgstr "Retries"
 
