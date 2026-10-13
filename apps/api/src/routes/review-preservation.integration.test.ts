@@ -186,6 +186,27 @@ it.each([false, true])("preserves same-word legacy glossary ownership before or 
   reopened.close()
 })
 
+it("keeps verified migrated IDs on rename and rejects stale glossary versions without writes", async () => {
+  const storage = db()
+  const item = { id: "gl001", word: "Bank", definition: "Financial", variations: [], emojis: [] }
+  storage.putNodeData("glossary", "book", { items: [item, { ...item, definition: "River edge" }], pageCount: 1, generatedAt: "before" })
+  storage.putNodeData("text-catalog-translation", "fr", { entries: [{ id: "gl001_def", text: "Banque", source: "manual" }], generatedAt: "before" })
+  const translation = storage.getLatestNodeData("text-catalog-translation", "fr")
+  storage.close()
+  const current = await (await app.request(`/books/${label}/glossary`)).json()
+  const edited = { ...current, items: current.items.map((entry: { id: string }) => entry.id === "gl001" ? { ...entry, word: "Finance" } : entry) }
+  expect((await send("glossary", edited)).status).toBe(200)
+  let after = db()
+  expect((after.getLatestNodeData("glossary", "book")!.data as GlossaryOutput).items[0]).toMatchObject({ id: "gl001", word: "Finance" })
+  expect(after.getLatestNodeData("text-catalog-translation", "fr")).toEqual(translation)
+  const fingerprint = after.getNodeVersionFingerprint([])
+  after.close()
+  expect((await send("glossary", current)).status).toBe(409)
+  after = db()
+  expect(after.getNodeVersionFingerprint([])).toEqual(fingerprint)
+  after.close()
+})
+
 it("allocates ambiguous legacy edits a fresh ID but preserves trustworthy modern IDs through word swaps", async () => {
   const storage = db()
   const item = { id: "gl001", word: "Bank", definition: "Same", variations: [], emojis: [] }

@@ -99,7 +99,14 @@ export function materializeGlossaryIds(storage: Storage) {
 
 /** Older clients may submit an idless subset. Match only a unique retained
  * word; new/renamed ambiguous terms get fresh IDs, never another term's slot. */
-export function reconcileGlossaryEditIds(storage: Storage, edited: GlossaryOutput): GlossaryOutput {
+export function reconcileGlossaryEditIds(storage: Storage, edited: GlossaryOutput, verifiedVersion?: number): GlossaryOutput {
+  const base = storage.getLatestNodeData("glossary", "book")
+  const baseItems = GlossaryOutputSchema.safeParse(base?.data)
+  const verifiedIds = new Set<string>()
+  if (verifiedVersion === base?.version && baseItems.success) {
+    const ids = baseItems.data.items.map((item) => item.id?.trim())
+    for (const id of ids) if (id && ids.filter((candidate) => candidate === id).length === 1) verifiedIds.add(id)
+  }
   const current = GlossaryOutputSchema.safeParse(materializeGlossaryIds(storage)?.data)
   const previous = current.success ? current.data.items : []
   const reserved = new Set<string>()
@@ -140,7 +147,7 @@ export function reconcileGlossaryEditIds(storage: Storage, edited: GlossaryOutpu
     // An old duplicate ID alone cannot prove ownership, even when that ID is
     // still assigned to the first term. Preserve its outputs in history and
     // allocate a fresh identity if neither retained content nor word is unique.
-    let id = submittedId && currentIds.has(submittedId) && !collided.has(submittedId)
+    let id = submittedId && currentIds.has(submittedId) && (!collided.has(submittedId) || verifiedIds.has(submittedId))
       ? submittedId
       : previousIndex === undefined
         ? submittedId && !collided.has(submittedId) ? submittedId : undefined

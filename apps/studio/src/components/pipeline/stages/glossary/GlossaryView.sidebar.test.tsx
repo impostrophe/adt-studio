@@ -17,6 +17,7 @@ vi.mock("@lingui/react/macro", () => ({
 }))
 
 const glossary = {
+  version: 1,
   generatedAt: "2026-01-01T00:00:00.000Z",
   items: [{ id: "gl001", word: "Nile", definition: "A river in Africa", variations: [], emojis: [], source: "ai" }],
 }
@@ -33,7 +34,7 @@ vi.mock("@/hooks/use-book-run", () => ({ useBookRun: () => ({ stageState: () => 
 vi.mock("@/hooks/use-api-key", () => ({ useApiKey: () => ({ apiKey: "" }), useBookStructuredTextAvailability: () => true }))
 vi.mock("../../components/StageRunCard", () => ({ StageRunCard: () => null }))
 vi.mock("../../components/VersionPicker", () => ({
-  VersionPicker: ({ onSave, dirty }: { onSave: () => void; dirty: boolean }) => <button type="button" disabled={!dirty} onClick={onSave}>Save</button>,
+  VersionPicker: ({ onSave, dirty, saving }: { onSave: () => void; dirty: boolean; saving: boolean }) => <button type="button" disabled={!dirty || saving} onClick={onSave}>Save</button>,
 }))
 vi.mock("./AddGlossaryDialog", () => ({ AddGlossaryDialog: () => null }))
 vi.mock("./components/GlossaryImagePickerDialog", () => ({ GlossaryImagePickerDialog: () => null }))
@@ -41,6 +42,8 @@ vi.mock("./components/GlossaryHintBanner", () => ({ GlossaryHintBanner: () => nu
 vi.mock("./lib/occurrences", () => ({ useGlossaryOccurrences: () => ({ byItem: new Map(), isLoading: false }) }))
 vi.mock("@/api/client", () => ({ api: { updateGlossary: vi.fn() }, BASE_URL: "", getSignLanguageVideoUrl: () => "" }))
 
+vi.mock("@/components/ui/sonner", () => ({ toast: { error: vi.fn() } }))
+const { toast } = await import("@/components/ui/sonner")
 const { api } = await import("@/api/client")
 const { TooltipProvider } = await import("@/components/ui/tooltip")
 const { GlossaryView } = await import("./GlossaryView")
@@ -80,4 +83,16 @@ describe("sidebar attention after a glossary save", () => {
     vi.mocked(api.updateGlossary).mockResolvedValue({ version: 2, imageRequirementsChanged })
     expect(await editAndSave()).toBe(1)
   })
+})
+
+it("retains a rejected glossary draft and enables saving again", async () => {
+  vi.mocked(api.updateGlossary).mockRejectedValue(new Error("Glossary changed"))
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><TooltipProvider><Harness /></TooltipProvider></QueryClientProvider>)
+  fireEvent.change(await screen.findByLabelText("Definition for Nile"), { target: { value: "My retained draft" } })
+  fireEvent.click(await screen.findByRole("button", { name: "Save" }))
+  await waitFor(() => expect(toast.error).toHaveBeenCalled())
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false))
+  expect((screen.getByLabelText("Definition for Nile") as HTMLTextAreaElement).value).toBe("My retained draft")
+  expect(api.updateGlossary).toHaveBeenCalledWith("book", expect.objectContaining({ version: 1 }))
 })

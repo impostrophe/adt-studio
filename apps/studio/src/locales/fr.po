@@ -2822,6 +2822,9 @@ msgstr "Impossible de lire ce PDF"
 msgid "Couldn't restore v{version}. Please try again."
 msgstr "Impossible de restaurer la v{version}. Veuillez réessayer."
 
+msgid "Couldn't save the glossary. Your draft is kept; check for newer changes before trying again."
+msgstr "Impossible d’enregistrer le glossaire. Votre brouillon est conservé ; vérifiez si des modifications plus récentes existent avant de réessayer."
+
 msgid "Counting occurrences…"
 msgstr "Comptage des occurrences…"
 

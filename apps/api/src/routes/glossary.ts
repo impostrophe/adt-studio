@@ -6,6 +6,7 @@ import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import {
   GlossaryOutput,
+  GlossaryEditRequest,
   IMAGE_SET_CHANGE_CLEAR_NODE_TYPES,
   parseBookLabel,
 } from "@adt/types"
@@ -122,7 +123,7 @@ export function createGlossaryRoutes(
     const safeLabel = safeParseLabel(label)
 
     const body = await c.req.json()
-    const parsed = GlossaryOutput.safeParse(body)
+    const parsed = GlossaryEditRequest.safeParse(body)
     if (!parsed.success) {
       throw new HTTPException(400, {
         message: `Invalid glossary data: ${parsed.error.message}`,
@@ -132,7 +133,11 @@ export function createGlossaryRoutes(
     const storage = createBookStorage(safeLabel, booksDir)
     try {
       return withBookWriter(storage.bookDir!, () => storage.transaction(() => {
-      const next = reconcileGlossaryEditIds(storage, parsed.data)
+      const current = storage.getLatestNodeData("glossary", "book")
+      if (parsed.data.version !== undefined && parsed.data.version !== current?.version) {
+        throw new HTTPException(409, { message: "Glossary changed since it was loaded. Reload before saving; your draft has not been applied." })
+      }
+      const next = reconcileGlossaryEditIds(storage, GlossaryOutput.parse(parsed.data), parsed.data.version)
       const previousRow = storage.getLatestNodeData("glossary", "book")
       const previous = GlossaryOutput.safeParse(previousRow?.data)
       const imageRequirementsChanged = needsCaptionRerun(

@@ -291,6 +291,7 @@ export {
 export {
   GlossaryItem,
   GlossaryOutput,
+  GlossaryEditRequest,
   glossaryLLMSchema,
 } from "./glossary.js"
 

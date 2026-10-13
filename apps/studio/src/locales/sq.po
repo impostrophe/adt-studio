@@ -2822,6 +2822,9 @@ msgstr "Nuk mund të lexohej ky PDF"
 msgid "Couldn't restore v{version}. Please try again."
 msgstr "Nuk u rikthye dot v{version}. Ju lutemi provoni përsëri."
 
+msgid "Couldn't save the glossary. Your draft is kept; check for newer changes before trying again."
+msgstr "Fjalorthi nuk mund të ruhej. Drafti juaj është ruajtur; kontrolloni nëse ka ndryshime më të reja përpara se të provoni përsëri."
+
 msgid "Counting occurrences…"
 msgstr "Po numërohen ndodhitë…"
 
