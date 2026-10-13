@@ -219,7 +219,7 @@ function projectOutputCatalog(options: Parameters<typeof readOutputCatalog>[0]):
           elevenLabsApplyTextNormalization: config.speech?.elevenlabs_apply_text_normalization, ...elevenLabsVoiceSettingsFromConfig(config.speech),
         })
         const pageId = pageOf(source)
-        if (config.speech?.batch_by_page && voice.provider === "gemini" && supportsPageBatchedSpeech(language) && pageId && !source.id.endsWith("_easy_read")) {
+        if (prior?.pageBatchFallback !== "single-item" && config.speech?.batch_by_page && voice.provider === "gemini" && supportsPageBatchedSpeech(language) && pageId && !source.id.endsWith("_easy_read")) {
           const context = speechEntries.filter((entry) => pageOf(entry) === pageId && !isTtsExcluded(entry.id, config.speech))
           speechSignature = computePageSpeechInputSignature({ entries: context, voice: voice.voice, model: voice.model, instructions: resolveInstructions(language, instructions), provider: voice.provider, geminiTemperature: config.speech?.temperature, geminiSeed: config.speech?.seed })
         }
@@ -234,7 +234,7 @@ function projectOutputCatalog(options: Parameters<typeof readOutputCatalog>[0]):
           content: prior?.audioHash ?? prior?.fileName, metadata: audioMetadata, usable, excluded: speechExcluded, upstream: [prepStatus],
         }), source))
         let speechContext = [source.id]
-        if (config.speech?.batch_by_page && voice.provider === "gemini" && supportsPageBatchedSpeech(language) && pageId && !source.id.endsWith("_easy_read")) {
+        if (prior?.pageBatchFallback !== "single-item" && config.speech?.batch_by_page && voice.provider === "gemini" && supportsPageBatchedSpeech(language) && pageId && !source.id.endsWith("_easy_read")) {
           speechContext = speechEntries.filter((entry) => pageOf(entry) === pageId && !isTtsExcluded(entry.id, config.speech)).map((entry) => entry.id)
         } else if (voice.provider === "elevenlabs" && config.speech?.elevenlabs_use_context) {
           for (const direction of [-1, 1] as const) {

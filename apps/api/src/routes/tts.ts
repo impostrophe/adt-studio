@@ -966,7 +966,9 @@ export function createTTSRoutes(booksDir: string, configPath?: string, taskServi
         targetVoice: string
       }) => {
         const pageId = speechPageId(textEntry.id, status.pageIds)
-        if (config.speech?.batch_by_page && options.targetProvider === "gemini" && supportsPageBatchedSpeech(normalizedLanguage) && pageId && !textEntry.id.endsWith("_easy_read")) {
+        const pageBatch = config.speech?.batch_by_page && options.targetProvider === "gemini" && supportsPageBatchedSpeech(normalizedLanguage) && pageId && !textEntry.id.endsWith("_easy_read")
+        const itemFallback = !!pageBatch && !openaiApiKey && !config.speech?.word_highlighting
+        if (pageBatch && !itemFallback) {
           if (!openaiApiKey) throw new HTTPException(400, { message: "Page-batched speech requires an OpenAI key for audio alignment." })
           const pageEntries = languageEntries.filter((item) => speechPageId(item.id, before.find((output) => output.identity.kind === "audio" && output.identity.id === item.id && output.identity.language === normalizedLanguage)?.pageIds ?? []) === pageId && !isTtsExcluded(item.id, config.speech))
           const generated = await generatePageSpeechFiles({
@@ -982,7 +984,7 @@ export function createTTSRoutes(booksDir: string, configPath?: string, taskServi
           // enters the manifest. Neighboring manual/generated files survive.
           return generated.find((entry) => entry.textId === textEntry.id) ?? null
         }
-        return generateSpeechFile({
+        const entry = await generateSpeechFile({
           sampleRate: config.speech?.sample_rate, bitRate: config.speech?.bit_rate,
           signal: c.req.raw.signal,
           textId: textEntry.id,
@@ -1050,6 +1052,7 @@ export function createTTSRoutes(booksDir: string, configPath?: string, taskServi
           // cache key as stage-runner.ts and pipeline-dag.ts.
           ...elevenLabsVoiceSettingsFromConfig(config.speech),
         })
+        return entry && itemFallback ? { ...entry, pageBatchFallback: "single-item" as const } : entry
       }
 
       /**

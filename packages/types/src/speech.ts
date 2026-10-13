@@ -310,6 +310,9 @@ export const SpeechFileEntry = z.object({
   fileName: z.string(),
   audioHash: z.string().optional(),
   speechInputSignature: z.string().optional(),
+  /** Explicit single-item synthesis under a page-batch preference when no
+   * alignment key was available. Its input/context remains per item. */
+  pageBatchFallback: z.literal("single-item").optional(),
   voice: z.string(),
   model: z.string(),
   cached: z.boolean(),
