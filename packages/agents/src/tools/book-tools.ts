@@ -1,3 +1,4 @@
+import { putSourceNodeData } from "@adt/pipeline"
 import { stampRenderedOwner } from "@adt/pipeline"
 import { z } from "zod"
 import type { AgentToolSet } from "@adt/llm"
@@ -384,8 +385,8 @@ export function createBookTools(ctx: BookToolsContext): BookToolsResult {
             ),
           }
           const version = ctx.storage.transaction(() => {
-            ctx.storage.putNodeData("page-sectioning", pageId, updatedSectioning)
-            return ctx.storage.putNodeData("web-rendering", pageId, updatedRendering)
+            putSourceNodeData(ctx.storage, "page-sectioning", pageId, updatedSectioning)
+            return putSourceNodeData(ctx.storage, "web-rendering", pageId, updatedRendering)
           })
           touchedPageIds.add(pageId)
           return { ok: true, version, sectionIndex }
@@ -510,16 +511,10 @@ export function createBookTools(ctx: BookToolsContext): BookToolsResult {
             ...existingSectioning,
             sections: [...existingSectioning.sections, section],
           }
-          ctx.storage.putNodeData(
-            "page-sectioning",
-            pageId,
-            updatedSectioning,
-          )
-          const version = ctx.storage.putNodeData(
-            "web-rendering",
-            pageId,
-            updatedRendering,
-          )
+          const version = ctx.storage.transaction(() => {
+            putSourceNodeData(ctx.storage, "page-sectioning", pageId, updatedSectioning)
+            return putSourceNodeData(ctx.storage, "web-rendering", pageId, updatedRendering)
+          })
           touchedPageIds.add(pageId)
           return {
             ok: true,
@@ -633,16 +628,10 @@ export function createBookTools(ctx: BookToolsContext): BookToolsResult {
             ...sectioning,
             sections: [...sectioning.sections, newSectioningSection],
           }
-          ctx.storage.putNodeData(
-            "page-sectioning",
-            pageId,
-            updatedSectioning,
-          )
-          const version = ctx.storage.putNodeData(
-            "web-rendering",
-            pageId,
-            updatedRendering,
-          )
+          const version = ctx.storage.transaction(() => {
+            putSourceNodeData(ctx.storage, "page-sectioning", pageId, updatedSectioning)
+            return putSourceNodeData(ctx.storage, "web-rendering", pageId, updatedRendering)
+          })
           touchedPageIds.add(pageId)
           return {
             ok: true,

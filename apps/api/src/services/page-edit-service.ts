@@ -1,3 +1,4 @@
+import { putSourceNodeData } from "@adt/pipeline"
 import { HTTPException } from "hono/http-exception"
 import { renderedSectionId, resolveRenderedSection } from "@adt/pipeline"
 import crypto from "node:crypto"
@@ -213,7 +214,7 @@ export async function reRenderPage(
         }).sort((a, b) => a.sectionIndex - b.sectionIndex) }
       }
       assertImageAltConflicts(initialRendering.success ? initialRendering.data : undefined, rendering)
-      const version = storage.putNodeData("web-rendering", pageId, rendering)
+      const version = putSourceNodeData(storage, "web-rendering", pageId, rendering)
       storage.clearNodesByType(["accessibility-assessment"])
       return { version, rendering }
     })

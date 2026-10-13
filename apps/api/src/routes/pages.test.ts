@@ -285,7 +285,7 @@ describe("Page routes", () => {
       expect(res.status).toBe(404)
     })
 
-    it("marks only the obsolete storyboard attempt stale, retaining downstream history", async () => {
+    it("resets obsolete Storyboard and separate source generators while retaining catalog attempts and saved content", async () => {
       // Sectioning still guards obsolete rendering. Downstream content freshness
       // comes from the catalog; historical attempts and output survive.
       const seed = createBookStorage(label, tmpDir)
@@ -312,13 +312,43 @@ describe("Page routes", () => {
       try {
         const steps = after.getStepRuns().map((r) => r.step)
         expect(steps).not.toContain("web-rendering")
-        expect(steps).toContain("quiz-generation")
-        expect(steps).toContain("toc-generation")
+        expect(steps).not.toContain("quiz-generation")
+        expect(steps).not.toContain("toc-generation")
         // Non-destructive: the rendering itself is untouched.
         expect(after.getLatestNodeData("web-rendering", `${label}_p1`)).toBeTruthy()
       } finally {
         after.close()
       }
+    })
+
+    it("keeps separate generation attempts on cosmetic saves, resets them on source restore, and preserves every saved version", async () => {
+      const seed = createBookStorage(label, tmpDir)
+      const original = seed.getLatestNodeData("page-sectioning", `${label}_p1`)!.data as { sections: Array<{ backgroundColor: string; nodes: Array<{ text?: string }> }> }
+      const sourceSteps = ["quiz-generation", "glossary", "toc-generation"]
+      for (const step of [...sourceSteps, "tts", "catalog-translation", "web-rendering"]) seed.markStepCompleted(step)
+      for (const node of sourceSteps) { seed.putNodeData(node, "book", { manual: "first" }); seed.putNodeData(node, "book", { manual: "second" }) }
+      seed.close()
+      const cosmetic = structuredClone(original)
+      cosmetic.sections[0].backgroundColor = "#ff0000"
+      const save = (body: unknown) => app.request(`/api/books/${label}/pages/${label}_p1/sectioning`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      expect((await save(cosmetic)).status).toBe(200)
+      const afterCosmetic = createBookStorage(label, tmpDir)
+      expect(afterCosmetic.getStepRuns().map((run) => run.step)).toEqual(expect.arrayContaining([...sourceSteps, "tts", "web-rendering"]))
+      const changed = structuredClone(original)
+      changed.sections[0].nodes[0].text = "Changed source"
+      afterCosmetic.putNodeData("page-sectioning", `${label}_p1`, changed)
+      afterCosmetic.close()
+      const restored = await app.request(`/api/books/${label}/versions/page-sectioning/${label}_p1/restore`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: 1 }) })
+      expect(restored.status).toBe(200)
+      const after = createBookStorage(label, tmpDir)
+      try {
+        const steps = after.getStepRuns().map((run) => run.step)
+        for (const step of sourceSteps) expect(steps).not.toContain(step)
+        expect(steps).toEqual(expect.arrayContaining(["tts", "catalog-translation"]))
+        for (const node of sourceSteps) expect(after.getAllNodeVersions(node, "book").map((row) => row.data)).toEqual([{ manual: "first" }, { manual: "second" }])
+        expect(after.getAllNodeVersions("page-sectioning", `${label}_p1`)).toHaveLength(3)
+        expect(after.getCurrentNodeVersion("page-sectioning", `${label}_p1`)).toBe(1)
+      } finally { after.close() }
     })
 
     it("rejects sectioning changes while a pipeline step is running", async () => {
@@ -418,9 +448,9 @@ describe("Page routes", () => {
       try {
         const steps = after.getStepRuns().map((r) => r.step)
         expect(steps).toContain("web-rendering")
-        // Catalog freshness is independent of downstream attempt records.
-        expect(steps).toContain("quiz-generation")
-        expect(steps).toContain("toc-generation")
+        // The separate source generators reset; catalog-managed attempts survive.
+        expect(steps).not.toContain("quiz-generation")
+        expect(steps).not.toContain("toc-generation")
       } finally {
         after.close()
       }
@@ -530,7 +560,7 @@ describe("Page routes", () => {
       try {
         const steps = after.getStepRuns().map((r) => r.step)
         expect(steps).toContain("web-rendering")
-        expect(steps).toContain("quiz-generation")
+        expect(steps).not.toContain("quiz-generation")
       } finally {
         after.close()
       }
@@ -625,8 +655,8 @@ describe("Page routes", () => {
 
       const steps = stepsAfter()
       expect(steps).toContain("web-rendering")
-      // Source membership changes the catalog without erasing run history.
-      expect(steps).toContain("toc-generation")
+      // Source membership resets TOC without clearing its saved content.
+      expect(steps).not.toContain("toc-generation")
     })
 
     it("keeps the storyboard complete when a section is cloned", async () => {
@@ -640,7 +670,7 @@ describe("Page routes", () => {
 
       const steps = stepsAfter()
       expect(steps).toContain("web-rendering")
-      expect(steps).toContain("toc-generation")
+      expect(steps).not.toContain("toc-generation")
     })
 
     // Split's own staleness is covered by "marks the storyboard chain stale,

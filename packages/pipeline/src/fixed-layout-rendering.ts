@@ -1,3 +1,4 @@
+import { putSourceNodeData } from "./source-generation-state.js"
 /**
  * Fixed-Layout Rendering
  *
@@ -551,14 +552,14 @@ export function processFixedLayoutPages(
     // Store the positioned tree under its OWN node so it never clobbers the
     // semantic `page-sectioning` (which the Sectioning view + reflowable
     // rendering rely on, and which must survive a render-strategy switch).
-    storage.putNodeData("fixed-layout-sectioning", page.pageId, sectioning)
+    putSourceNodeData(storage, "fixed-layout-sectioning", page.pageId, sectioning)
 
     const rendering = renderFixedLayoutPage(
       sectioning.sections[0],
       imageUrlPrefix,
       referenceWidth,
     )
-    storage.putNodeData("web-rendering", page.pageId, rendering)
+    putSourceNodeData(storage, "web-rendering", page.pageId, rendering)
   }
 
   // Positioned text is produced by the Extract stage only when the book is

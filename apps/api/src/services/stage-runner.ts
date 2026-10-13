@@ -1,3 +1,4 @@
+import { putSourceNodeData } from "@adt/pipeline"
 import { bookAssetExists, readBookAsset } from "@adt/storage"
 import { reconcileSectioningIdentities } from "@adt/pipeline"
 import { requireExistingBook } from "../utils/book-exists.js"
@@ -1515,7 +1516,7 @@ async function runSectioningStep(
             structuringModel,
           )
           const structuringResult = reconcileSectioningIdentities(storage, page.pageId, generatedSectioning)
-          storage.putNodeData("page-sectioning", page.pageId, structuringResult)
+          putSourceNodeData(storage, "page-sectioning", page.pageId, structuringResult)
           completedStructuring++
           progress.emit({
             type: "step-progress",
@@ -1532,7 +1533,7 @@ async function runSectioningStep(
               translationConfig,
               translationModel,
             )
-            storage.putNodeData("page-sectioning", page.pageId, translated)
+            putSourceNodeData(storage, "page-sectioning", page.pageId, translated)
             completedTranslation++
             progress.emit({
               type: "step-progress",
@@ -1792,7 +1793,7 @@ async function runStoryboardStep(
             { signal: options.signal },
           )
           if (options.signal?.aborted) throw new RunCancelledError()
-          storage.putNodeData("web-rendering", page.pageId, renderResult)
+          putSourceNodeData(storage, "web-rendering", page.pageId, renderResult)
           completedRendering++
           progress.emit({
             type: "step-progress",

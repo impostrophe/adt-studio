@@ -1,3 +1,4 @@
+import { putSourceNodeData, resetSourceGenerationAttempts, sourceGenerationBasis, inputSignature as sourceInputSignature } from "@adt/pipeline"
 import { cloneRenderedIdentities, stampRenderedOwner } from "@adt/pipeline"
 import { captureOutputReferences } from "@adt/pipeline"
 import { scopeLegacyActivityIds, renderedSectionId } from "@adt/pipeline"
@@ -498,8 +499,9 @@ function clearRestoredNodeDependents(
   storage: Storage,
   node: RestorableNode,
   itemId: string,
-  _previousData?: unknown,
+  previousData?: unknown,
 ): void {
+  resetSourceGenerationAttempts(storage, node, previousData, storage.getLatestNodeData(node, itemId)?.data)
   if (node === "text-catalog-translation") {
     const restored = TextCatalogOutput.safeParse(storage.getLatestNodeData(node, itemId)?.data)
     if (restored.success) invalidateCoreTtsForDisplayEntries({ storage, language: itemId, entries: restored.data.entries })
@@ -545,6 +547,7 @@ function saveStoryboardNode(
   { renderingInSync = false }: { renderingInSync?: boolean } = {}
 ): number {
   if (node === "page-sectioning") assertNoActivePipelineRun(storage)
+  const sourceChanged = sourceInputSignature(sourceGenerationBasis(node, storage.getLatestNodeData(node, itemId)?.data)) !== sourceInputSignature(sourceGenerationBasis(node, data))
   const version = storage.transaction(() => {
     const conflictsBefore = buildTextCatalogSnapshot(storage, storage.getPages()).conflicts ?? []
     const parsed = node === "web-rendering" ? WebRenderingOutput.safeParse(data) : null
@@ -559,7 +562,7 @@ function saveStoryboardNode(
         return owner ? { ...scopeLegacyActivityIds(section, owner), sectionId: owner } : section
       }),
     } : data
-    const nextVersion = storage.putNodeData(node, itemId, saved)
+    const nextVersion = putSourceNodeData(storage, node, itemId, saved)
     const conflictsAfter = buildTextCatalogSnapshot(storage, storage.getPages()).conflicts ?? []
     const introduced = conflictsAfter.find((conflict) => !conflictsBefore.some((previous) => previous.id === conflict.id && conflict.texts.every((text) => previous.texts.includes(text))))
     if (introduced) throw new HTTPException(409, { message: `Conflicting catalog data ID: ${introduced.id}. Give different content distinct IDs before saving.` })
@@ -577,7 +580,7 @@ function saveStoryboardNode(
   // HTML it has already mirrored, or has queued a targeted re-render for. The
   // storyboard is current (or seconds from it) and only its dependents are
   // behind, so resetting the stage would take the editor away for nothing.
-  if (node === "page-sectioning") {
+  if (node === "page-sectioning" && sourceChanged) {
     markStoryboardChainStale(storage, { includeStoryboard: !renderingInSync })
   }
   return version
@@ -1602,15 +1605,17 @@ export function createPageRoutes(
 
     const storage = createBookStorage(safeLabel, booksDir)
     try {
-      const previousData = storage.getLatestNodeData(node, itemId)?.data
-      const ok = node === "tts" ? restoreSpeechOutput(storage, path.join(path.resolve(booksDir), safeLabel), itemId, version) : storage.setCurrentNodeVersion(node, itemId, version)
-      if (!ok) {
-        throw new HTTPException(404, {
-          message: `Version ${version} not found for ${node}/${itemId}`,
-        })
-      }
-      clearRestoredNodeDependents(storage, node, itemId, previousData)
-      return c.json({ node, itemId, version: storage.getCurrentNodeVersion(node, itemId) ?? version })
+      return storage.transaction(() => {
+        const previousData = storage.getLatestNodeData(node, itemId)?.data
+        const ok = node === "tts" ? restoreSpeechOutput(storage, path.join(path.resolve(booksDir), safeLabel), itemId, version) : storage.setCurrentNodeVersion(node, itemId, version)
+        if (!ok) {
+          throw new HTTPException(404, {
+            message: `Version ${version} not found for ${node}/${itemId}`,
+          })
+        }
+        clearRestoredNodeDependents(storage, node, itemId, previousData)
+        return c.json({ node, itemId, version: storage.getCurrentNodeVersion(node, itemId) ?? version })
+      })
     } finally {
       storage.close()
     }

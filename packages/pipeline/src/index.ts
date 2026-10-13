@@ -506,3 +506,5 @@ export { reconcileSectioningIdentities } from "./sectioning-identity.js"
 export { cloneRenderedIdentities, stampRenderedOwner } from "./rendered-identity.js"
 
 export { indexEasyReadEntries } from "./easy-read.js"
+
+export { sourceGenerationBasis, resetSourceGenerationAttempts, putSourceNodeData } from "./source-generation-state.js"

@@ -1,3 +1,4 @@
+import { putSourceNodeData } from "./source-generation-state.js"
 import { reconcileSectioningIdentities } from "./sectioning-identity.js"
 import { buildOutputSources, translatedDisplayEntries } from "./output-sources.js"
 import { captureOutputReferences } from "./output-references.js"
@@ -588,7 +589,7 @@ export async function runFullPipeline(
           pageSectioningConfig,
           model,
         )
-        storage.putNodeData("page-sectioning", page.pageId, reconcileSectioningIdentities(storage, page.pageId, result))
+        putSourceNodeData(storage, "page-sectioning", page.pageId, reconcileSectioningIdentities(storage, page.pageId, result))
         p.emit({
           type: "step-progress",
           step: "page-sectioning",
@@ -617,7 +618,7 @@ export async function runFullPipeline(
           translationConfig,
           model,
         )
-        storage.putNodeData("page-sectioning", page.pageId, translated)
+        putSourceNodeData(storage, "page-sectioning", page.pageId, translated)
         p.emit({
           type: "step-progress",
           step: "translation",
@@ -704,7 +705,7 @@ export async function runFullPipeline(
           resolveRenderModel,
           templateEngine,
         )
-        storage.putNodeData("web-rendering", page.pageId, result)
+        putSourceNodeData(storage, "web-rendering", page.pageId, result)
         p.emit({
           type: "step-progress",
           step: "web-rendering",

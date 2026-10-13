@@ -253,3 +253,8 @@ export const OUTPUT_KIND_TO_STEP = {
   preparation: "core-tts-catalog", audio: "tts", timestamps: "word-timestamps", "image-translation": "image-translation",
 } as const satisfies Record<import("./output-freshness.js").OutputKind, StepName>
 export const OUTPUT_KIND_TO_STAGE = Object.fromEntries(Object.entries(OUTPUT_KIND_TO_STEP).map(([kind, step]) => [kind, STEP_TO_STAGE[step]])) as Record<import("./output-freshness.js").OutputKind, StageName>
+
+/** Generators outside catalog freshness whose attempts reset on source edits. */
+export const SOURCE_GENERATION_RESET_STEPS = PIPELINE
+  .filter((stage) => stage.name === "quizzes" || stage.name === "glossary" || stage.name === "toc")
+  .flatMap((stage) => stage.steps.map((step) => step.name))
