@@ -43,6 +43,10 @@ export function EasyReadEditor({
   const [searchQuery, setSearchQuery] = useState("")
   const blocks = draftBlocks ?? data?.blocks ?? []
   const dirty = draftBlocks !== null
+  const savedTexts = useMemo(
+    () => new Map((data?.blocks ?? []).flatMap((block) => block.entries.map((entry) => [entry.easyReadId, entry.text] as const))),
+    [data?.blocks],
+  )
 
   const pageScopedBlocks = useMemo(
     () => (selectedPageId ? blocks.filter((block) => block.pageId === selectedPageId) : blocks),
@@ -431,14 +435,18 @@ export function EasyReadEditor({
                               </div>
                             </div>
                             <div className="flex flex-col gap-1">
-                              <p
-                                className={`text-[10px] font-medium uppercase tracking-wider transition-colors duration-150 ${
-                                  unchanged ? "text-muted-foreground/50" : "text-fuchsia-600"
-                                }`}
-                              >
-                                {t`Easy Read`}
-                              </p>
-                              <OutputReview bookLabel={bookLabel} id={entry.easyReadId} kinds={["easy-read"]} dirty={dirty} />
+                              <div className="flex items-center gap-1.5">
+                                <p
+                                  className={`text-[10px] font-medium uppercase tracking-wider transition-colors duration-150 ${
+                                    unchanged ? "text-muted-foreground/50" : "text-fuchsia-600"
+                                  }`}
+                                >
+                                  {t`Easy Read`}
+                                </p>
+                                {/* Same compact pill as Language: details and regenerate live in its popover. */}
+                                <OutputReview bookLabel={bookLabel} id={entry.easyReadId} kinds={["easy-read"]} dirty={dirty}
+                                  edited={dirty && entry.text !== (savedTexts.get(entry.easyReadId) ?? "")} compact />
+                              </div>
                               <AutoTextarea
                                 value={entry.text}
                                 onChange={(value) => updateEntry(block, entry.easyReadId, value)}

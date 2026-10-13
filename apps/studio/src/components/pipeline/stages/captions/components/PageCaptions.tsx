@@ -263,6 +263,8 @@ export function PageCaptions({
       onOpenLightbox={handleOpenLightbox}
       pageId={pageId}
       pageNumber={pageNumber}
+      edited={(editing?.imageId === cap.imageId ? editing.draft : cap.caption) !==
+        (page?.imageCaptioning?.captions.find((saved) => saved.imageId === cap.imageId)?.caption ?? "")}
     />
   )
 

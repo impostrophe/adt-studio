@@ -18,6 +18,8 @@ interface CaptionCardProps {
   onOpenLightbox: (entries: LightboxEntry[], index: number) => void
   pageId: string
   pageNumber: number
+  /** The caption differs from its saved version (open draft or staged edit). */
+  edited?: boolean
 }
 
 export function CaptionCard({
@@ -33,6 +35,7 @@ export function CaptionCard({
   onOpenLightbox,
   pageId,
   pageNumber,
+  edited = false,
 }: CaptionCardProps) {
   const { t } = useLingui()
   const isDecorative = cap.decorative === true
@@ -103,7 +106,6 @@ export function CaptionCard({
       </button>
 
       <div className="flex flex-1 flex-col gap-1.5 p-3">
-        <OutputReview bookLabel={bookLabel} id={cap.imageId} kinds={["caption"]} dirty={isEditing} />
         <div className="flex items-center gap-1.5">
           <span className="inline-flex items-center gap-1.5 font-mono text-[10px] font-semibold tracking-wide text-teal-700/90 bg-teal-50 rounded px-1.5 py-0.5">
             <span
@@ -113,6 +115,8 @@ export function CaptionCard({
             />
             {cap.imageId}
           </span>
+          {/* Same compact pill as Language: details and regenerate live in its popover. */}
+          <OutputReview bookLabel={bookLabel} id={cap.imageId} kinds={["caption"]} dirty={isEditing} edited={edited} compact />
           <button
             type="button"
             onClick={() => onToggleDecorative(cap.imageId)}
