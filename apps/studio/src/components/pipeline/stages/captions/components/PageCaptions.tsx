@@ -55,6 +55,7 @@ export function PageCaptions({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
+  const savingIds = useRef(new Set<string>())
   const [editing, setEditing] = useState<CaptionEdit | null>(null)
   const [lightbox, setLightbox] = useState<{ imageIds: string[]; index: number } | null>(null)
 
@@ -116,7 +117,7 @@ export function PageCaptions({
     await queryClient.invalidateQueries({
       queryKey: ["books", bookLabel, "pages", pageId],
     })
-    invalidateStoryboardDependents(queryClient, bookLabel)
+    await invalidateStoryboardDependents(queryClient, bookLabel)
   }
 
 
@@ -124,15 +125,19 @@ export function PageCaptions({
     const next = data ?? pending
     if (!next || savingRef.current) return
     savingRef.current = true
+    savingIds.current = new Set(next.captions.filter((caption) => {
+      const previous = page.imageCaptioning?.captions.find((entry) => entry.imageId === caption.imageId)
+      return previous?.caption !== caption.caption || previous?.decorative !== caption.decorative
+    }).map((caption) => caption.imageId))
     setSaving(true)
     setPending(next)
     const minDelay = new Promise((r) => setTimeout(r, 400))
     try {
       await api.updateImageCaptioning(bookLabel, pageId, { ...next, ...baseline.current })
-      setPending(null)
+      await refreshAfterSave()
+      setPending((current) => current === next ? null : current)
       setEditing(null)
       setSaveError(null)
-      await refreshAfterSave()
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -263,7 +268,7 @@ export function PageCaptions({
       onOpenLightbox={handleOpenLightbox}
       pageId={pageId}
       pageNumber={pageNumber}
-      edited={(editing?.imageId === cap.imageId ? editing.draft : cap.caption) !==
+      edited={(saving && savingIds.current.has(cap.imageId)) || (editing?.imageId === cap.imageId ? editing.draft : cap.caption) !==
         (page?.imageCaptioning?.captions.find((saved) => saved.imageId === cap.imageId)?.caption ?? "")}
     />
   )
