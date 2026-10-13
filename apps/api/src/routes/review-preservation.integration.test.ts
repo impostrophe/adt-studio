@@ -77,10 +77,11 @@ it("rejects structural edits on reordered owners without changing any version", 
   reopened.close()
 })
 
-it("clones single-quoted activity leaves and references with fresh identities", async () => {
+it("clones catalog identities while preserving local DOM and activity answer references", async () => {
   const storage = db()
   const html = rendered(tree(["Alpha", "Beta"]))
-  html.sections[0].html = html.sections[0].html.replace("</section>", "<p data-id='generated-leaf' id='generated-leaf'>Choose</p><label for='generated-leaf'>Answer</label><input data-cell='cell-1' data-answer='generated-leaf' aria-label='generated-leaf'/><div data-activity-item='generated-leaf'></div><div data-activity-target='target-1' data-correct-items='generated-leaf'></div><img data-id='shared-image'/></section>")
+  html.sections[0].html = html.sections[0].html.replace("</section>", "<p data-id='generated-leaf' id='generated-leaf'>Choose</p><label for='generated-leaf'>Answer</label><input data-cell='cell-1' data-answer='generated-leaf' aria-label='generated-leaf'/><div data-activity-item='generated-leaf'></div><div data-id='fallback-target' data-correct-items='item-1,item-2'></div><div class='dropzone-slot' id='target-A' data-id='target-A'></div><div data-activity-target='target-1' data-correct-items='generated-leaf'></div><img data-id='shared-image'/></section>")
+  html.sections[0].activityAnswers = { "item-1": "target-A", "fallback-target": "item-1,item-2" }
   storage.putNodeData("web-rendering", "pg001", html)
   storage.close()
   expect((await send("pages/pg001/sections/0/clone", {}, "POST")).status).toBe(200)
@@ -88,11 +89,17 @@ it("clones single-quoted activity leaves and references with fresh identities", 
   const next = reopened.getLatestNodeData("web-rendering", "pg001")!.data as WebRenderingOutput
   expect(next.sections[0].html).toBe(html.sections[0].html)
   expect(next.sections[1].html).not.toContain('data-id="generated-leaf"')
-  expect(next.sections[1].html).not.toContain('for="generated-leaf"')
+  expect(next.sections[1].html).toContain('for="generated-leaf"')
+  expect(next.sections[1].html).toContain('id="generated-leaf"')
   expect(next.sections[1].html).toContain('data-answer="generated-leaf"')
   expect(next.sections[1].html).toContain('aria-label="generated-leaf"')
   expect(next.sections[1].html).toContain('data-activity-item="generated-leaf"')
   expect(next.sections[1].html).toContain('data-correct-items="generated-leaf"')
+  expect(next.sections[1].html).toContain('data-activity-target="fallback-target"')
+  expect(next.sections[1].html).not.toContain('data-id="fallback-target"')
+  expect(next.sections[1].html).toContain('id="target-A"')
+  expect(next.sections[1].html).not.toContain('data-id="target-A"')
+  expect(next.sections[1].activityAnswers).toEqual(html.sections[0].activityAnswers)
   expect(next.sections[1].html).not.toContain("pg001_n0001")
   expect(next.sections[1].html).toContain(`data-section-id="${next.sections[1].sectionId}"`)
   expect(next.sections[1].html).toContain('data-id="shared-image"')
@@ -156,6 +163,45 @@ it.each([false, true])("reserves first-copy glossary ownership across legacy col
   expect(reopened.getLatestNodeData("text-catalog-translation", "fr")).toEqual(translation)
   expect(buildTextCatalogSnapshot(reopened, reopened.getPages()).entries.filter((entry) => entry.id.startsWith("gl002"))).toEqual([])
   reopened.close()
+})
+
+it.each([false, true])("preserves same-word legacy glossary ownership before or after migration (%s)", async (readFirst) => {
+  const storage = db()
+  const items = [
+    { id: "gl001", word: "Bank", definition: "Financial institution", variations: [], emojis: [] },
+    { id: "gl001", word: "Bank", definition: "River edge", variations: [], emojis: [] },
+  ]
+  const glossary = { items, pageCount: 1, generatedAt: "before" }
+  storage.putNodeData("glossary", "book", glossary)
+  storage.putNodeData("text-catalog-translation", "fr", { entries: [{ id: "gl001", text: "Banque", source: "manual" }], generatedAt: "before" })
+  const translation = storage.getLatestNodeData("text-catalog-translation", "fr")
+  storage.close()
+  if (readFirst) await app.request(`/books/${label}/glossary`)
+  expect((await send("glossary", { ...glossary, items: [items[1]] })).status).toBe(200)
+  const reopened = db()
+  const kept = (reopened.getLatestNodeData("glossary", "book")!.data as GlossaryOutput).items[0]
+  expect(kept).toMatchObject({ id: "gl002", definition: "River edge" })
+  expect(reopened.getLatestNodeData("text-catalog-translation", "fr")).toEqual(translation)
+  expect(buildTextCatalogSnapshot(reopened, reopened.getPages()).entries.some((entry) => entry.id === "gl001")).toBe(false)
+  reopened.close()
+})
+
+it("allocates ambiguous legacy edits a fresh ID but preserves trustworthy modern IDs through word swaps", async () => {
+  const storage = db()
+  const item = { id: "gl001", word: "Bank", definition: "Same", variations: [], emojis: [] }
+  const glossary = { items: [item, item], pageCount: 1, generatedAt: "before" }
+  storage.putNodeData("glossary", "book", glossary)
+  storage.close()
+  expect((await send("glossary", { ...glossary, items: [{ ...item, definition: "Edited" }] })).status).toBe(200)
+  const reopened = db()
+  expect((reopened.getLatestNodeData("glossary", "book")!.data as GlossaryOutput).items[0].id).toBe("gl003")
+  reopened.putNodeData("glossary", "book", { ...glossary, items: [{ ...item, id: "modern1", word: "Forest" }, { ...item, id: "modern2", word: "River" }] })
+  reopened.close()
+  const swapped = [{ ...item, id: "modern1", word: "River" }, { ...item, id: "modern2", word: "Forest" }]
+  expect((await send("glossary", { ...glossary, items: swapped })).status).toBe(200)
+  const after = db()
+  expect((after.getLatestNodeData("glossary", "book")!.data as GlossaryOutput).items).toEqual(swapped)
+  after.close()
 })
 
 it("allows role-only changes and fewer copies of existing source and image-alt conflicts, but rejects new values atomically", async () => {

@@ -11,6 +11,7 @@ import type { Storage, PageData } from "@adt/storage"
 import { processWithConcurrency } from "./concurrency.js"
 import { withLegacyFixedLayoutOwnership, getRenderSectioning, resolveRenderedSection } from "./render-sectioning.js"
 import { buildLanguageContext } from "./language-context.js"
+import { inputSignature } from "./output-freshness.js"
 
 export interface GlossaryConfig {
   promptName: string
@@ -102,9 +103,18 @@ export function reconcileGlossaryEditIds(storage: Storage, edited: GlossaryOutpu
   const current = GlossaryOutputSchema.safeParse(materializeGlossaryIds(storage)?.data)
   const previous = current.success ? current.data.items : []
   const reserved = new Set<string>()
+  const collided = new Set<string>()
   for (const row of storage.getAllNodeVersions("glossary", "book")) {
     const data = GlossaryOutputSchema.safeParse(row.data)
-    if (data.success) data.data.items.forEach((item, index) => reserved.add(getGlossaryItemTextId(item, index)))
+    if (data.success) {
+      const seen = new Set<string>()
+      data.data.items.forEach((item, index) => {
+        const id = getGlossaryItemTextId(item, index)
+        if (seen.has(id)) collided.add(id)
+        seen.add(id)
+        reserved.add(id)
+      })
+    }
   }
   const currentIds = new Set(previous.map((item) => item.id))
   const historical = new Set(reserved)
@@ -112,13 +122,29 @@ export function reconcileGlossaryEditIds(storage: Storage, edited: GlossaryOutpu
   const previousWords = uniqueGlossaryWordIndexes(previous)
   const editedWords = uniqueGlossaryWordIndexes(edited.items)
   const assigned = new Set<string>()
+  const contentKey = (item: GlossaryItem) => inputSignature({
+    word: item.word, definition: item.definition, variations: item.variations,
+    emojis: item.emojis, pruned: item.pruned === true, imageId: item.imageId,
+  })
+  const previousKeys = previous.map(contentKey)
+  const editedKeys = edited.items.map(contentKey)
   let next = 1
   return { ...edited, items: edited.items.map((item, index) => {
     const word = normalizeGlossaryWord(item.word)
-    const previousIndex = editedWords.get(word) === index ? previousWords.get(word) : undefined
+    const matches = previousKeys.flatMap((key, i) => key === editedKeys[index] ? [i] : [])
+    const exactIndex = matches.length === 1 && editedKeys.filter((key) => key === editedKeys[index]).length === 1 ? matches[0] : undefined
+    const previousIndex = exactIndex ?? (editedWords.get(word) === index ? previousWords.get(word) : undefined)
     // An older editor can submit an explicit duplicate ID captured before
     // migration. A unique retained word identifies its migrated slot safely.
-    let id = previousIndex === undefined ? item.id?.trim() : previous[previousIndex].id
+    const submittedId = item.id?.trim()
+    // An old duplicate ID alone cannot prove ownership, even when that ID is
+    // still assigned to the first term. Preserve its outputs in history and
+    // allocate a fresh identity if neither retained content nor word is unique.
+    let id = submittedId && currentIds.has(submittedId) && !collided.has(submittedId)
+      ? submittedId
+      : previousIndex === undefined
+        ? submittedId && !collided.has(submittedId) ? submittedId : undefined
+        : previous[previousIndex].id
     if (!id || assigned.has(id) || (historical.has(id) && !currentIds.has(id))) {
       do { id = `gl${String(next++).padStart(3, "0")}` } while (reserved.has(id))
       reserved.add(id)

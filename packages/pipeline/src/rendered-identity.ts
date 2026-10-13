@@ -1,24 +1,18 @@
 import { parseDocument, DomUtils } from "htmlparser2"
 
-// Activity grading keys use a separate, section-local namespace. Literal
-// answers and accessible labels must never be treated as catalog references.
-const identityAttributes = new Set([
-  "data-id", "id", "for", "headers", "list", "form",
-  "aria-activedescendant", "aria-controls", "aria-describedby", "aria-details",
-  "aria-errormessage", "aria-flowto", "aria-labelledby", "aria-owns",
-])
-
+// Each rendered section is a separate document. Its DOM IDs, script selectors,
+// ARIA references and activity keys are local; coincidentally equal tokens do
+// not make them catalog identities. Only data-id belongs to the catalog.
 export function rewriteRenderedIdentityReferences(html: string, ids: Map<string, string>): string {
   const doc = parseDocument(html)
   for (const element of DomUtils.findAll((element) => element.type === "tag", doc.children)) {
-    for (const [name, value] of Object.entries(element.attribs)) {
-      if (element.name === "img" && name === "data-id") continue
-      if (identityAttributes.has(name)) {
-        element.attribs[name] = value.split(/(\s+)/).map((token) => ids.get(token) ?? token).join("")
-      } else if (name === "href" && value.startsWith("#") && ids.has(value.slice(1))) {
-        element.attribs[name] = `#${ids.get(value.slice(1))}`
-      }
+    // Custom sorting supports data-id as a legacy answer-key fallback. Make
+    // that section-local key explicit before changing the catalog identity.
+    const oldId = element.attribs["data-id"]
+    if (oldId && ids.has(oldId) && element.attribs["data-correct-items"] !== undefined && element.attribs["data-activity-target"] === undefined) {
+      element.attribs["data-activity-target"] = oldId
     }
+    if (element.name !== "img" && oldId && ids.has(oldId)) element.attribs["data-id"] = ids.get(oldId)!
   }
   return DomUtils.getOuterHTML(doc)
 }

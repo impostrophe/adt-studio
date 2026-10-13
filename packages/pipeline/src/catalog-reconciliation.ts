@@ -21,6 +21,9 @@ export function assignActivityIds(html: string, allocate: (oldId: string) => str
     // reported by the ordinary catalog conflict projection, never a book-wide
     // migration error or a positional reassignment of retained corrections.
     if (!assigned.has(id)) assigned.set(id, allocate(id))
+    if (element.attribs["data-correct-items"] !== undefined && element.attribs["data-activity-target"] === undefined) {
+      element.attribs["data-activity-target"] = id
+    }
     element.attribs["data-id"] = assigned.get(id)!
   }
   return DomUtils.getOuterHTML(doc)
