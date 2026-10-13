@@ -1,9 +1,8 @@
 import { SOURCE_GENERATION_RESET_STEPS } from "@adt/types"
-import { createRenderingOwnershipRoutes } from "./rendering-ownership.js"
 import { putSourceNodeData, resetSourceGenerationAttempts } from "@adt/pipeline"
 import { cloneRenderedIdentities, stampRenderedOwner } from "@adt/pipeline"
 import { captureOutputReferences } from "@adt/pipeline"
-import { scopeLegacyActivityIds, renderedSectionId, withLegacyRenderingOwnership, renderingOwnerSignature } from "@adt/pipeline"
+import { scopeLegacyActivityIds, renderedSectionId, withLegacyRenderingOwnership } from "@adt/pipeline"
 import { assertImageAltConflicts, saveAuthoredImageAlts } from "../services/authored-captions.js"
 import { catalogOutputs, editSourceSignature, assertEditSource, assertEditVersion } from "../services/catalog-output-service.js"
 import { OutputEditGuard } from "@adt/types"
@@ -415,7 +414,7 @@ async function executeAiImageGeneration(params: AiImageGenParams): Promise<{
           if (renderingRow) {
             const parsed = WebRenderingOutput.safeParse(renderingRow.data)
             if (parsed.success) {
-              const rendering = parsed.data
+              const rendering = withLegacyRenderingOwnership(storage, pageId, parsed.data, true)
               const si = params.sectionIndex
               const urlPrefix = `/api/books/${params.safeLabel}/images`
               rendering.sections = rendering.sections.map((s) => {
@@ -558,7 +557,7 @@ function saveStoryboardNode(
     }
     const saved = parsed?.success ? {
       ...parsed.data,
-      sections: parsed.data.sections.map((section) => {
+      sections: withLegacyRenderingOwnership(storage, itemId, parsed.data).sections.map((section) => {
         const owner = renderedSectionId(section)
         return owner ? { ...scopeLegacyActivityIds(section, owner), sectionId: owner } : section
       }),
@@ -650,8 +649,7 @@ function rewriteRenderingSectionIds(
     }
     const alreadyOwned = renderedSectionId(rs) === expectedId
     rs.sectionId = expectedId
-    if (rs.ownerReview) rs.ownerReview = { ...rs.ownerReview, signature: renderingOwnerSignature(rs) }
-    else if (!alreadyOwned) rs.html = stampRenderedOwner(rs.html, expectedId)
+    if (!alreadyOwned) rs.html = stampRenderedOwner(rs.html, expectedId)
   }
 }
 
@@ -700,21 +698,24 @@ function cloneNodesWithFreshContainerIds(
   })
 }
 
-/** Positional structural routes may only transform an aligned snapshot.
- * Never repair a reordered/ambiguous rendering by assigning it a new owner. */
-function assertAlignedRendering(storage: Storage, pageId: string, sectioning: PageSectioningOutput): void {
+/** Resolve the complete pre-edit snapshot before any leaf moves or removals.
+ * Indices address the current source order; they never establish ownership. */
+function loadEditableRendering(storage: Storage, pageId: string, sectioning: PageSectioningOutput): WebRenderingOutput | null {
   const row = storage.getLatestNodeData("web-rendering", pageId)
-  if (!row) return
+  if (!row) return null
   const parsed = WebRenderingOutput.safeParse(row.data)
   if (!parsed.success) throw new HTTPException(409, { message: "Rendering is invalid. Restore matching versions before editing sections." })
   const seen = new Set<string>()
-  for (const entry of withLegacyRenderingOwnership(storage, pageId, parsed.data).sections) {
+  const sections = withLegacyRenderingOwnership(storage, pageId, parsed.data).sections.map(entry => {
     const owner = renderedSectionId(entry)
-    if (!owner || seen.has(owner) || owner !== sectioning.sections[entry.sectionIndex]?.sectionId) {
-      throw new HTTPException(409, { message: "Rendering and section order differ. Restore matching versions before editing sections." })
+    const matches = sectioning.sections.flatMap((section, index) => section.sectionId === owner ? [index] : [])
+    if (!owner || seen.has(owner) || matches.length !== 1) {
+      throw new HTTPException(409, { message: "Section ownership is ambiguous. The existing content has been preserved." })
     }
     seen.add(owner)
-  }
+    return { ...entry, sectionIndex: matches[0] }
+  })
+  return { sections }
 }
 
 export function createPageRoutes(
@@ -725,7 +726,6 @@ export function createPageRoutes(
   taskService?: TaskService
 ): Hono {
   const app = new Hono()
-  app.route("/", createRenderingOwnershipRoutes(booksDir))
 
   // GET /books/:label/pages — List pages with pipeline status
   app.get("/books/:label/pages", (c) => {
@@ -970,6 +970,14 @@ export function createPageRoutes(
       const imageClassNode = getNodeData("image-filtering")
       const imageCroppingNode = getNodeData("image-cropping")
       const renderingNode = getNodeData("web-rendering")
+      if (renderingNode) {
+        const parsed = WebRenderingOutput.safeParse(renderingNode.data)
+        if (parsed.success) {
+          const storage = createBookStorage(safeLabel, booksDir)
+          try { renderingNode.data = withLegacyRenderingOwnership(storage, pageId, parsed.data, true) }
+          finally { storage.close() }
+        }
+      }
       const imageCaptioningNode = getNodeData("image-captioning")
       const positionedTextNode = getNodeData("positioned-text")
       // Book-level font profile (item_id "book", not the page id).
@@ -1347,7 +1355,11 @@ export function createPageRoutes(
         if (!parsed.success) {
           throw new HTTPException(500, { message: `Rendering data malformed for ${pageId}` })
         }
-        const section = parsed.data.sections.find((s) => s.sectionIndex === idx)
+        const storage = createBookStorage(safeLabel, booksDir)
+        let projected: WebRenderingOutput
+        try { projected = withLegacyRenderingOwnership(storage, pageId, parsed.data, true) }
+        finally { storage.close() }
+        const section = projected.sections.find((s) => s.sectionIndex === idx)
         if (!section) {
           throw new HTTPException(404, { message: `Section ${idx} has no rendering` })
         }
@@ -1921,6 +1933,19 @@ export function createPageRoutes(
         "ai-edit",
         desc,
         async () => {
+          const snapshot = (() => {
+            const storage = createBookStorage(safeLabel, booksDir)
+            try {
+              const source = storage.getLatestNodeData("page-sectioning", pageId)
+              const sectioning = PageSectioningOutput.safeParse(source?.data)
+              if (!sectioning.success) throw new HTTPException(409, { message: "Sectioning is unavailable. Existing content has been preserved." })
+              const rendering = loadEditableRendering(storage, pageId, sectioning.data)
+              const target = rendering?.sections.find(entry => entry.sectionIndex === idx)
+              const sectionId = target && renderedSectionId(target)
+              if (!rendering || !sectionId) throw new HTTPException(409, { message: "Section ownership is ambiguous. Existing content has been preserved." })
+              return { rendering, sectionId, sourceVersion: source!.version, renderingVersion: storage.getLatestNodeData("web-rendering", pageId)?.version }
+            } finally { storage.close() }
+          })()
           const result = await aiEditSection({
             label: safeLabel,
             pageId,
@@ -1937,24 +1962,20 @@ export function createPageRoutes(
           // Save the edited HTML as a new rendering version
           const storage = createBookStorage(safeLabel, booksDir)
           try {
-            const renderingRow = storage.getLatestNodeData("web-rendering", pageId)
-            const renderingParsed = renderingRow ? WebRenderingOutput.safeParse(renderingRow.data) : null
-            if (renderingParsed?.success) {
-              const updated = {
-                sections: renderingParsed.data.sections.map((s) =>
-                  s.sectionIndex === idx
-                    ? {
-                        ...s,
-                        html: result.html,
-                        ...(result.activityAnswers
-                          ? { activityAnswers: result.activityAnswers }
-                          : {}),
-                      }
-                    : s
-                ),
+            storage.transaction(() => {
+              if (storage.getLatestNodeData("web-rendering", pageId)?.version !== snapshot.renderingVersion ||
+                  storage.getLatestNodeData("page-sectioning", pageId)?.version !== snapshot.sourceVersion) {
+                throw new HTTPException(409, { message: "Page changed during AI editing. Existing content has been preserved." })
               }
+              const updated = { sections: snapshot.rendering.sections.map(entry =>
+                renderedSectionId(entry) === snapshot.sectionId ? {
+                  ...entry, sectionId: snapshot.sectionId,
+                  html: stampRenderedOwner(result.html, snapshot.sectionId),
+                  ...(result.activityAnswers ? { activityAnswers: result.activityAnswers } : {}),
+                } : entry,
+              ) }
               saveStoryboardNode(storage, "web-rendering", pageId, updated)
-            }
+            })
           } finally {
             storage.close()
           }
@@ -2119,7 +2140,7 @@ export function createPageRoutes(
           throw new HTTPException(400, { message: "Invalid page-sectioning data" })
         }
         const sectioning = sectioningParsed.data
-        assertAlignedRendering(storage, pageId, sectioning)
+        const rendering = loadEditableRendering(storage, pageId, sectioning)
 
         if (idx >= sectioning.sections.length) {
           throw new HTTPException(400, { message: `Section index ${idx} out of range (page has ${sectioning.sections.length} sections)` })
@@ -2145,13 +2166,7 @@ export function createPageRoutes(
         // Clone rendering if present
         let updatedRendering: z.infer<typeof WebRenderingOutput> | null = null
         let renderingVersion: number | null = null
-        const renderingRow = storage.getLatestNodeData("web-rendering", pageId)
-        if (renderingRow) {
-          const renderingParsed = WebRenderingOutput.safeParse(renderingRow.data)
-          if (!renderingParsed.success) {
-            throw new HTTPException(400, { message: "Invalid web-rendering data" })
-          }
-          const rendering = renderingParsed.data
+        if (rendering) {
 
           // Shift sectionIndex for entries after the cloned position
           const shifted = rendering.sections.map((s) =>
@@ -2256,7 +2271,7 @@ export function createPageRoutes(
           throw new HTTPException(400, { message: "Invalid page-sectioning data" })
         }
         const sectioning = sectioningParsed.data
-        assertAlignedRendering(storage, pageId, sectioning)
+        const rendering = loadEditableRendering(storage, pageId, sectioning)
 
         if (idx >= sectioning.sections.length) {
           throw new HTTPException(400, { message: `Section index ${idx} out of range (page has ${sectioning.sections.length} sections)` })
@@ -2357,13 +2372,7 @@ export function createPageRoutes(
         // other sections keep their HTML with shifted indexes.
         let updatedRendering: z.infer<typeof WebRenderingOutput> | null = null
         let renderingVersion: number | null = null
-        const renderingRow = storage.getLatestNodeData("web-rendering", pageId)
-        if (renderingRow) {
-          const renderingParsed = WebRenderingOutput.safeParse(renderingRow.data)
-          if (!renderingParsed.success) {
-            throw new HTTPException(400, { message: "Invalid web-rendering data" })
-          }
-          const rendering = renderingParsed.data
+        if (rendering) {
 
           const shifted = rendering.sections
             .filter((s) => s.sectionIndex !== idx)
@@ -2439,7 +2448,7 @@ export function createPageRoutes(
           throw new HTTPException(400, { message: "Invalid page-sectioning data" })
         }
         const sectioning = sectioningParsed.data
-        assertAlignedRendering(storage, pageId, sectioning)
+        const rendering = loadEditableRendering(storage, pageId, sectioning)
 
         if (idx >= sectioning.sections.length) {
           throw new HTTPException(400, { message: `Section index ${idx} out of range (page has ${sectioning.sections.length} sections)` })
@@ -2495,13 +2504,7 @@ export function createPageRoutes(
         // Update rendering if present
         let updatedRendering: z.infer<typeof WebRenderingOutput> | null = null
         let renderingVersion: number | null = null
-        const renderingRow = storage.getLatestNodeData("web-rendering", pageId)
-        if (renderingRow) {
-          const renderingParsed = WebRenderingOutput.safeParse(renderingRow.data)
-          if (!renderingParsed.success) {
-            throw new HTTPException(400, { message: "Invalid web-rendering data" })
-          }
-          const rendering = renderingParsed.data
+        if (rendering) {
 
           const shifted = [...rendering.sections]
 
@@ -2618,7 +2621,7 @@ export function createPageRoutes(
           throw new HTTPException(400, { message: "Invalid source page-sectioning data" })
         }
         const srcSectioning = srcParsed.data
-        assertAlignedRendering(storage, pageId, srcSectioning)
+        loadEditableRendering(storage, pageId, srcSectioning)
 
         if (idx >= srcSectioning.sections.length) {
           throw new HTTPException(400, { message: `Section index ${idx} out of range (page has ${srcSectioning.sections.length} sections)` })
@@ -2635,7 +2638,7 @@ export function createPageRoutes(
           throw new HTTPException(400, { message: "Invalid target page-sectioning data" })
         }
         const tgtSectioning = tgtParsed.data
-        assertAlignedRendering(storage, targetPageId, tgtSectioning)
+        loadEditableRendering(storage, targetPageId, tgtSectioning)
 
         if (tgtSectioning.sections.length === 0) {
           throw new HTTPException(400, { message: "Target page has no sections to merge into" })
@@ -2766,7 +2769,7 @@ export function createPageRoutes(
           throw new HTTPException(400, { message: "Invalid page-sectioning data" })
         }
         const sectioning = sectioningParsed.data
-        assertAlignedRendering(storage, pageId, sectioning)
+        const rendering = loadEditableRendering(storage, pageId, sectioning)
 
         if (idx >= sectioning.sections.length) {
           throw new HTTPException(400, { message: `Section index ${idx} out of range (page has ${sectioning.sections.length} sections)` })
@@ -2782,13 +2785,7 @@ export function createPageRoutes(
         // Update rendering if present
         let updatedRendering: z.infer<typeof WebRenderingOutput> | null = null
         let renderingVersion: number | null = null
-        const renderingRow = storage.getLatestNodeData("web-rendering", pageId)
-        if (renderingRow) {
-          const renderingParsed = WebRenderingOutput.safeParse(renderingRow.data)
-          if (!renderingParsed.success) {
-            throw new HTTPException(400, { message: "Invalid web-rendering data" })
-          }
-          const rendering = renderingParsed.data
+        if (rendering) {
 
           const shifted = [...rendering.sections]
 

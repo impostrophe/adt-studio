@@ -5,7 +5,7 @@ import path from "node:path"
 import type sqlite from "node-sqlite3-wasm"
 import type { ExtractedPage, ExtractedImage } from "@adt/pdf"
 import type { LlmLogEntry } from "@adt/llm"
-import { ActivityCreationReceipt, TranslatedImageAsset, imageFileExtension, parseBookLabel, CATALOG_OUTPUT_NODES } from "@adt/types"
+import { TranslatedImageAsset, imageFileExtension, parseBookLabel, CATALOG_OUTPUT_NODES } from "@adt/types"
 import type { Storage, PageData, ImageData, NodeDataRow, CroppedImageInput, SegmentedImageInput, SignLanguageVideoData, TranslatedImageInput } from "./storage.js"
 import { openBookDb } from "./db.js"
 import { readCurrentNodeRow } from "./node-current.js"
@@ -540,31 +540,6 @@ export function createBookStorage(label: string, booksRoot: string): Storage {
       sql += " GROUP BY nd.node, nd.item_id ORDER BY nd.node, nd.item_id"
       const rows = db.all(sql, params) as Array<{ node: string; item_id: string; version: number }>
       return rows.map((r) => ({ node: r.node, itemId: r.item_id, version: r.version }))
-    },
-
-    getActivityCreationReceipts(pageId) {
-      const receipts: ActivityCreationReceipt[] = []
-      const rows = db.all("SELECT data FROM llm_log WHERE step = ? AND item_id = ?", ["generate-activity", pageId]) as Array<{ data: string }>
-      for (const row of rows) {
-        try {
-          const log = JSON.parse(row.data) as LlmLogEntry
-          for (const message of log.messages ?? []) {
-            if (message.role !== "tool") continue
-            for (const part of message.content ?? []) {
-              if (part.type !== "text") continue
-              for (const line of part.text.split("\n")) {
-                if (!line.startsWith("createCustomSection: ")) continue
-                // Truncated, errored or malformed results are not evidence.
-                try {
-                  const receipt = ActivityCreationReceipt.safeParse(JSON.parse(line.slice("createCustomSection: ".length)))
-                  if (receipt.success) receipts.push(receipt.data)
-                } catch { /* no complete receipt */ }
-              }
-            }
-          }
-        } catch { /* malformed legacy log */ }
-      }
-      return receipts
     },
 
     appendLlmLog(entry: LlmLogEntry): void {

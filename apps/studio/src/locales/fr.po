@@ -2344,8 +2344,8 @@ msgstr "Choisir a Preset"
 msgid "Choose a previously uploaded video or upload a new one."
 msgstr "Choisissez une vidéo déjà téléversée ou téléversez-en une nouvelle."
 
-msgid "Choose a section after reviewing its content"
-msgstr "Choisissez une section après avoir examiné son contenu"
+#~ msgid "Choose a section after reviewing its content"
+#~ msgstr "Choisissez une section après avoir examiné son contenu"
 
 msgid "Choose an existing image from this project"
 msgstr "Choisissez une image existante de ce projet"
@@ -2380,8 +2380,8 @@ msgstr "Choisissez le fichier de partie qui vous a été partagé, ou exportez-l
 msgid "Choose the source pages and where the quiz lands in the page editor."
 msgstr "Choisissez les pages sources et l'emplacement du quiz dans l'éditeur de pages."
 
-msgid "Choose the source section that owns each retained rendering. Linking preserves its HTML, scripts, answers and history, including old HTML owner attributes. It does not generate content or approve its freshness."
-msgstr "Choisissez la section source à laquelle appartient chaque rendu conservé. Le lien préserve son HTML, ses scripts, ses réponses et son historique, y compris les anciens attributs HTML de section. Il ne génère aucun contenu et ne confirme pas qu’il est à jour."
+#~ msgid "Choose the source section that owns each retained rendering. Linking preserves its HTML, scripts, answers and history, including old HTML owner attributes. It does not generate content or approve its freshness."
+#~ msgstr "Choisissez la section source à laquelle appartient chaque rendu conservé. Le lien préserve son HTML, ses scripts, ses réponses et son historique, y compris les anciens attributs HTML de section. Il ne génère aucun contenu et ne confirme pas qu’il est à jour."
 
 msgid "Choose the target model. The new global prompt file will use this file content and the normal model-specific prompt name."
 msgstr "Choisissez le modèle cible. Le nouveau fichier de prompt global utilisera le contenu de ce fichier et le nom normal propre au modèle."
@@ -3825,8 +3825,8 @@ msgstr "Chaque page traduite et synchronisée — portugais, espagnol, français
 msgid "Every page, read aloud."
 msgstr "Chaque page, lue à voix haute."
 
-msgid "Every rendering on this page has a verified owner."
-msgstr "Chaque rendu de cette page appartient à une section vérifiée."
+#~ msgid "Every rendering on this page has a verified owner."
+#~ msgstr "Chaque rendu de cette page appartient à une section vérifiée."
 
 msgid "Every section has a video"
 msgstr "Chaque section a une vidéo"
@@ -4137,8 +4137,8 @@ msgstr "Filtre les images décoratives ou non pertinentes sur chaque page."
 msgid "Final Page"
 msgstr "Page finale"
 
-msgid "Finish current edits and runs before linking retained content."
-msgstr "Terminez les modifications et les traitements en cours avant de lier le contenu conservé."
+#~ msgid "Finish current edits and runs before linking retained content."
+#~ msgstr "Terminez les modifications et les traitements en cours avant de lier le contenu conservé."
 
 msgid "Finish signing in with ChatGPT in the browser window that just opened."
 msgstr "Terminez la connexion avec ChatGPT dans la fenêtre du navigateur qui vient de s'ouvrir."
@@ -5074,8 +5074,8 @@ msgstr "Insérer le quiz ici"
 msgid "Inside Cover"
 msgstr "Page de garde"
 
-msgid "Inspect original HTML and answers"
-msgstr "Examiner le HTML et les réponses d’origine"
+#~ msgid "Inspect original HTML and answers"
+#~ msgstr "Examiner le HTML et les réponses d’origine"
 
 msgid "Install"
 msgstr "Installer"
@@ -5438,8 +5438,8 @@ msgstr "Lien"
 msgid "Link page"
 msgstr "Lier la page"
 
-msgid "Link retained content to selected section"
-msgstr "Lier le contenu conservé à la section sélectionnée"
+#~ msgid "Link retained content to selected section"
+#~ msgstr "Lier le contenu conservé à la section sélectionnée"
 
 msgid "Linked pages are kept together as one spread."
 msgstr "Les pages liées sont conservées ensemble comme une seule fusion."
@@ -5588,8 +5588,8 @@ msgstr "Chargement du quiz..."
 msgid "Loading quizzes..."
 msgstr "Chargement des quiz..."
 
-msgid "Loading retained content…"
-msgstr "Chargement du contenu conservé…"
+#~ msgid "Loading retained content…"
+#~ msgstr "Chargement du contenu conservé…"
 
 msgid "Loading reviewer checklist…"
 msgstr "Chargement de la liste de contrôle du réviseur…"
@@ -5759,8 +5759,8 @@ msgstr "Suivre le thème du système"
 msgid "Matches the original book design with some flexibility."
 msgstr "Correspond au design original du livre avec une certaine flexibilité."
 
-msgid "Matching source section"
-msgstr "Section source correspondante"
+#~ msgid "Matching source section"
+#~ msgstr "Section source correspondante"
 
 msgid "Max height"
 msgstr "Hauteur max"
@@ -6559,8 +6559,8 @@ msgstr "Aucune traduction n'a été acceptée quand même dans cette vue."
 msgid "No unassigned videos are available."
 msgstr "Aucune vidéo non attribuée n’est disponible."
 
-msgid "No unclaimed source section is available. Restore the matching Sectioning version in Storyboard, then reload this review."
-msgstr "Aucune section source sans rendu associé n’est disponible. Restaurez la version correspondante de Sectioning dans Storyboard, puis rechargez cet examen."
+#~ msgid "No unclaimed source section is available. Restore the matching Sectioning version in Storyboard, then reload this review."
+#~ msgstr "Aucune section source sans rendu associé n’est disponible. Restaurez la version correspondante de Sectioning dans Storyboard, puis rechargez cet examen."
 
 msgid "No variables detected in the current template."
 msgstr "Aucune variable détectée dans le modèle actuel."
@@ -8078,8 +8078,8 @@ msgstr "Notes de version"
 msgid "Reload app"
 msgstr "Recharger l'application"
 
-msgid "Reload ownership review"
-msgstr "Recharger l’examen des associations"
+#~ msgid "Reload ownership review"
+#~ msgstr "Recharger l’examen des associations"
 
 msgid "Remove"
 msgstr "Retirer"
@@ -8181,11 +8181,11 @@ msgstr "Rend les activités à partir d'un modèle fixe pour un style cohérent.
 msgid "Renders each page into the storyboard layout used by the web reader."
 msgstr "Rend chaque page dans la mise en page du storyboard utilisée par le lecteur web."
 
-msgid "Repair section ownership"
-msgstr "Réparer l’association aux sections"
+#~ msgid "Repair section ownership"
+#~ msgstr "Réparer l’association aux sections"
 
-msgid "Repair section ownership: {pageId}"
-msgstr "Réparer l’association aux sections : {pageId}"
+#~ msgid "Repair section ownership: {pageId}"
+#~ msgstr "Réparer l’association aux sections : {pageId}"
 
 msgid "Replace"
 msgstr "Remplacer"
@@ -8318,12 +8318,12 @@ msgid "Resume target: page {0}"
 msgstr "Cible de reprise : page {0}"
 
 #. placeholder {0}: String(renderingIndex + 1)
-msgid "Retained rendering {0}"
-msgstr "Rendu conservé {0}"
+#~ msgid "Retained rendering {0}"
+#~ msgstr "Rendu conservé {0}"
 
 #. placeholder {0}: String(renderingIndex + 1)
-msgid "Retained rendering preview {0}"
-msgstr "Aperçu du rendu conservé {0}"
+#~ msgid "Retained rendering preview {0}"
+#~ msgstr "Aperçu du rendu conservé {0}"
 
 msgid "Retries"
 msgstr "Tentatives"

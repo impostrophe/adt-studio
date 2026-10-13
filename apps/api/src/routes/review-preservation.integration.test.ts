@@ -63,11 +63,13 @@ it("resection preserves the restored source's identities and reserves retired ID
   } finally { storage.close() }
 })
 
-it("rejects structural edits on reordered owners without changing any version", async () => {
+it("rejects structural edits on contradictory owners without changing any version", async () => {
   const storage = db()
   const data = tree(["Alpha", "Beta"])
   data.sections.push({ ...data.sections[0], sectionId: "pg001_sec002", nodes: [] })
-  storage.putNodeData("web-rendering", "pg001", rendered(data))
+  const conflicting = rendered(data)
+  conflicting.sections[0].sectionId = data.sections[1].sectionId
+  storage.putNodeData("web-rendering", "pg001", conflicting)
   storage.putNodeData("page-sectioning", "pg001", { ...data, sections: [...data.sections].reverse() })
   const before = storage.getNodeVersionFingerprint([])
   storage.close()

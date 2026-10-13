@@ -415,7 +415,6 @@ export {
   getSemanticSectioning,
   renderedSectionId,
   withLegacyRenderingOwnership,
-  renderingOwnerSignature,
   withLegacyRenderingOwnership as withLegacyFixedLayoutOwnership,
   resolveRenderedSection,
   renderingOwnershipWarnings,

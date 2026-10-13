@@ -1,6 +1,6 @@
 import type { ExtractedPage } from "@adt/pdf"
 import type { LlmLogEntry } from "@adt/llm"
-import type { OutputInputEvidence, RenderMethodValue, ActivityCreationReceipt } from "@adt/types"
+import type { OutputInputEvidence, RenderMethodValue } from "@adt/types"
 
 export interface PageData {
   pageId: string
@@ -153,8 +153,6 @@ export interface Storage {
   getNodeVersionFingerprint(excludeNodes?: string[]): Array<{ node: string; itemId: string; version: number }>
 
   appendLlmLog(entry: LlmLogEntry): void
-  /** Read historical successful tool receipts for legacy ownership recovery. */
-  getActivityCreationReceipts?(pageId: string): ActivityCreationReceipt[]
 
   /** Store a debug image (e.g. screenshot) by hash as a file under the book directory. */
   putDebugImage(hash: string, data: Buffer): void

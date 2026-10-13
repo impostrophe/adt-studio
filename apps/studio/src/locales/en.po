@@ -2342,8 +2342,8 @@ msgstr "Choose a Preset"
 msgid "Choose a previously uploaded video or upload a new one."
 msgstr "Choose a previously uploaded video or upload a new one."
 
-msgid "Choose a section after reviewing its content"
-msgstr "Choose a section after reviewing its content"
+#~ msgid "Choose a section after reviewing its content"
+#~ msgstr "Choose a section after reviewing its content"
 
 msgid "Choose an existing image from this project"
 msgstr "Choose an existing image from this project"
@@ -2378,8 +2378,8 @@ msgstr "Choose the part file that was shared with you, or export it again."
 msgid "Choose the source pages and where the quiz lands in the page editor."
 msgstr "Choose the source pages and where the quiz lands in the page editor."
 
-msgid "Choose the source section that owns each retained rendering. Linking preserves its HTML, scripts, answers and history, including old HTML owner attributes. It does not generate content or approve its freshness."
-msgstr "Choose the source section that owns each retained rendering. Linking preserves its HTML, scripts, answers and history, including old HTML owner attributes. It does not generate content or approve its freshness."
+#~ msgid "Choose the source section that owns each retained rendering. Linking preserves its HTML, scripts, answers and history, including old HTML owner attributes. It does not generate content or approve its freshness."
+#~ msgstr "Choose the source section that owns each retained rendering. Linking preserves its HTML, scripts, answers and history, including old HTML owner attributes. It does not generate content or approve its freshness."
 
 msgid "Choose the target model. The new global prompt file will use this file content and the normal model-specific prompt name."
 msgstr "Choose the target model. The new global prompt file will use this file content and the normal model-specific prompt name."
@@ -3823,8 +3823,8 @@ msgstr "Every page translated and kept in sync — Portuguese, Spanish, French a
 msgid "Every page, read aloud."
 msgstr "Every page, read aloud."
 
-msgid "Every rendering on this page has a verified owner."
-msgstr "Every rendering on this page has a verified owner."
+#~ msgid "Every rendering on this page has a verified owner."
+#~ msgstr "Every rendering on this page has a verified owner."
 
 msgid "Every section has a video"
 msgstr "Every section has a video"
@@ -4135,8 +4135,8 @@ msgstr "Filters out decorative or non-content images on each page."
 msgid "Final Page"
 msgstr "Final Page"
 
-msgid "Finish current edits and runs before linking retained content."
-msgstr "Finish current edits and runs before linking retained content."
+#~ msgid "Finish current edits and runs before linking retained content."
+#~ msgstr "Finish current edits and runs before linking retained content."
 
 msgid "Finish signing in with ChatGPT in the browser window that just opened."
 msgstr "Finish signing in with ChatGPT in the browser window that just opened."
@@ -5072,8 +5072,8 @@ msgstr "Insert the quiz here"
 msgid "Inside Cover"
 msgstr "Inside Cover"
 
-msgid "Inspect original HTML and answers"
-msgstr "Inspect original HTML and answers"
+#~ msgid "Inspect original HTML and answers"
+#~ msgstr "Inspect original HTML and answers"
 
 msgid "Install"
 msgstr "Install"
@@ -5436,8 +5436,8 @@ msgstr "Link"
 msgid "Link page"
 msgstr "Link page"
 
-msgid "Link retained content to selected section"
-msgstr "Link retained content to selected section"
+#~ msgid "Link retained content to selected section"
+#~ msgstr "Link retained content to selected section"
 
 msgid "Linked pages are kept together as one spread."
 msgstr "Linked pages are kept together as one spread."
@@ -5586,8 +5586,8 @@ msgstr "Loading quiz..."
 msgid "Loading quizzes..."
 msgstr "Loading quizzes..."
 
-msgid "Loading retained content…"
-msgstr "Loading retained content…"
+#~ msgid "Loading retained content…"
+#~ msgstr "Loading retained content…"
 
 msgid "Loading reviewer checklist…"
 msgstr "Loading reviewer checklist…"
@@ -5757,8 +5757,8 @@ msgstr "Match system theme"
 msgid "Matches the original book design with some flexibility."
 msgstr "Matches the original book design with some flexibility."
 
-msgid "Matching source section"
-msgstr "Matching source section"
+#~ msgid "Matching source section"
+#~ msgstr "Matching source section"
 
 msgid "Max height"
 msgstr "Max height"
@@ -6557,8 +6557,8 @@ msgstr "No translations were accepted anyway in this view."
 msgid "No unassigned videos are available."
 msgstr "No unassigned videos are available."
 
-msgid "No unclaimed source section is available. Restore the matching Sectioning version in Storyboard, then reload this review."
-msgstr "No unclaimed source section is available. Restore the matching Sectioning version in Storyboard, then reload this review."
+#~ msgid "No unclaimed source section is available. Restore the matching Sectioning version in Storyboard, then reload this review."
+#~ msgstr "No unclaimed source section is available. Restore the matching Sectioning version in Storyboard, then reload this review."
 
 msgid "No variables detected in the current template."
 msgstr "No variables detected in the current template."
@@ -8076,8 +8076,8 @@ msgstr "Release notes"
 msgid "Reload app"
 msgstr "Reload app"
 
-msgid "Reload ownership review"
-msgstr "Reload ownership review"
+#~ msgid "Reload ownership review"
+#~ msgstr "Reload ownership review"
 
 msgid "Remove"
 msgstr "Remove"
@@ -8179,11 +8179,11 @@ msgstr "Renders activities from a fixed template for consistent styling."
 msgid "Renders each page into the storyboard layout used by the web reader."
 msgstr "Renders each page into the storyboard layout used by the web reader."
 
-msgid "Repair section ownership"
-msgstr "Repair section ownership"
+#~ msgid "Repair section ownership"
+#~ msgstr "Repair section ownership"
 
-msgid "Repair section ownership: {pageId}"
-msgstr "Repair section ownership: {pageId}"
+#~ msgid "Repair section ownership: {pageId}"
+#~ msgstr "Repair section ownership: {pageId}"
 
 msgid "Replace"
 msgstr "Replace"
@@ -8316,12 +8316,12 @@ msgid "Resume target: page {0}"
 msgstr "Resume target: page {0}"
 
 #. placeholder {0}: String(renderingIndex + 1)
-msgid "Retained rendering {0}"
-msgstr "Retained rendering {0}"
+#~ msgid "Retained rendering {0}"
+#~ msgstr "Retained rendering {0}"
 
 #. placeholder {0}: String(renderingIndex + 1)
-msgid "Retained rendering preview {0}"
-msgstr "Retained rendering preview {0}"
+#~ msgid "Retained rendering preview {0}"
+#~ msgstr "Retained rendering preview {0}"
 
 msgid "Retries"
 msgstr "Retries"

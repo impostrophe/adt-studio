@@ -40,3 +40,33 @@ it.each(["cosmetic", "substantive", "conflict", "failure"])("handles %s mirrorin
   for (const node of ["glossary", "quiz-generation", "toc-generation"]) expect(db.getAllNodeVersions(node, "book").map((row) => row.data)).toEqual([{ manual: "retained" }])
   expect(db.getAllNodeVersions("web-rendering", "pg001")[0].data).toEqual(rendering)
 })
+
+it.each(["unique", "ambiguous"])("uses pre-edit leaf ownership for %s legacy mirror targets", async mode => {
+  const legacy = { sections: [{ ...rendering.sections[0], sectionId: undefined, html: html.replace(` data-section-id="${owner}"`, "") }] }
+  if (mode === "ambiguous") legacy.sections.push({ ...legacy.sections[0], sectionIndex: 1 })
+  db.putNodeData("web-rendering", "pg001", legacy)
+  const history = db.getAllNodeVersions("web-rendering", "pg001")
+  generateObject.mockResolvedValue({ object: { reasoning: "cosmetic", content: legacy.sections[0].html.replace("<section", '<section style="color:red"') } })
+  const result = await mirrorLayout({ storage: db, bookLabel: "book", booksDir: root, source: { pageId: "pg001", sectionIndex: 0 }, targets: [{ pageId: "pg001", sectionIndex: 0 }], modelId: "fixture" })
+  expect(result.results[0].ok).toBe(mode === "unique")
+  expect(generateObject).toHaveBeenCalledTimes(mode === "unique" ? 1 : 0)
+  if (mode === "unique") {
+    expect(db.getLatestNodeData("web-rendering", "pg001")?.data).toMatchObject({ sections: [{ sectionId: owner }] })
+    expect(db.getStepRuns().map(run => run.step)).toEqual(expect.arrayContaining(SOURCE_GENERATION_RESET_STEPS))
+  } else expect(db.getAllNodeVersions("web-rendering", "pg001")).toEqual(history)
+})
+
+it("mirrors the section displayed by the editor after source reorder, retaining the other legacy owner", async () => {
+  const source = db.getLatestNodeData("page-sectioning", "pg001")!.data as import("@adt/types").PageSectioningOutput
+  const other = { ...source.sections[0], sectionId: "pg001_sec002", nodes: source.sections[0].nodes.map(node => ({ ...node, nodeId: node.nodeId + "-B", text: node.text + " B" })) }
+  db.putNodeData("page-sectioning", "pg001", { ...source, sections: [other, ...source.sections] })
+  const oldA = { ...rendering.sections[0], sectionId: undefined, html: html.replace(` data-section-id="${owner}"`, "") }
+  const oldB = { ...oldA, sectionIndex: 1, html: oldA.html.replace(/pg001_t00([1-4])/g, "pg001_t00$1-B") }
+  db.putNodeData("web-rendering", "pg001", { sections: [oldA, oldB] })
+  generateObject.mockResolvedValue({ object: { reasoning: "B only", content: oldB.html.replace("<section", '<section style="color:red"') } })
+  const result = await mirrorLayout({ storage: db, bookLabel: "book", booksDir: root, source: { pageId: "pg001", sectionIndex: 1 }, targets: [{ pageId: "pg001", sectionIndex: 0 }], modelId: "fixture" })
+  expect(result.results[0].ok).toBe(true)
+  const saved = db.getLatestNodeData("web-rendering", "pg001")!.data as import("@adt/types").WebRenderingOutput
+  expect(saved.sections.find(entry => entry.sectionId === owner)?.html).toBe(oldA.html)
+  expect(saved.sections.find(entry => entry.sectionId === other.sectionId)?.html).toContain('style="color:red"')
+})

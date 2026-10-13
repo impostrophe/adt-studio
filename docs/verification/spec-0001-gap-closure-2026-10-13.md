@@ -1,5 +1,9 @@
 # SPEC-0001 compatibility gap closure — 2026-10-13
 
+> Historical checkpoint: the subsequent [Teams follow-up](spec-0001-leaf-compatibility.md)
+> supersedes this ledger's root/receipt recovery and explicit repair workflow.
+> Its test results do not establish the new leaf-ID compatibility contract.
+
 Starting head: `f9ba8db2dc7767b57e94fa908481c95ac24b6675`, base `develop`
 `0b18602f8b42f4b52b4d2ccf2927635d5a4db572`, same PR #879. Human review remains
 pending. This ledger supersedes the earlier AC-7/12 blocked conclusion after the

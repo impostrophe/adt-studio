@@ -1,5 +1,4 @@
 import { OutputReviewPanel } from "./output-review/OutputReviewPanel"
-import { RenderingOwnershipRepair } from "./RenderingOwnershipRepair"
 import { hasOutputConflict, outputLocationCount } from "./output-review/review-plan"
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
@@ -133,6 +132,6 @@ export function CatalogSummary({ bookLabel, stage, disclosure = false, features,
     (disclosure || stage !== "speech" || data?.showMissingSpeech || !output.missing))
   if (error) return <p className="text-xs text-red-700">{error.message}</p>
   const ownershipPages = [...new Set(data?.ownershipWarnings?.map((warning) => warning.pageId) ?? [])].join(", ")
-  return <>{ownershipPages && <div className="space-y-2 rounded border border-amber-300 p-2 text-xs text-amber-800"><p>{t`Some rendered sections on ${ownershipPages} have no verified section owner and are omitted from preview and export. Their content and history are retained. Review their section identities in Storyboard.`}</p>{!disclosure && [...new Set(data?.ownershipWarnings?.map(warning => warning.pageId))].map(pageId => <RenderingOwnershipRepair key={pageId} bookLabel={bookLabel} pageId={pageId} />)}</div>}<OutputReviewPanel defaultOpen={expanded} bookLabel={bookLabel} outputs={outputs} catalog={data?.outputs ?? []} conflicts={stage ? data?.conflicts?.filter((conflict) => outputs.some((output) => output.identity.id === conflict.id)) : data?.conflicts} disclosure={disclosure}
+  return <>{ownershipPages && <div className="space-y-2 rounded border border-amber-300 p-2 text-xs text-amber-800"><p>{t`Some rendered sections on ${ownershipPages} have no verified section owner and are omitted from preview and export. Their content and history are retained. Review their section identities in Storyboard.`}</p></div>}<OutputReviewPanel defaultOpen={expanded} bookLabel={bookLabel} outputs={outputs} catalog={data?.outputs ?? []} conflicts={stage ? data?.conflicts?.filter((conflict) => outputs.some((output) => output.identity.id === conflict.id)) : data?.conflicts} disclosure={disclosure}
     renderDetail={(output) => <OutputReviewItem bookLabel={bookLabel} output={output} outputs={data?.outputs ?? []} disclosure={disclosure} detail inline />} /></>
 }

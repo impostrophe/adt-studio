@@ -169,11 +169,11 @@ it("retains retired Easy Read history without exposing it in Preview or export",
 })
 
 
-it("legacy custom activity root identities preserve answers, scripts, Preview/export and page editing", async () => {
+it("legacy custom activity leaf identities preserve answers, scripts, Preview/export and page editing", async () => {
   const db = storage()
   const id = "pg001_s0"
   const script = `window.adtRegisterCustomActivity(document.querySelector('[data-id="${id}"]'),{validate:()=>true});`
-  const source = { ...sections.sections[0], sectionId: id, sectionType: "activity_custom_test" }
+  const source = { ...sections.sections[0], sectionId: id, sectionType: "activity_custom_test", nodes: [{ nodeId: "question", role: "body_text", text: "Legacy custom question", isPruned: false }] }
   const old = { sectionIndex: 0, sectionType: source.sectionType, reasoning: "legacy", html: `<section data-id="${id}" data-section-type="activity_custom_test"><p data-id="question">Legacy custom question</p><script>${script}</script></section>`, activityAnswers: { answer: "Manual answer" } }
   db.putNodeData("page-sectioning", "pg001", { reasoning: "", sections: [source] })
   const version = db.putNodeData("web-rendering", "pg001", { sections: [old] })
@@ -203,43 +203,12 @@ it("legacy custom activity root identities preserve answers, scripts, Preview/ex
   } finally { updated.close() }
 })
 
-it.each(["receipt", "missing", "altered", "wrong-version", "conflicting", "assistant", "truncated"])("recovers a copied legacy root only from an exact server receipt (%s)", mode => {
-  const db = storage()
-  try {
-    const type = "activity_custom_test"
-    const oldId = "pg001_s0", newId = "pg001_sec002"
-    const html = (text: string) => `<section data-id="${oldId}" data-section-type="${type}"><p data-id="${text}">${text}</p><script>window.retained=true</script></section>`
-    const old = { sectionIndex: 0, sectionType: type, reasoning: "", html: html("Original"), activityAnswers: { answer: "Old answer" } }
-    const created = { ...old, sectionIndex: 1, html: html("New"), activityAnswers: { answer: "New answer" } }
-    db.putNodeData("page-sectioning", "pg001", { reasoning: "", sections: [oldId, newId].map(sectionId => ({ ...sections.sections[0], sectionId, sectionType: type })) })
-    const version = db.putNodeData("web-rendering", "pg001", { sections: [old, created] })
-    const receipt = { ok: true, sectionId: newId, sectionIndex: 1, version: mode === "wrong-version" ? 999 : version }
-    const log = (id: string, data: typeof receipt) => db.appendLlmLog({ requestId: id, timestamp: "2026-09-04T00:00:00Z", taskType: "generate-activity", pageId: "pg001", promptName: "activity-generation", modelId: "test", cacheHit: false, success: true, errorCount: 0, attempt: 0, durationMs: 1,
-      messages: [{ role: mode === "assistant" ? "assistant" : "tool", content: [{ type: "text", text: "createCustomSection: " + (mode === "truncated" ? '{"ok":true' : JSON.stringify(data)) }] }] })
-    if (mode !== "missing") log("proof", receipt)
-    if (mode === "conflicting") log("conflict", { ...receipt, sectionId: "different-owner" })
-    db.putNodeData("web-rendering", "pg001", { sections: [{ ...created, sectionIndex: 42, ...(mode === "altered" ? { html: html("Changed") } : {}) }, old] })
-    const history = db.getAllNodeVersions("web-rendering", "pg001")
-    const answers = buildTextCatalogSnapshot(db, db.getPages()).entries.filter(entry => entry.id.includes("_ans_"))
-    if (mode === "receipt") {
-      expect(resolveReadingOrder(db).items.map(item => item.id)).toEqual([oldId, newId])
-      expect(answers.find(entry => entry.id === `${newId}_ans_answer`)?.text).toBe("New answer")
-      expect(answers.find(entry => entry.id === `${oldId}_ans_answer`)?.text).toBe("Old answer")
-    } else {
-      expect(answers.find(entry => entry.id === `${oldId}_ans_answer`)?.text).not.toBe("New answer")
-      expect(answers.find(entry => entry.id === `${newId}_ans_answer`)).toBeUndefined()
-      expect(renderingOwnershipWarnings(db).length).toBeGreaterThan(0)
-    }
-    expect(db.getAllNodeVersions("web-rendering", "pg001")).toEqual(history)
-  } finally { db.close() }
-})
-
 it.each(["clone", "split", "merge", "delete"])("legacy custom content no longer locks neighboring %s operations", async operation => {
   const db = storage()
   const id = "pg001_s0"
   const old = { sectionIndex: 0, sectionType: "activity_custom_test", reasoning: "", html: `<section data-id="${id}" data-section-type="activity_custom_test"><p data-id="activity-text">Retained custom activity</p><script>window.preserved=true</script></section>`, activityAnswers: { answer: "Retained answer" } }
   db.putNodeData("page-sectioning", "pg001", { reasoning: "", sections: [
-    { ...sections.sections[0], sectionId: id, sectionType: old.sectionType },
+    { ...sections.sections[0], sectionId: id, sectionType: old.sectionType, nodes: [{ nodeId: "activity-text", role: "body_text", text: "Retained custom activity", isPruned: false }] },
     { ...sections.sections[0], sectionId: "pg001_sec002", nodes: [0, 1].map(i => ({ nodeId: `neighbor-${i}`, role: "body_text", text: `Neighbor ${i}`, isPruned: false })) },
     { ...sections.sections[1], sectionId: "pg001_sec003" },
   ] })
@@ -259,4 +228,79 @@ it.each(["clone", "split", "merge", "delete"])("legacy custom content no longer 
     expect((updated.getLatestNodeData("web-rendering", "pg001")?.data as WebRenderingOutput).sections[0].html).toContain("window.preserved=true")
     expect((updated.getAllNodeVersions("web-rendering", "pg001").find(row => row.version === version)?.data as WebRenderingOutput).sections[0]).toEqual(old)
   } finally { updated.close() }
+})
+
+it.each(["editor", "assistant"])("leaf-only activity reads preserve versions; %s edits retain manual answer translations", async mode => {
+  const owner = "pg001_sec001"
+  const db = storage()
+  const old = { ...rendering.sections[0], sectionType: "activity_custom_test", html: '<section data-id="unrelated-root"><p data-id="text-A">Question A</p><script>window.custom=true</script></section>' }
+  db.putNodeData("page-sectioning", "pg001", { ...sections, sections: [{ ...sections.sections[0], sectionId: owner, sectionType: old.sectionType }, sections.sections[1]] })
+  db.putNodeData("web-rendering", "pg001", { sections: [old, rendering.sections[1]] })
+  db.putNodeData("text-catalog-translation", "fr", { entries: [{ id: `${owner}_ans_item-1`, text: "Manuel Soleil", source: "manual" }], generatedAt: "before" })
+  const versions = db.getNodeVersionFingerprint()
+  const translations = db.getLatestNodeData("text-catalog-translation", "fr")
+  const historical = db.getAllNodeVersions("web-rendering", "pg001")
+  db.close()
+  const provider = vi.fn(() => { throw new Error("Ownership must not generate") }); vi.stubGlobal("fetch", provider)
+  const app = createPageRoutes(root, path.resolve("prompts"), path.resolve("assets"))
+  const response = await app.request(`/books/${label}/pages/pg001`)
+  expect(response.status).toBe(200)
+  const detail = await response.json()
+  expect(detail.rendering.sections[0]).toEqual({ ...old, sectionId: owner })
+  const read = storage()
+  expect(read.getNodeVersionFingerprint()).toEqual(versions)
+  expect(buildImageInventory(read).find(item => item.id === "image-B")?.sectionIds).toEqual(["B"])
+  expect(buildEasyReadSourceBlocks(read, read.getPages()).some(block => block.sectionId === owner)).toBe(true)
+  read.close()
+  if (mode === "editor") {
+  const save = await app.request(`/books/${label}/pages/pg001/rendering`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(detail.rendering) })
+  expect(save.status).toBe(200)
+  }
+  const updated = storage()
+  try {
+    const { tools } = createBookTools({ storage: updated, bookLabel: label, booksDir: root, promptsDir: path.resolve("prompts"), credentials: {} })
+    const edited = await tools.updateSection!.execute!({ pageId: "pg001", sectionIndex: 0, html: old.html.replace("Question A", "Edited A"), reasoning: "edit", activityAnswers: null }, {} as never)
+    expect(edited).toMatchObject({ ok: true })
+    const entry = (updated.getLatestNodeData("web-rendering", "pg001")?.data as WebRenderingOutput).sections[0]
+    expect(entry.sectionId).toBe(owner)
+    expect(entry.html).toContain(`data-section-id="${owner}"`)
+    expect(entry.html).toContain("window.custom=true")
+    expect(entry.activityAnswers).toEqual(old.activityAnswers)
+    expect(updated.getLatestNodeData("text-catalog-translation", "fr")).toEqual(translations)
+    for (const row of historical) expect(updated.getAllNodeVersions("web-rendering", "pg001")).toContainEqual(row)
+    await packageAdtWeb(updated, { bookDir: updated.bookDir!, label, language: "en", outputLanguages: ["en", "fr"], title: "Legacy", webAssetsDir: path.resolve("assets/adt"), config: loadBookConfig(label, root), promptsDir: path.resolve("prompts"), configDir: path.resolve("config") })
+    const fr = JSON.parse(fs.readFileSync(path.join(updated.bookDir!, "adt/content/i18n/fr/texts.json"), "utf8"))
+    expect(fr[`${owner}_ans_item-1`]).toBe("Manuel Soleil")
+  } finally { updated.close() }
+  const preview = await createAdtPreviewRoutes(root, path.resolve("assets/adt")).request(`/books/${label}/adt-preview/${owner}.html`)
+  expect(preview.status).toBe(200)
+  expect(await preview.text()).toContain('"item-1":"sun"')
+  expect(provider).not.toHaveBeenCalled()
+})
+
+it.each(["clone", "delete"])("resolves leaf ownership before %s after ordinary source reorder", async operation => {
+  const db = storage()
+  const unowned = { sections: rendering.sections.map(entry => ({ ...entry, html: entry.html.replace(/ data-section-id="[AB]"/, "") })) }
+  db.putNodeData("web-rendering", "pg001", unowned)
+  // Simulate an older already-reordered book: no pre-edit materialization existed.
+  db.putNodeData("page-sectioning", "pg001", { ...sections, sections: [...sections.sections].reverse() })
+  const translations = db.getLatestNodeData("text-catalog-translation", "fr")
+  const history = db.getAllNodeVersions("web-rendering", "pg001")
+  db.close()
+  const app = createPageRoutes(root, path.resolve("prompts"), path.resolve("assets"))
+  const beforeEdit = await app.request(`/books/${label}/pages/pg001`)
+  const detail = await beforeEdit.json()
+  expect(detail.rendering.sections.find((entry: WebRenderingOutput["sections"][number]) => entry.sectionIndex === 0).sectionId).toBe("B")
+  const response = await app.request(`/books/${label}/pages/pg001/sections/0${operation === "clone" ? "/clone" : ""}`, { method: operation === "clone" ? "POST" : "DELETE" })
+  expect(response.status).toBe(200)
+  const changed = storage()
+  try {
+    expect(answerMap()["A_ans_item-1"]).toBe("sun")
+    const entries = (changed.getLatestNodeData("web-rendering", "pg001")?.data as WebRenderingOutput).sections
+    expect(entries.find(entry => entry.sectionId === "A")?.activityAnswers).toEqual({ "item-1": "sun" })
+    expect(changed.getLatestNodeData("text-catalog-translation", "fr")).toEqual(translations)
+    for (const row of history) expect(changed.getAllNodeVersions("web-rendering", "pg001")).toContainEqual(row)
+    if (operation === "clone") expect(entries.find(entry => entry.sectionId !== "A" && entry.sectionId !== "B")?.activityAnswers).toEqual({ "item-1": "moon" })
+    else expect(entries.some(entry => entry.sectionId === "B")).toBe(false)
+  } finally { changed.close() }
 })

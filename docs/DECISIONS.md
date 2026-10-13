@@ -940,6 +940,11 @@ physical assets referenced by history independently of disposable caches.
 - Preview/export permit usable stale/review-needed content under existing gates,
   disclose included/omitted/fallback output, and add no warning-approval popup.
   Export does not resolve warnings or freshness.
+- Legacy ownership may use the narrow mutually unique leaf-ID fallback specified
+  in SPEC-0001's October 13 Teams clarification. This is an accepted compatibility
+  assumption, not historical proof; whole-tree moves can mislead it. Read-time
+  recovery does not write or certify freshness. Historical reconstruction and a
+  repair screen are deferred; fixed-layout compatibility is retained.
 - Hash representation and physical publication mechanisms remain implementation
   choices. This ADR is proposed; no runtime behavior is delivered by these docs.
 

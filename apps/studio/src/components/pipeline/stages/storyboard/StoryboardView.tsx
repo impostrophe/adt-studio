@@ -17,7 +17,6 @@ import { Trans } from "@lingui/react/macro"
 import { useLingui } from "@lingui/react/macro"
 import { useHasUnsavedChanges } from "../../components/floating-save"
 import { parseQuizRouteId } from "@/lib/quiz-route"
-import { RenderingOwnershipRepair } from "../../components/RenderingOwnershipRepair"
 
 
 export function StoryboardView({ bookLabel, selectedPageId: selectedPageIdProp, onSelectPage }: { bookLabel: string; selectedPageId?: string; onSelectPage?: (pageId: string | null) => void }) {
@@ -492,7 +491,6 @@ export function StoryboardView({ bookLabel, selectedPageId: selectedPageIdProp, 
 
   return withStaleBanner(
     <>
-    <div className="px-4 py-2"><RenderingOwnershipRepair bookLabel={bookLabel} pageId={selectedPageId!} /></div>
     <StoryboardSectionDetail
       bookLabel={bookLabel}
       pageId={selectedPageId!}

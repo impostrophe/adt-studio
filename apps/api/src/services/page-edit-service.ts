@@ -1,6 +1,6 @@
 import { putSourceNodeData } from "@adt/pipeline"
 import { HTTPException } from "hono/http-exception"
-import { renderedSectionId, resolveRenderedSection } from "@adt/pipeline"
+import { renderedSectionId, resolveRenderedSection, withLegacyRenderingOwnership } from "@adt/pipeline"
 import crypto from "node:crypto"
 import path from "node:path"
 import { createBookStorage } from "@adt/storage"
@@ -76,6 +76,7 @@ export async function reRenderPage(
     const sectioning = structuringParsed.data
     const initialRenderingRow = storage.getLatestNodeData("web-rendering", pageId)
     const initialRendering = WebRenderingOutput.safeParse(initialRenderingRow?.data)
+    if (initialRendering.success) initialRendering.data = withLegacyRenderingOwnership(storage, pageId, initialRendering.data)
     const targetId = sectionIndex === undefined ? undefined : sectioning.sections[sectionIndex]?.sectionId
     if (sectionIndex !== undefined && !targetId) throw new HTTPException(400, { message: "Section index out of range" })
     if (sectionIndex !== undefined && initialRendering.success) {
@@ -253,7 +254,7 @@ export async function aiEditSection(
       if (!renderingParsed.success) {
         throw new Error("Invalid web-rendering data")
       }
-      const section = renderingParsed.data.sections.find((s) => s.sectionIndex === sectionIndex)
+      const section = withLegacyRenderingOwnership(storage, pageId, renderingParsed.data, true).sections.find((s) => s.sectionIndex === sectionIndex)
       if (!section) {
         throw new Error(`Section ${sectionIndex} not found in rendering`)
       }

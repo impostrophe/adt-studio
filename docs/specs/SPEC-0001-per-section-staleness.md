@@ -8,7 +8,7 @@ issues: ["#735", "#131", "#733", "#736", "#619", "#626"]
 prs: ["#879"]
 adr: "docs/DECISIONS.md#adr-024"
 created: 2026-09-10
-updated: 2026-10-11
+updated: 2026-10-13
 ---
 
 ## Decision under review
@@ -180,31 +180,36 @@ Resolve warnings only against the reviewed output and relevant inputs; reject ac
 
 **Legacy walkthrough:** Open a book with audio/translation but no trustworthy input evidence. Keep usable content with a warning and preserve known provenance; unknown authorship is protected. Keep existing content establishes a review baseline, not fabricated generation history. Missing/invalid files remain Missing. Opening the book performs no generation or deletion; metadata migration is allowed. Downgrade support is not assumed.
 
-**Implementation assumption / compatibility clarification (October 13;
-human spec review pending):** Current array position and moved text/image leaves
-cannot establish a legacy rendering's owner: either can attach retained manual
-activity answers to a different section after a reorder. Supported historical
-fixed-layout outputs are recovered from either the dedicated positioned-tree
-node or the earlier single positioned `page-sectioning` tree. Historical custom
-activities use a unique matching root identity or an exact saved successful
-creation receipt. Receipts take precedence over model-authored roots. Conflicting,
-missing or changed evidence never authorizes guessing. Reads preserve raw HTML,
-scripts, answer keys, provenance, entity versions and physical assets.
+**Implementation assumption / compatibility clarification (October 13 Teams
+follow-up, user-authorized; human spec review pending):** When both the saved
+`sectionId` and HTML `data-section-id` are absent, a legacy rendering may inherit
+a same-page section of the same type if that section is unclaimed, has at least
+one content leaf, and every leaf's exact `data-id` appears as an HTML attribute.
+Synthetic container IDs do not participate. There must be exactly one qualifying
+section and no other unowned rendering may qualify for it, including renderings
+that themselves have multiple candidates. Never match by array position or
+override contradictory explicit ownership. Supported historical fixed-layout
+outputs retain the dedicated positioned-tree and older single positioned
+`page-sectioning` fallback.
 
-When ownership remains ambiguous, the inline **Repair section ownership** action
-shows the retained rendering, original HTML/answers and available source sections.
-The user explicitly selects its owner. Publication checks the exact rendering
-version and the selected source node and version under shared writer admission;
-a background refresh clears the prior selection. Repair creates a new version,
-changes only ownership metadata, reconciles the catalog, and preserves scripts
-and old HTML owner attributes verbatim. It neither generates content nor certifies
-freshness/authorship. The original version remains restorable. If the source
-section was removed, restore the appropriate Sectioning version first; repair
-cannot silently reactivate excluded content. Until repaired, only unresolved
-renderings are omitted with disclosure. Preview/export remain read-only and add
-no approval popup. This closes the missing repair workflow recorded on October
-12; the safety assumptions are documented under the user's delegated judgment,
-not self-approved spec amendments.
+This narrow fallback is a compatibility assumption, not historical proof. Moving
+an entire content tree can yield a misleading match; the reviewer explicitly
+accepts that limitation. Historical reconstruction, migration tracking and a
+repair screen are deferred. The former root/receipt lookup and ownership repair
+workflow are superseded. A pre-edit snapshot supplies ownership for structural
+changes, re-rendering and assistant edits. Read projections do not rewrite books.
+Successful edits persist resolved ownership in a new version, preserving existing
+IDs, HTML/scripts, answers, translations and history except changes explicitly
+requested by the edit itself. Resolving ownership does not certify freshness or
+trigger generation. Existing explicit Split/Merge/Delete behavior and warnings
+still apply to the selected content; compatibility recovery does not promise to
+partition arbitrary custom scripts or retain deliberately deleted active content.
+Unrelated content and prior versions remain protected.
+
+If no unique match exists, retain the rendering/history and its omission warning
+without assigning an owner. Preview/export remain read-only and add no approval
+popup. De-codable pg006 acceptance is assigned to elasticsounds by the user; the
+implementation ledger must keep that verification pending until reported.
 
 New custom activities cannot copy a section owner or active/historical text ID.
 The tool rejects these inputs before writing and requests a corrected retry;

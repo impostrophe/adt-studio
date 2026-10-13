@@ -20,49 +20,20 @@
  * which clears it.
  */
 import type { NodeDataRow, Storage } from "@adt/storage"
-import type { PageSectioningOutput, PageSectioningSection, SectionRendering, PackagingWarning } from "@adt/types"
+import type { PageSectioningOutput, PageSectioningSection, SectionRendering, PackagingWarning, ContentNodeData } from "@adt/types"
 import { PageSectioningOutput as PageSectioningOutputSchema, WebRenderingOutput } from "@adt/types"
 import { parseDocument, DomUtils } from "htmlparser2"
-import { inputSignature } from "./output-freshness.js"
 
 export const FIXED_LAYOUT_SECTIONING_NODE = "fixed-layout-sectioning"
 export const PAGE_SECTIONING_NODE = "page-sectioning"
 
-export function renderingOwnerSignature(rendering: SectionRendering): string {
-  const doc = parseDocument(rendering.html)
-  const owners = DomUtils.findAll(element => element.type === "tag" && element.attribs["data-section-id"] !== undefined, doc.children)
-    .map(element => element.attribs["data-section-id"])
-  // Ownership evidence covers identity declarations, not media or freshness.
-  // Content/version guards protect the exact snapshot during the review action.
-  return inputSignature({ sectionId: rendering.sectionId, sectionType: rendering.sectionType, owners })
-}
-
-/** Resolve the owner of retained HTML, independently of the latest source order.
- * Adapted from SPEC-0012's stable HTML identity rule (PR #888). Identityless or
- * contradictory legacy content is retained but cannot be assigned to a section:
- * even matching leaf IDs may have moved since this rendering was produced.
- */
+/** Resolve explicit ownership, never overriding contradictory declarations. */
 export function renderedSectionId(rendering: SectionRendering): string | undefined {
-  return declaredSectionId(rendering, false)
-}
-
-function declaredSectionId(rendering: SectionRendering, legacyRoot: boolean): string | undefined {
-  // An explicit repair may override contradictory legacy attributes without
-  // rewriting them: custom scripts can refer to those exact selector strings.
-  if (rendering.sectionId && rendering.ownerReview?.signature === renderingOwnerSignature(rendering)) return rendering.sectionId
   const doc = parseDocument(rendering.html)
   const owners = DomUtils.findAll((element) => element.type === "tag" && element.attribs["data-section-id"] !== undefined, doc.children)
   if (owners.length > 1) return undefined
-  // The original custom-activity producer stored the stable section ID on the
-  // outer <section data-id>. This is an explicit root identity, not a leaf or
-  // the current array position. The caller still requires one matching owner.
-  const legacyRoots = legacyRoot && !owners.length && !rendering.sectionId
-    ? DomUtils.findAll((element) => element.type === "tag" && element.name === "section" &&
-      element.attribs["data-section-type"] === rendering.sectionType &&
-      /^pg\d+_(?:s\d+|sec\d+)$/.test(element.attribs["data-id"] ?? ""), doc.children)
-    : []
-  const root = owners[0] ?? (legacyRoots.length === 1 ? legacyRoots[0] : undefined)
-  const htmlId = owners[0]?.attribs["data-section-id"] ?? root?.attribs["data-id"]
+  const root = owners[0]
+  const htmlId = root?.attribs["data-section-id"]
   if (htmlId === "" || (htmlId && rendering.sectionId && htmlId !== rendering.sectionId)) return undefined
   // A persisted owner covers the complete rendering, including decorative
   // siblings. Only unstamped legacy HTML needs the exclusive-root check below.
@@ -106,52 +77,51 @@ function withLegacyFixedLayoutOwnership(
   return { ...rendering, sections: [{ ...entry, sectionId, html: DomUtils.getOuterHTML(doc) }] }
 }
 
-/** Read-only recovery from recorded identities, never current positions or
- * moved leaves. Custom-activity receipts name a precise historical rendering
- * version and the server-allocated owner. Only an unchanged unique rendering
- * in that version can inherit it. Missing logs do not authorize a guess. */
-export function withLegacyRenderingOwnership(storage: Storage, pageId: string, rendering: WebRenderingOutput): WebRenderingOutput {
+/** Read-only legacy compatibility, not historical proof. Whole content trees
+ * can move; SPEC-0001 explicitly accepts that limitation. Match the complete
+ * leaf set, never synthetic containers, array positions, or historical logs. */
+export function withLegacyRenderingOwnership(storage: Storage, pageId: string, rendering: WebRenderingOutput, alignToSource = false): WebRenderingOutput {
   const projected = withLegacyFixedLayoutOwnership(storage, pageId, rendering)
-  const sections = getRenderSectioning(storage, pageId)?.sections
-  const legacy = projected.sections.filter(entry => !entry.sectionId && !entry.html.includes("data-section-id"))
-  if (!legacy.length) return projected
-  const receipts = storage.getActivityCreationReceipts?.(pageId) ?? []
-  const history = new Map((receipts.length ? storage.getAllNodeVersions("web-rendering", pageId) : []).map(row => [row.version, row.data]))
-  // Exact string comparison avoids hashing embedded image/media data in HTML.
-  const contentKey = (entry: SectionRendering) => JSON.stringify({ html: entry.html, sectionType: entry.sectionType, activityAnswers: entry.activityAnswers })
-  const proven = new Map<string, Set<string>>()
-  for (const receipt of receipts) {
-    const snapshot = WebRenderingOutput.safeParse(history.get(receipt.version))
-    if (!snapshot.success) continue
-    const candidates = snapshot.data.sections.filter(entry => entry.sectionIndex === receipt.sectionIndex)
-    if (candidates.length !== 1) continue
-    const original = candidates[0]
-    if (original.sectionId && original.sectionId !== receipt.sectionId) continue
-    const key = contentKey(original)
-    if (snapshot.data.sections.filter(entry => contentKey(entry) === key).length !== 1) continue
-    const owners = proven.get(key) ?? new Set<string>()
-    owners.add(receipt.sectionId)
-    proven.set(key, owners)
-  }
-  const candidates = projected.sections.map(entry => {
-    if (!legacy.includes(entry)) return { entry, id: renderedSectionId(entry), proven: true }
-    const key = contentKey(entry)
-    const owners = proven.get(key)
-    // A server receipt outranks a model-authored root, even when that root
-    // happens to name an existing section. Conflicting receipts forbid fallback.
-    const id = owners
-      ? (owners.size === 1 && projected.sections.filter(candidate => contentKey(candidate) === key).length === 1 ? [...owners][0] : undefined)
-      : declaredSectionId(entry, true)
-    return { entry, id, proven: !!owners }
+  const sections = getRenderSectioning(storage, pageId)?.sections ?? []
+  const declarations = projected.sections.map(entry => {
+    const elements = DomUtils.findAll(element => element.type === "tag", parseDocument(entry.html).children)
+    const owners = elements.filter(element => element.attribs["data-section-id"] !== undefined)
+      .map(element => element.attribs["data-section-id"])
+    return {
+      entry,
+      legacy: entry.sectionId === undefined && owners.length === 0,
+      owners: [...owners, ...(entry.sectionId === undefined ? [] : [entry.sectionId])],
+      ids: new Set(elements.map(element => element.attribs["data-id"]).filter(Boolean)),
+    }
   })
-  return { ...projected, sections: candidates.map(candidate => {
-    if (!legacy.includes(candidate.entry)) return candidate.entry
-    const { id } = candidate
-    if (!id || sections?.filter(section => section.sectionId === id).length !== 1) return candidate.entry
-    const competing = candidates.filter(other => other !== candidate && other.id === id)
-    if (competing.some(other => other.proven || !candidate.proven)) return candidate.entry
-    return { ...candidate.entry, sectionId: id }
-  }) }
+  // Even a contradictory explicit declaration reserves its IDs. A legacy
+  // rendering cannot silently take either side of that unresolved claim.
+  const claimed = new Set(declarations.flatMap(value => value.owners))
+  const leaves = (nodes: readonly ContentNodeData[]): string[] => nodes.flatMap(node =>
+    node.children?.length ? leaves(node.children) : !node.structure && node.role ? [node.nodeId] : [])
+  const sources = sections.map(section => ({ section, ids: leaves(section.nodes) }))
+    .filter(({ section, ids }) => section.sectionId && !claimed.has(section.sectionId) && ids.length > 0 &&
+      sections.filter(other => other.sectionId === section.sectionId).length === 1)
+  const candidates = declarations.map(value => value.legacy
+    ? sources.filter(({ section, ids }) => section.sectionType === value.entry.sectionType && ids.every(id => value.ids.has(id)))
+    : [])
+  // Compute every edge before assigning anything. An ambiguous rendering still
+  // competes for each qualifying source, so traversal order cannot pick winners.
+  const resolved = declarations.map((value, index) => {
+    const matches = candidates[index]
+    if (matches.length !== 1) return value.entry
+    const match = matches[0]
+    if (candidates.some((other, otherIndex) => otherIndex !== index && other.includes(match))) return value.entry
+    return { ...value.entry, sectionId: match.section.sectionId }
+  })
+  // Editor routes address current source indices. Reader/export ordering keeps
+  // its existing rendered order; neither path uses position to establish owner.
+  return { ...projected, sections: alignToSource ? resolved.map(entry => {
+    const owner = renderedSectionId(entry)
+    const indexes = sections.flatMap((section, index) => section.sectionId === owner ? [index] : [])
+    return indexes.length === 1 ? { ...entry, sectionIndex: indexes[0] } : entry
+  }) : resolved }
+
 }
 
 export function resolveRenderedSection(

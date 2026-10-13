@@ -498,7 +498,7 @@ describe("page-edit-service", () => {
 })
 
 
-it("section re-render after source reorder retains the other owner", async () => {
+it.each([false, true])("section re-render after source reorder retains the other owner (legacy=%s)", async legacy => {
   const booksDir = fs.mkdtempSync(path.join(os.tmpdir(), "adt-rerender-owner-"))
   const label = "owners"
   const pageId = "pg001"
@@ -513,8 +513,8 @@ it("section re-render after source reorder retains the other owner", async () =>
     storage.putNodeData("page-sectioning", pageId, { reasoning: "reordered", sections: [section("B"), section("A")] })
     storage.putNodeData("web-rendering", pageId, {
       sections: (["A", "B"] as const).map((letter, sectionIndex) => ({
-        sectionId: section(letter).sectionId, sectionIndex, sectionType: "content", reasoning: "old",
-        html: `<section data-section-id="${section(letter).sectionId}"><p data-id="${letter}">${letter}</p></section>`,
+        ...(legacy ? {} : { sectionId: section(letter).sectionId }), sectionIndex, sectionType: "content", reasoning: "old",
+        html: `<section${legacy ? "" : ` data-section-id="${section(letter).sectionId}"`}><p data-id="${letter}">${letter}</p></section>`,
       })),
     })
     fs.writeFileSync(path.join(storage.bookDir!, "config.yaml"), "default_render_strategy: llm\n")
@@ -528,6 +528,6 @@ it("section re-render after source reorder retains the other owner", async () =>
     const result = await reRenderPage({ label, pageId, sectionIndex: 0, booksDir, promptsDir: path.resolve("prompts"), configPath: path.resolve("config.yaml"), credentials: {} })
     const rows = (result.rendering as import("@adt/types").WebRenderingOutput).sections
     expect(rows.map((row) => row.sectionId).sort()).toEqual(["pg001_sec001", "pg001_sec002"])
-    expect(rows.find((row) => row.sectionId === "pg001_sec001")?.html).toBe('<section data-section-id="pg001_sec001"><p data-id="A">A</p></section>')
+    expect(rows.find((row) => row.sectionId === "pg001_sec001")?.html).toBe(legacy ? '<section><p data-id="A">A</p></section>' : '<section data-section-id="pg001_sec001"><p data-id="A">A</p></section>')
   } finally { fs.rmSync(booksDir, { recursive: true, force: true }) }
 })

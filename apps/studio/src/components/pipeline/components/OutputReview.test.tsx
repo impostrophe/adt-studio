@@ -48,7 +48,7 @@ it("AC-12 discloses unverifiable rendered ownership without offering generation 
   render(<CatalogSummary bookLabel="book" />, { wrapper: setup([], [{ kind: "orphaned-rendering", pageId: "pg001", sectionIndex: 0 }]) })
   expect(screen.getByText(/Some rendered sections on pg001 have no verified section owner/)).toBeTruthy()
   expect(screen.getByText(/Their content and history are retained/)).toBeTruthy()
-  expect(screen.getByRole("button", { name: "Repair section ownership: pg001" })).toBeTruthy()
+  expect(screen.queryByRole("button", { name: /Repair section ownership/ })).toBeNull()
 })
 
 it("AC-15 expanded details retain every reason and linked source", () => {

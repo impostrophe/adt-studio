@@ -2,7 +2,7 @@ import { DomUtils, parseDocument } from "htmlparser2"
 import { PageSectioningOutput, SOURCE_GENERATION_RESET_STEPS, WebRenderingOutput } from "@adt/types"
 import type { Storage } from "@adt/storage"
 import { inputSignature } from "./output-freshness.js"
-import { renderedSectionId } from "./render-sectioning.js"
+import { renderedSectionId, withLegacyRenderingOwnership } from "./render-sectioning.js"
 
 /** Semantic inputs only: no CSS, placement, reasoning, media bytes or URLs.
  * These generators retain their existing coarse source-change policy; their
@@ -54,7 +54,22 @@ export function resetSourceGenerationAttempts(storage: Storage, node: string, be
  * Catalog-managed attempts, entity versions and physical assets are retained. */
 export function putSourceNodeData(storage: Storage, node: string, itemId: string, data: unknown): number {
   return storage.transaction(() => {
-    const previous = storage.getLatestNodeData(node, itemId)?.data
+    let previous = storage.getLatestNodeData(node, itemId)?.data
+    if (node === "page-sectioning" || node === "fixed-layout-sectioning") {
+      // Capture ownership while all original leaves are still in their source
+      // sections. Otherwise a successful reorder/split/move could change what
+      // the next read infers. This metadata-only version stays in this transaction.
+      const retained = WebRenderingOutput.safeParse(storage.getLatestNodeData("web-rendering", itemId)?.data)
+      if (retained.success) {
+        const resolved = withLegacyRenderingOwnership(storage, itemId, retained.data)
+        if (resolved.sections.some((entry, index) => entry.sectionId !== retained.data.sections[index].sectionId)) {
+          storage.putNodeData("web-rendering", itemId, resolved)
+        }
+      }
+    } else if (node === "web-rendering") {
+      const retained = WebRenderingOutput.safeParse(previous)
+      if (retained.success) previous = withLegacyRenderingOwnership(storage, itemId, retained.data)
+    }
     const version = storage.putNodeData(node, itemId, data)
     resetSourceGenerationAttempts(storage, node, previous, data)
     return version

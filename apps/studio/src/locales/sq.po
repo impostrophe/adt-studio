@@ -2344,8 +2344,8 @@ msgstr "Zgjidhni një Preset"
 msgid "Choose a previously uploaded video or upload a new one."
 msgstr "Zgjidh një video të ngarkuar më parë ose ngarko një të re."
 
-msgid "Choose a section after reviewing its content"
-msgstr "Zgjidhni një seksion pasi të shqyrtoni përmbajtjen e tij"
+#~ msgid "Choose a section after reviewing its content"
+#~ msgstr "Zgjidhni një seksion pasi të shqyrtoni përmbajtjen e tij"
 
 msgid "Choose an existing image from this project"
 msgstr "Zgjidhni një imazh ekzistues nga ky projekt"
@@ -2380,8 +2380,8 @@ msgstr "Zgjidhni skedarin e pjesës që ju është ndarë, ose eksportojeni për
 msgid "Choose the source pages and where the quiz lands in the page editor."
 msgstr "Zgjidhni faqet burimore dhe ku vendoset testi në redaktorin e faqeve."
 
-msgid "Choose the source section that owns each retained rendering. Linking preserves its HTML, scripts, answers and history, including old HTML owner attributes. It does not generate content or approve its freshness."
-msgstr "Zgjidhni seksionin burimor të cilit i përket secila paraqitje e ruajtur. Lidhja ruan HTML-në, skriptet, përgjigjet dhe historikun e saj, përfshirë atributet e vjetra të seksionit në HTML. Ajo nuk gjeneron përmbajtje dhe nuk konfirmon se ajo është e përditësuar."
+#~ msgid "Choose the source section that owns each retained rendering. Linking preserves its HTML, scripts, answers and history, including old HTML owner attributes. It does not generate content or approve its freshness."
+#~ msgstr "Zgjidhni seksionin burimor të cilit i përket secila paraqitje e ruajtur. Lidhja ruan HTML-në, skriptet, përgjigjet dhe historikun e saj, përfshirë atributet e vjetra të seksionit në HTML. Ajo nuk gjeneron përmbajtje dhe nuk konfirmon se ajo është e përditësuar."
 
 msgid "Choose the target model. The new global prompt file will use this file content and the normal model-specific prompt name."
 msgstr "Zgjidh modelin e synuar. Skedari i ri global i promptit do të përdorë përmbajtjen e këtij skedari dhe emrin normal specifik për modelin."
@@ -3825,8 +3825,8 @@ msgstr "Çdo faqe e përkthyer dhe e mbajtur në sinkron — portugalisht, spanj
 msgid "Every page, read aloud."
 msgstr "Çdo faqe, e lexuar me zë."
 
-msgid "Every rendering on this page has a verified owner."
-msgstr "Çdo paraqitje në këtë faqe i përket një seksioni të verifikuar."
+#~ msgid "Every rendering on this page has a verified owner."
+#~ msgstr "Çdo paraqitje në këtë faqe i përket një seksioni të verifikuar."
 
 msgid "Every section has a video"
 msgstr "Çdo seksion ka një video"
@@ -4137,8 +4137,8 @@ msgstr "Filtron imazhet dekorative ose pa përmbajtje nga çdo faqe."
 msgid "Final Page"
 msgstr "Faqja e fundit"
 
-msgid "Finish current edits and runs before linking retained content."
-msgstr "Përfundoni ndryshimet dhe proceset në vazhdim para se të lidhni përmbajtjen e ruajtur."
+#~ msgid "Finish current edits and runs before linking retained content."
+#~ msgstr "Përfundoni ndryshimet dhe proceset në vazhdim para se të lidhni përmbajtjen e ruajtur."
 
 msgid "Finish signing in with ChatGPT in the browser window that just opened."
 msgstr "Përfundoni hyrjen me ChatGPT në dritaren e shfletuesit që sapo u hap."
@@ -5074,8 +5074,8 @@ msgstr "Vendos kuizin këtu"
 msgid "Inside Cover"
 msgstr "Kapaku i brendshëm"
 
-msgid "Inspect original HTML and answers"
-msgstr "Shqyrto HTML-në dhe përgjigjet origjinale"
+#~ msgid "Inspect original HTML and answers"
+#~ msgstr "Shqyrto HTML-në dhe përgjigjet origjinale"
 
 msgid "Install"
 msgstr "Instalo"
@@ -5438,8 +5438,8 @@ msgstr "Lidhje"
 msgid "Link page"
 msgstr "Faqe lidhje"
 
-msgid "Link retained content to selected section"
-msgstr "Lidh përmbajtjen e ruajtur me seksionin e zgjedhur"
+#~ msgid "Link retained content to selected section"
+#~ msgstr "Lidh përmbajtjen e ruajtur me seksionin e zgjedhur"
 
 msgid "Linked pages are kept together as one spread."
 msgstr "Faqet e lidhura mbahen së bashku si një faqe e përbashkët."
@@ -5588,8 +5588,8 @@ msgstr "Duke ngarkuar kuizin..."
 msgid "Loading quizzes..."
 msgstr "Duke ngarkuar kuizet..."
 
-msgid "Loading retained content…"
-msgstr "Duke ngarkuar përmbajtjen e ruajtur…"
+#~ msgid "Loading retained content…"
+#~ msgstr "Duke ngarkuar përmbajtjen e ruajtur…"
 
 msgid "Loading reviewer checklist…"
 msgstr "Duke ngarkuar listën e kontrollit të rishikuesit…"
@@ -5759,8 +5759,8 @@ msgstr "Ndiq temën e sistemit"
 msgid "Matches the original book design with some flexibility."
 msgstr "Përputhet me dizajnin origjinal të librit me pak fleksibilitet."
 
-msgid "Matching source section"
-msgstr "Seksioni burimor përkatës"
+#~ msgid "Matching source section"
+#~ msgstr "Seksioni burimor përkatës"
 
 msgid "Max height"
 msgstr "Lartësia maksimale"
@@ -6559,8 +6559,8 @@ msgstr "Nuk u pranuan përkthime gjithsesi në këtë pamje."
 msgid "No unassigned videos are available."
 msgstr "Nuk ka video të pacaktuara të disponueshme."
 
-msgid "No unclaimed source section is available. Restore the matching Sectioning version in Storyboard, then reload this review."
-msgstr "Nuk ka seksion burimor pa paraqitje të lidhur. Riktheni versionin përkatës të Sectioning në Storyboard, pastaj ringarkoni këtë shqyrtim."
+#~ msgid "No unclaimed source section is available. Restore the matching Sectioning version in Storyboard, then reload this review."
+#~ msgstr "Nuk ka seksion burimor pa paraqitje të lidhur. Riktheni versionin përkatës të Sectioning në Storyboard, pastaj ringarkoni këtë shqyrtim."
 
 msgid "No variables detected in the current template."
 msgstr "Nuk u zbuluan variabla në template-in aktual."
@@ -8078,8 +8078,8 @@ msgstr "Shënimet e versionit"
 msgid "Reload app"
 msgstr "Rinis aplikacionin"
 
-msgid "Reload ownership review"
-msgstr "Ringarko shqyrtimin e lidhjeve"
+#~ msgid "Reload ownership review"
+#~ msgstr "Ringarko shqyrtimin e lidhjeve"
 
 msgid "Remove"
 msgstr "Hiq"
@@ -8181,11 +8181,11 @@ msgstr "Renderimi i aktiviteteve nga një shabllon i fiksuar për stil të qënd
 msgid "Renders each page into the storyboard layout used by the web reader."
 msgstr "Renderimi i çdo faqeje në paraqitjen e storyboard-it të përdorur nga lexuesi web."
 
-msgid "Repair section ownership"
-msgstr "Riparo lidhjen me seksionet"
+#~ msgid "Repair section ownership"
+#~ msgstr "Riparo lidhjen me seksionet"
 
-msgid "Repair section ownership: {pageId}"
-msgstr "Riparo lidhjen me seksionet: {pageId}"
+#~ msgid "Repair section ownership: {pageId}"
+#~ msgstr "Riparo lidhjen me seksionet: {pageId}"
 
 msgid "Replace"
 msgstr "Zëvendëso"
@@ -8318,12 +8318,12 @@ msgid "Resume target: page {0}"
 msgstr "Rimerr synimin: faqja {0}"
 
 #. placeholder {0}: String(renderingIndex + 1)
-msgid "Retained rendering {0}"
-msgstr "Paraqitja e ruajtur {0}"
+#~ msgid "Retained rendering {0}"
+#~ msgstr "Paraqitja e ruajtur {0}"
 
 #. placeholder {0}: String(renderingIndex + 1)
-msgid "Retained rendering preview {0}"
-msgstr "Pamja paraprake e paraqitjes së ruajtur {0}"
+#~ msgid "Retained rendering preview {0}"
+#~ msgstr "Pamja paraprake e paraqitjes së ruajtur {0}"
 
 msgid "Retries"
 msgstr "Riprovime"

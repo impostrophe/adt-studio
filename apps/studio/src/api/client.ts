@@ -1341,12 +1341,6 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  getRenderingOwnership: (label: string, pageId: string) =>
-    request<import("@adt/types").RenderingOwnershipRepair>(`/books/${label}/pages/${pageId}/rendering-ownership`),
-
-  repairRenderingOwner: (label: string, pageId: string, data: import("@adt/types").RepairRenderingOwner) =>
-    request<{ version: number }>(`/books/${label}/pages/${pageId}/rendering-ownership`, { method: "POST", body: JSON.stringify(data) }),
-
   cloneSection: (label: string, pageId: string, sectionIndex: number) =>
     request<{
       clonedSectionIndex: number

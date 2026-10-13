@@ -118,7 +118,7 @@ function loadRendering(storage: Storage, pageId: string): WebRenderingOutput {
   if (!parsed.success) {
     throw new Error(`Invalid web-rendering data for ${pageId}`)
   }
-  return withLegacyRenderingOwnership(storage, pageId, parsed.data)
+  return withLegacyRenderingOwnership(storage, pageId, parsed.data, true)
 }
 
 function ensureWritable(ctx: BookToolsContext, pageId: string): void {

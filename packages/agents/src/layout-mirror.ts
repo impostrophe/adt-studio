@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto"
 import { z } from "zod"
 import type { Storage } from "@adt/storage"
 import { WebRenderingOutput, PageSectioningOutput } from "@adt/types"
-import { putSourceNodeData, stampRenderedOwner, resolveRenderedSection } from "@adt/pipeline"
+import { putSourceNodeData, stampRenderedOwner, resolveRenderedSection, withLegacyRenderingOwnership } from "@adt/pipeline"
 import { createLLMModel } from "@adt/llm"
 import type { AgentCredentials } from "./credentials.js"
 import { buildSectioningSectionFromHtml } from "./tools/build-sectioning.js"
@@ -65,7 +65,8 @@ function loadSectionHtml(
   if (!parsed.success) {
     throw new Error(`Invalid web-rendering data for ${pageId}`)
   }
-  const section = parsed.data.sections.find(
+  const rendering = withLegacyRenderingOwnership(storage, pageId, parsed.data, true)
+  const section = rendering.sections.find(
     (s) => s.sectionIndex === sectionIndex,
   )
   if (!section) {
@@ -73,7 +74,7 @@ function loadSectionHtml(
       `Section ${sectionIndex} not found on page ${pageId}`,
     )
   }
-  return { html: section.html, rendering: parsed.data }
+  return { html: section.html, rendering }
 }
 
 function loadSectioning(
@@ -154,6 +155,21 @@ export async function mirrorLayout(
       )
       const renderingVersion = storage.getLatestNodeData("web-rendering", target.pageId)?.version
       const sectioningVersion = storage.getLatestNodeData("page-sectioning", target.pageId)?.version
+      const targetSection = rendering.sections.find(
+        (s) => s.sectionIndex === target.sectionIndex,
+      )
+      const sectioning = loadSectioning(storage, target.pageId)
+      const oldSection = targetSection ? resolveRenderedSection(targetSection, sectioning.sections) : undefined
+      // sectionIds are allocated once and never reused, so one cannot be
+      // derived from an array position — a guessed id would likely name a
+      // *different* section, and it names this section's HTML file in every
+      // bundle. No sectioning row means rendering and sectioning are out of
+      // sync; say so rather than guess.
+      if (!oldSection) {
+        throw new Error(
+          `Cannot mirror onto section ${target.sectionIndex} of ${target.pageId}: it has a rendering entry but no sectioning row, so its sectionId is unknown. Restore matching sectioning/rendering versions before editing this section.`,
+        )
+      }
       const targetIds = extractDataIds(targetHtml)
 
       const { object } = await model.generateObject<
@@ -212,21 +228,6 @@ export async function mirrorLayout(
       // the ¼ threshold above) leaves orphaned sectioning leaves keyed by
       // data-ids no longer present, which desyncs the edit panel and corrupts
       // downstream text-catalog / TTS / translation.
-      const targetSection = rendering.sections.find(
-        (s) => s.sectionIndex === target.sectionIndex,
-      )
-      const sectioning = loadSectioning(storage, target.pageId)
-      const oldSection = targetSection ? resolveRenderedSection(targetSection, sectioning.sections) : undefined
-      // sectionIds are allocated once and never reused, so one cannot be
-      // derived from an array position — a guessed id would likely name a
-      // *different* section, and it names this section's HTML file in every
-      // bundle. No sectioning row means rendering and sectioning are out of
-      // sync; say so rather than guess.
-      if (!oldSection) {
-        throw new Error(
-          `Cannot mirror onto section ${target.sectionIndex} of ${target.pageId}: it has a rendering entry but no sectioning row, so its sectionId is unknown. Restore matching sectioning/rendering versions before editing this section.`,
-        )
-      }
       const sectionId = oldSection.sectionId
       cleaned = stampRenderedOwner(cleaned, sectionId)
       const updated: WebRenderingOutput = {
