@@ -1,12 +1,12 @@
 {
-  "runtimeSource": "03e027525d5f5865e8688e594570299879e8c908",
+  "runtimeSource": "285f3d82a2ad27b35346cdcba5bcdcfcf470bf1a",
   "startingHead": "618153d399d1c6fbf4a0f2bff9be88856df734d3",
   "base": "0b18602f8b42f4b52b4d2ccf2927635d5a4db572",
   "date": "2026-10-13",
   "checks": {
     "fullSuite": {
       "files": 331,
-      "tests": 4092,
+      "tests": 4098,
       "status": "passed"
     },
     "typecheck": "passed",
@@ -26,7 +26,8 @@
         "sq"
       ],
       "messagesPerLocale": 3717,
-      "missingTargetTranslations": 0
+      "missingTargetTranslations": 0,
+      "checkpoint": "03e02752; Studio and locale sources unchanged since"
     },
     "separateInvariantCommand": "unavailable",
     "unpackedMacArm64Desktop": "passed, ad-hoc signing only",
@@ -40,7 +41,7 @@
   },
   "independentReview": {
     "status": "qualified technical acceptance; no remaining actionable finding in changed scope",
-    "head": "03e027525d5f5865e8688e594570299879e8c908",
+    "head": "285f3d82a2ad27b35346cdcba5bcdcfcf470bf1a",
     "finalEntryChecks": {
       "repositoryTests": 8,
       "repositoryFiles": 3,
@@ -58,6 +59,16 @@
       "repositoryTests": 139,
       "repositoryFiles": 8,
       "independentCases": 5
+    },
+    "finalEntryCheckpoint": "03e02752",
+    "finalAdmissionChecks": {
+      "repositoryAdmissionTests": 6,
+      "independentCases": 5,
+      "actualCrossBookWriteRejected": true
+    },
+    "implementationPassAdmissionChecks": {
+      "repositoryTests": 131,
+      "repositoryFiles": 3
     }
   },
   "limits": [
@@ -120,7 +131,6 @@
       "exportDownloaded": true,
       "suggestedFilename": "Catalog acceptance_ plant science-adt.zip",
       "disclosures": [
-        "http://127.0.0.1:4208/api/books/catalog-acceptance/outputs/disclosure?features=%7B%22glossary%22%3Afalse%2C%22quizzes%22%3Afalse%2C%22readAloud%22%3Atrue%2C%22languages%22%3A%5B%22en%22%5D%7D",
         "http://127.0.0.1:4208/api/books/catalog-acceptance/outputs/disclosure?features=%7B%22glossary%22%3Afalse%2C%22quizzes%22%3Afalse%2C%22readAloud%22%3Atrue%2C%22languages%22%3A%5B%22en%22%2C%22fr%22%5D%7D",
         "http://127.0.0.1:4208/api/books/catalog-acceptance/outputs/disclosure?features=%7B%22glossary%22%3Afalse%2C%22quizzes%22%3Afalse%2C%22readAloud%22%3Afalse%2C%22languages%22%3A%5B%22en%22%2C%22fr%22%5D%7D"
       ],
@@ -163,6 +173,14 @@
       "books": 1,
       "outputs": 230,
       "runRevisionAvailable": true
+    },
+    "freshBookAdmission": {
+      "createdBeforeExtraction": true,
+      "settingsSavedBeforeExtraction": true,
+      "deletedBeforeExtraction": true,
+      "staleRunRejected404": true,
+      "bookNotRecreated": true
     }
-  }
+  },
+  "concurrentReviewerCommit": "b627a755cad5c2c492fbff08dd16011f39c52fe0"
 }

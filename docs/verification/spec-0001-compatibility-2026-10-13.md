@@ -58,7 +58,7 @@ approval remains pending; the PR title/body must remain unchanged.
 
 ## Implementation and independent review
 
-Runtime source is frozen at `03e027525d5f5865e8688e594570299879e8c908`.
+Runtime source is frozen at `285f3d82a2ad27b35346cdcba5bcdcfcf470bf1a`.
 The subsequent evidence commit changes documentation only. This work preserves
 elasticsounds' published changes and uses the existing catalog, publication guards,
 writer admission and rendering ownership resolver; it adds no locking subsystem.
@@ -103,8 +103,7 @@ fixed a related rejected-save → empty-background-refresh draft loss. The draft
 its original version now survive so retry still exercises the concurrency guard.
 Quiz's existing data-based routing already retained access.
 
-The separate reviewer gave final qualified technical acceptance at the frozen
-runtime head: **8 repository tests / 3 files** and **3 independent mounted draft
+The separate reviewer gave qualified technical acceptance at `03e02752`: **8 repository tests / 3 files** and **3 independent mounted draft
 cases** passed. Backend acceptance at `b0ac67e6` includes **31 repository tests /
 4 files**, **7 independent native-tree/ownership cases**, and the palette HTTP
 probe. Backend code did not change in the final two Studio commits. Earlier
@@ -113,15 +112,39 @@ probe. Backend code did not change in the final two Studio commits. Earlier
 are carried-forward evidence, not represented as exact-final-head reruns. No
 remaining actionable correctness defect was found in the two changed contracts.
 
+## Concurrent reviewer contribution
+
+Immediately before publication, remote refresh found elasticsounds' new commit
+`b627a755cad5c2c492fbff08dd16011f39c52fe0`: new books have a source PDF before their
+first extraction creates a database, so admission must accept that contained
+regular file. An empty directory or stale writer lease remains insufficient, and
+queued work still rechecks existence. A normal merge preserves the original
+reviewer commit and both histories; no force push or rewritten attribution is used.
+Independent review of merged checkpoint `959960ee` found that its PDF fallback
+could mask an escaping database symlink. A real middleware/metadata request changed
+another book's SQLite database. The corrective commit `285f3d82` requires a safe
+resolved database path first; PDF fallback applies only if that path is absent.
+Existing non-files, dangling links and escaping links are rejected before writes.
+A contained regular database alias remains valid. The reviewer's original commit
+remains an ancestor with its attribution intact.
+
+At `285f3d82`, the separate reviewer passed **5 independent probes** and **6
+repository admission tests**, including the actual cross-book write, contained
+alias, fresh upload and queued-deletion cases. It found no remaining actionable
+issue. The implementation pass additionally ran **131 tests / 3 files** plus
+typecheck successfully. Earlier 127-test evidence at the merged checkpoint does
+not stand in for verification of the correction. Full repository/platform checks
+were rerun after the safety correction.
+
 ## Final verification
 
 | Command / check | Result |
 |---|---|
-| `DEVELOPER_DIR=/Library/Developer/CommandLineTools pnpm test --maxWorkers=6` | Passed: **331 files / 4,092 tests** at the frozen runtime; pretest builds packages/runtime |
+| `DEVELOPER_DIR=/Library/Developer/CommandLineTools pnpm test --maxWorkers=6` | Passed: **331 files / 4,098 tests** at the frozen runtime; pretest builds packages/runtime |
 | `pnpm typecheck`; `pnpm --filter @adt/runtime typecheck` | Passed at the frozen runtime |
 | `pnpm build`; `pnpm --filter @adt/api build:server` | Passed; final full-suite pretest repeats build; production server bundle passed |
 | `pnpm lint` | Passed: zero errors, eight unused-disable warnings |
-| `pnpm --filter @adt/studio extract`; `pnpm --filter @adt/studio exec lingui compile --strict` | Passed: 3,717 messages, zero missing translations in all four target locales; five catalogs compiled |
+| `pnpm --filter @adt/studio extract`; `pnpm --filter @adt/studio exec lingui compile --strict` | Passed at `03e02752` (Studio/locale sources unchanged since): 3,717 messages, zero missing translations in all four target locales; five catalogs compiled |
 | `pnpm lint:invariants` | Not run: this checkout has no such command. The available invariant regressions run in the full suite; no separate command pass is claimed |
 | Independent review | Passed within the changed scope, with the legacy compatibility qualifications below |
 | `pnpm --filter @adt/desktop build:unpack`; packaged API smoke | Passed at the frozen runtime: macOS arm64 ad-hoc package; packaged API serves the copied fixture with 230 catalog outputs and a run revision |
@@ -129,7 +152,8 @@ remaining actionable correctness defect was found in the two changed contracts.
 | Current production bundles in an existing Docker image | Passed at the frozen runtime: four worked examples, inline review/count/reload, retained editors, Preview/export, representative reader and restart; distinct from a clean image build |
 
 The earlier Desktop packaging attempt at `32c5adf6` failed while electron-builder
-parsed pnpm's dependency listing. The final normal build at `03e02752` succeeded.
+parsed pnpm's dependency listing. Normal builds at `03e02752`, the merged checkpoint and final corrected runtime
+succeeded; the final result is recorded above.
 The earlier failure is not counted as a pass or attributed to a pre-existing defect.
 The browser harness also needed two corrections: seed crop
 assets before starting the API instead of opening a second WASM SQLite writer,
@@ -152,7 +176,9 @@ copies and stubbed provider transport; the live browser checks make no paid call
   409 without changing the correction.
 - After substantive source Save resets source attempts, the real TOC route still
   edits its retained entry and creates a new saved version without generation.
-  The real Glossary route shows its retained term. The representative copied book
+  The real Glossary route shows its retained term. Fresh upload/settings/deletion
+  works before extraction, and a stale request returns 404 without recreating the
+  deleted book. The representative copied book
   renders in Preview with no browser errors.
 - Export downloads a valid **76-entry ZIP**, with four section HTML files and the
   retained French in both text and speech-text JSON. Speech-disabled export has
