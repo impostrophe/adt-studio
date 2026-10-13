@@ -79,3 +79,23 @@ it("resets when text moves between stable IDs even if aggregate text and ID orde
   putSourceNodeData(db, "web-rendering", "pg001", { sections: [{ ...original.sections[0], html: '<p data-id="one">OneT</p><p data-id="two">wo</p>' }] })
   assertReset(true)
 })
+
+it("normalizes proven owner stamping but still detects conflicting owners", () => {
+  const original = { sections: [{ ...rendering.sections[0], html: '<p data-id="one">One</p>' }] }
+  db.putNodeData("web-rendering", "pg001", original)
+  putSourceNodeData(db, "web-rendering", "pg001", { sections: [{ ...original.sections[0], html: `<section data-section-id="${section.sectionId}">${original.sections[0].html}</section>` }] })
+  assertReset(false)
+  putSourceNodeData(db, "web-rendering", "pg001", { sections: [{ ...original.sections[0], html: `<section data-section-id="different-owner">${original.sections[0].html}</section>` }] })
+  assertReset(true)
+})
+
+it.each(["partial", "empty", "multiple"])("keeps ambiguous %s ownership distinct from proven publication", (mode) => {
+  const leaf = '<p data-id="one">One</p>'
+  const owner = `<section data-section-id="${section.sectionId}">${leaf}</section>`
+  const original = { sections: [{ ...rendering.sections[0], sectionId: undefined,
+    html: mode === "partial" ? `${owner}<p>Sibling</p>` : mode === "empty" ? `<section data-section-id="">${leaf}</section>` : `${owner}${owner}` }] }
+  db.putNodeData("web-rendering", "pg001", original)
+  putSourceNodeData(db, "web-rendering", "pg001", { sections: [{ ...original.sections[0], sectionId: section.sectionId,
+    html: original.sections[0].html.replaceAll(' data-section-id=""', "").replaceAll(` data-section-id="${section.sectionId}"`, "") }] })
+  assertReset(true)
+})

@@ -6,11 +6,13 @@ import { createBookStorage } from "@adt/storage"
 import { SOURCE_GENERATION_RESET_STEPS } from "@adt/types"
 import { createBookTools } from "../tools/book-tools.js"
 
-it.each(["cosmetic", "redistributed-text"])("preserves native source metadata or resets attempts for %s agent edits", async (mode) => {
+it.each(["cosmetic", "legacy-cosmetic", "redistributed-text"])("preserves native source metadata or resets attempts for %s agent edits", async (mode) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "adt-update-compat-"))
   const storage = createBookStorage("book", root)
   try {
-    const html = '<section data-section-id="pg001_sec001"><h2 data-id="pg001_t001">One</h2><p data-id="pg001_t002">Two</p></section>'
+    const ownedHtml = '<section data-section-id="pg001_sec001"><h2 data-id="pg001_t001">One</h2><p data-id="pg001_t002">Two</p></section>'
+    const html = mode === "legacy-cosmetic" ? ownedHtml.replace(' data-section-id="pg001_sec001"', "") : ownedHtml
+    const cosmetic = mode !== "redistributed-text"
     const source = { sectionId: "pg001_sec001", sectionType: "text", backgroundColor: "white", textColor: "black", pageNumber: 7, isPruned: false,
       nodes: [{ nodeId: "native_container", structure: "section", isPruned: false, children: [
         { nodeId: "pg001_t001", role: "heading", text: "One", headingLevel: 2, outlineEntryId: "outline-original", headingStyleClusterId: "style-original", isPruned: false },
@@ -21,14 +23,14 @@ it.each(["cosmetic", "redistributed-text"])("preserves native source metadata or
     storage.putNodeData("web-rendering", "pg001", { sections: [{ sectionIndex: 0, sectionId: source.sectionId, sectionType: "text", reasoning: "native", html }] })
     for (const step of [...SOURCE_GENERATION_RESET_STEPS, "tts"]) storage.markStepCompleted(step)
     const { tools } = createBookTools({ storage, bookLabel: "book", booksDir: root, promptsDir: "", credentials: {}, restrictWritesToPageId: "pg001" })
-    const next = mode === "cosmetic" ? html.replace("<section ", '<section style="margin:8px" ') : html.replace(">One<", ">OneT<").replace(">Two<", ">wo<")
+    const next = cosmetic ? html.replace("<section", '<section style="margin:8px"') : html.replace(">One<", ">OneT<").replace(">Two<", ">wo<")
     const execute = tools.updateSection!.execute as (args: unknown, options: unknown) => Promise<{ ok: boolean }>
     expect(await execute({ pageId: "pg001", sectionIndex: 0, html: next, reasoning: mode, activityAnswers: null }, {})).toMatchObject({ ok: true })
     const current = storage.getLatestNodeData("page-sectioning", "pg001")?.data as { sections: typeof source[] }
-    if (mode === "cosmetic") expect(current.sections[0]).toEqual(source)
+    if (cosmetic) expect(current.sections[0]).toEqual(source)
     else expect(current.sections[0].nodes[0].children.map((node) => node.text)).toEqual(["OneT", "wo"])
     const steps = storage.getStepRuns().map((run) => run.step)
-    for (const step of SOURCE_GENERATION_RESET_STEPS) expect(steps.includes(step)).toBe(mode === "cosmetic")
+    for (const step of SOURCE_GENERATION_RESET_STEPS) expect(steps.includes(step)).toBe(cosmetic)
     expect(steps).toContain("tts")
     expect(storage.getAllNodeVersions("page-sectioning", "pg001")[0].data).toEqual({ reasoning: "native", sections: [source] })
   } finally {
