@@ -100,10 +100,11 @@ export function GlossaryView({ bookLabel }: { bookLabel: string }) {
   const [manualOnly, setManualOnly] = useState(false)
   const [sortMode, setSortMode] = useState<SortMode>("default")
 
-  // Reset pending when data changes
+  // Background refetches (including after a conflict) must not discard edits.
+  // Successful save, explicit discard and restore clear the draft themselves.
   useEffect(() => {
     setPending(null)
-  }, [data?.version])
+  }, [bookLabel])
 
   const effective = pending ?? data ?? null
   const items = effective?.items ?? []

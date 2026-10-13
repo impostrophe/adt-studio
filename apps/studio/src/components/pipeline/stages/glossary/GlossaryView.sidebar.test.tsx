@@ -21,9 +21,10 @@ const glossary = {
   generatedAt: "2026-01-01T00:00:00.000Z",
   items: [{ id: "gl001", word: "Nile", definition: "A river in Africa", variations: [], emojis: [], source: "ai" }],
 }
+let servedGlossary = glossary
 const HeaderContext = createContext<{ setExtra: (extra: ReactNode) => void }>({ setExtra: () => {} })
 vi.mock("../../components/StepViewRouter", () => ({ useStepHeader: () => useContext(HeaderContext) }))
-vi.mock("@/hooks/use-glossary", () => ({ useGlossary: () => ({ data: glossary, isLoading: false }) }))
+vi.mock("@/hooks/use-glossary", () => ({ useGlossary: () => ({ data: servedGlossary, isLoading: false }) }))
 vi.mock("@/hooks/use-sign-language-videos", () => ({
   useSignLanguageVideos: () => ({ data: { videos: [] } }),
   useUploadSignLanguageVideo: () => ({ mutate: vi.fn(), isPending: false }),
@@ -70,6 +71,7 @@ async function editAndSave() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  servedGlossary = glossary
   vi.stubGlobal("IntersectionObserver", class { observe() {} disconnect() {} })
 })
 afterEach(() => {
@@ -88,11 +90,17 @@ describe("sidebar attention after a glossary save", () => {
 it("retains a rejected glossary draft and enables saving again", async () => {
   vi.mocked(api.updateGlossary).mockRejectedValue(new Error("Glossary changed"))
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><TooltipProvider><Harness /></TooltipProvider></QueryClientProvider>)
+  const view = render(<QueryClientProvider client={client}><TooltipProvider><Harness /></TooltipProvider></QueryClientProvider>)
   fireEvent.change(await screen.findByLabelText("Definition for Nile"), { target: { value: "My retained draft" } })
   fireEvent.click(await screen.findByRole("button", { name: "Save" }))
   await waitFor(() => expect(toast.error).toHaveBeenCalled())
   await waitFor(() => expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false))
   expect((screen.getByLabelText("Definition for Nile") as HTMLTextAreaElement).value).toBe("My retained draft")
   expect(api.updateGlossary).toHaveBeenCalledWith("book", expect.objectContaining({ version: 1 }))
+  servedGlossary = { ...glossary, version: 2, items: [{ ...glossary.items[0], definition: "Another writer's change" }] }
+  view.rerender(<QueryClientProvider client={client}><TooltipProvider><Harness /></TooltipProvider></QueryClientProvider>)
+  expect((screen.getByLabelText("Definition for Nile") as HTMLTextAreaElement).value).toBe("My retained draft")
+  fireEvent.click(screen.getByRole("button", { name: "Save" }))
+  await waitFor(() => expect(api.updateGlossary).toHaveBeenCalledTimes(2))
+  expect(api.updateGlossary).toHaveBeenLastCalledWith("book", expect.objectContaining({ version: 1 }))
 })
