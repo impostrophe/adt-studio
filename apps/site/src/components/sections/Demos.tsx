@@ -27,7 +27,7 @@ export function Demos() {
   const [activeKey, setActiveKey] = useState(DEMOS[0].key);
   const [playing, setPlaying] = useState(false);
   const [inView, setInView] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
   const active = DEMOS.find((demo) => demo.key === activeKey) ?? DEMOS[0];
 
@@ -43,14 +43,16 @@ export function Demos() {
   }, []);
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
+    if (!video) {
+      setPlaying(false);
+      return;
+    }
     if (inView && !reduced) {
       video.play().catch(() => setPlaying(false));
     } else {
       video.pause();
     }
-  }, [inView, reduced, activeKey]);
+  }, [video, inView, reduced]);
 
   useEffect(() => {
     const fromHash = () => {
@@ -70,14 +72,12 @@ export function Demos() {
   }, []);
 
   const toggle = () => {
-    const video = videoRef.current;
     if (!video) return;
     if (video.paused) video.play().catch(() => undefined);
     else video.pause();
   };
 
   const fullscreen = () => {
-    const video = videoRef.current;
     if (!video) return;
     trackEvent("demo", "fullscreen", active.key);
     if (video.requestFullscreen) void video.requestFullscreen();
@@ -110,7 +110,7 @@ export function Demos() {
             <AnimatePresence mode="wait" initial={false}>
               <motion.video
                 key={active.key}
-                ref={videoRef}
+                ref={setVideo}
                 src={demoSrc(active, "mp4")}
                 poster={demoSrc(active, "jpg")}
                 muted
