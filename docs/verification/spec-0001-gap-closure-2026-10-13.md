@@ -215,4 +215,3 @@ pruned. macOS arm64 unpacked packaging/packaged API checks are not Electron GUI,
 signed installer/notarization, Windows/Linux installer, paid-provider quality or
 release certification. Those checks are **not run**. No standalone invariant
 checker exists in this checkout; relevant invariants are exercised by the suites.
-
