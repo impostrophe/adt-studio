@@ -906,10 +906,13 @@ text in the requested language, recording fallback inputs and reason. Preserve
 manual speech text; disabled normalization is not a failure. This deliberately
 changes the withholding policy, including failed LaTeX conversion.
 
-Ordinary runs reuse unchanged fallback input and matching audio. Retry preparation
+Ordinary runs reuse an unchanged failed-attempt fallback and matching audio.
+A never-attempted missing/outdated fallback is prepared on the next requested
+preparation run unless checked for the same inputs and text. Retry preparation
 explicitly attempts normalization; relevant input changes make it eligible when
 requested. Mark checked resolves the fallback warning without inventing successful
-normalization or manual authorship. Skip this run is temporary; pruning persists
+normalization or manual authorship. This distinction follows the October 13
+reviewer correction and SPEC-0001 §5/AC-14; the ADR remains proposed. Skip this run is temporary; pruning persists
 until restored. Current output needs no extra badge.
 
 Keep existing request caching and context-dependent batching. Merge new versions
