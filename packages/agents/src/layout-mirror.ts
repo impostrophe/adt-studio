@@ -247,6 +247,7 @@ export async function mirrorLayout(
         // palette, source pages, placement, and leaf roles across rather than
         // rebuilding from defaults (that dropped TOC entries and page numbers).
         base: oldSection,
+        previousHtml: targetSection?.html,
       })
       const updatedSectioning: PageSectioningOutput = {
         ...sectioning,

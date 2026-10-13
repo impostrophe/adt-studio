@@ -4,7 +4,6 @@ import path from "node:path"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { createBookStorage, type Storage } from "@adt/storage"
 import { SOURCE_GENERATION_RESET_STEPS } from "@adt/types"
-import { buildSectioningSectionFromHtml } from "../tools/build-sectioning.js"
 const { generateObject } = vi.hoisted(() => ({ generateObject: vi.fn() }))
 vi.mock("@adt/llm", () => ({ createLLMModel: () => ({ generateObject }) }))
 import { mirrorLayout } from "../layout-mirror.js"
@@ -16,7 +15,11 @@ const rendering = { sections: [{ sectionId: owner, sectionIndex: 0, sectionType:
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), "adt-mirror-attempts-"))
   db = createBookStorage("book", root)
-  db.putNodeData("page-sectioning", "pg001", { reasoning: "fixture", sections: [buildSectioningSectionFromHtml({ html, sectionId: owner, sectionType: "text" })] })
+  // Native Sectioning is not already flattened by the agent's HTML builder.
+  db.putNodeData("page-sectioning", "pg001", { reasoning: "fixture", sections: [{
+    sectionId: owner, sectionType: "text", backgroundColor: "white", textColor: "black", pageNumber: 1, isPruned: false,
+    nodes: ["First", "Second", "Third", "Fourth"].map((text, index) => ({ nodeId: `pg001_t00${index + 1}`, role: "text", text, isPruned: false })),
+  }] })
   db.putNodeData("web-rendering", "pg001", rendering)
   for (const step of [...SOURCE_GENERATION_RESET_STEPS, "tts", "catalog-translation"]) db.markStepCompleted(step)
   for (const node of ["glossary", "quiz-generation", "toc-generation"]) db.putNodeData(node, "book", { manual: "retained" })

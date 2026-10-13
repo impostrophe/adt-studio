@@ -23,6 +23,9 @@ export function sourceGenerationBasis(node: string, data: unknown): unknown {
     for (const element of DomUtils.findAll((element) => ["style", "script", "head"].includes(element.name), doc.children)) DomUtils.removeElement(element)
     const identities = DomUtils.findAll((element) => !!element.attribs["data-id"] || !!element.attribs["data-section-id"] || /^h[1-6]$/.test(element.name) || element.name === "img", doc.children)
       .map((element) => ({ id: element.attribs["data-id"], owner: element.attribs["data-section-id"],
+        // Moving text between stable IDs is a source edit even when the
+        // concatenated section text stays identical.
+        text: DomUtils.textContent(element).replace(/\s+/g, " ").trim(),
         role: element.attribs["data-role"] ?? element.attribs.role,
         heading: /^h[1-6]$/.test(element.name) ? element.name : undefined,
         image: element.name === "img", alt: element.name === "img" ? element.attribs.alt : undefined }))

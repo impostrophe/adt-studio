@@ -377,6 +377,7 @@ export function createBookTools(ctx: BookToolsContext): BookToolsResult {
             // Rewriting in place — keep the section's pageNumber, palette,
             // placement, and prior leaf roles instead of resetting to defaults.
             base: oldSection,
+            previousHtml: found.html,
           })
           const updatedSectioning: PageSectioningOutput = {
             ...sectioning,

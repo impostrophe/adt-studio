@@ -72,3 +72,10 @@ it("rolls source writes and resets back together when publication is rejected", 
   expect(db.getLatestNodeData("page-sectioning", "pg001")?.version).toBe(1)
   assertReset(false)
 })
+
+it("resets when text moves between stable IDs even if aggregate text and ID order are unchanged", () => {
+  const original = { sections: [{ ...rendering.sections[0], html: '<p data-id="one">One</p><p data-id="two">Two</p>' }] }
+  db.putNodeData("web-rendering", "pg001", original)
+  putSourceNodeData(db, "web-rendering", "pg001", { sections: [{ ...original.sections[0], html: '<p data-id="one">OneT</p><p data-id="two">wo</p>' }] })
+  assertReset(true)
+})
