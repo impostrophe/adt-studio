@@ -1,3 +1,4 @@
+import { useOutputReviewRun } from "@/hooks/use-output-review-run"
 import { useEffect, useState, type ReactNode } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useLingui } from "@lingui/react/macro"
@@ -25,9 +26,11 @@ export function ReviewActions({ bookLabel, outputs, catalog, filtered, heading, 
   // Changing filters closes replacement confirmation without remounting the
   // focused filter controls or losing the pending state of a bulk action.
   useEffect(() => setConfirmReplace(false), [scopeKey])
+  const { updating, accepted } = useOutputReviewRun(bookLabel)
   const plan = buildReviewPlan(outputs, catalog)
   const sources = plan.sourceStages.map(getStageLabelI18n).join(", ")
   const mutation = useMutation({
+    mutationKey: ["books", bookLabel, "output-review"],
     mutationFn: async (action: "keep" | "update" | "replace") => {
       if (dirty || isRunning) return
       if (action === "keep") {
@@ -40,11 +43,12 @@ export function ReviewActions({ bookLabel, outputs, catalog, filtered, heading, 
       for (const stage of STAGE_ORDER) {
         const work = targets.filter((output) => OUTPUT_KIND_TO_STAGE[output.identity.kind] === stage)
         if (!work.length) continue
-        await api.runStages(bookLabel, apiKey, { fromStage: stage, toStage: stage, outputScope: {
+        const run = await api.runStages(bookLabel, apiKey, { fromStage: stage, toStage: stage, outputScope: {
           selection: { identities: work.map((output) => output.identity) },
           retry: work.filter(hasFallback).map((output) => output.identity),
           ...(action === "replace" ? { replace: work.filter((output) => output.protected).map(reviewGuard) } : {}),
         } })
+        await accepted(run.id)
       }
     },
     onSuccess: () => setConfirmReplace(false),
@@ -52,21 +56,14 @@ export function ReviewActions({ bookLabel, outputs, catalog, filtered, heading, 
     onSettled: () => client.invalidateQueries({ queryKey: ["books", bookLabel] }),
   })
   const disabled = dirty || isRunning || mutation.isPending
-  // "Updating…" belongs to the run this button started, not to unrelated runs.
-  // onSettled awaits the status refetch, so isRunning is current once the
-  // request settles. The button stays focusable while busy (aria-disabled, not
-  // disabled) so keyboard and screen-reader users keep their place.
-  const [requested, setRequested] = useState(false)
-  useEffect(() => { if (requested && !isRunning && !mutation.isPending) setRequested(false) }, [requested, isRunning, mutation.isPending])
-  const updating = requested && (isRunning || mutation.isPending)
   const count = plan.replace.length
   return <div className="space-y-1.5 px-3 py-2 text-xs">
     <div className="flex flex-wrap items-center gap-2">
       <div className="mr-auto">{heading}</div>
-      {plan.update.length > 0 && <Button size="sm"
+      {(plan.update.length > 0 || updating) && <Button size="sm"
         className="h-8 border border-amber-600 bg-amber-500 text-xs text-amber-950 shadow-sm hover:bg-amber-400 aria-disabled:cursor-default aria-disabled:hover:bg-amber-500"
         disabled={disabled && !updating} aria-disabled={updating || undefined} aria-busy={updating || undefined}
-        onClick={() => { if (updating) return; setRequested(true); mutation.mutate("update") }}>
+        onClick={() => { if (updating) return; mutation.mutate("update") }}>
         <RefreshCw className={cn("h-3.5 w-3.5", updating && "motion-safe:animate-spin")} aria-hidden="true" />
         {updating ? t`Updating…` : filtered ? t`Update filtered items` : t`Update all`}
       </Button>}

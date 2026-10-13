@@ -5,6 +5,6 @@ import type { OutputStatus } from "@adt/types"
 export function reviewStatus(output: OutputStatus) {
   if (output.missing) return "missing"
   if (output.updateNeeded) return "update"
-  if (output.protected && output.warnings.some((warning) => !warning.source)) return "review"
+  if (output.protected && output.warnings.some((warning) => !warning.source && warning.reason !== "source-conflict")) return "review"
   return "warning"
 }

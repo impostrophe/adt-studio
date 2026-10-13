@@ -9,6 +9,9 @@ export const needsAttention = (output: OutputStatus) =>
 export const hasFallback = (output: OutputStatus) => output.identity.kind === "preparation" &&
   output.warnings.some((warning) => !warning.source && warning.reason.startsWith("preparation-"))
 
+export const hasOutputConflict = (output: OutputStatus) =>
+  output.warnings.some((warning) => warning.reason === "output-conflict")
+
 export const reviewGuard = (output: OutputStatus) => ({
   identity: output.identity, signature: output.signature, contentHash: output.contentHash,
 })
@@ -30,8 +33,8 @@ export function buildReviewPlan(selected: OutputStatus[], catalog: OutputStatus[
   }
   selected.filter(needsAttention).forEach(visit)
   const outputs = [...closure.values()]
-  const keep = outputs.filter((output) => output.usable && (
-    output.protected && output.warnings.some((warning) => !warning.source) || hasFallback(output)
+  const keep = outputs.filter((output) => output.usable && !hasOutputConflict(output) && (
+    output.protected && output.warnings.some((warning) => !warning.source && warning.reason !== "source-conflict" && warning.reason !== "output-conflict") || hasFallback(output)
   ))
   const replace = outputs.filter((output) => output.protected && needsAttention(output))
 

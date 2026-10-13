@@ -489,7 +489,7 @@ export function LanguageView({
     return easyReadEntries.length > 0 ? [...base, ...easyReadEntries] : base;
   }, [catalog?.entries, easyReadEntries]);
   const sourceEntriesById = useMemo(
-    () => new Map(entries.map((entry) => [entry.id, entry.text])),
+    () => new Map([...entries].reverse().map((entry) => [entry.id, entry.text])),
     [entries],
   );
 
@@ -703,11 +703,11 @@ export function LanguageView({
   // Effective translated entries (pending overrides fetched data)
   const effectiveEntries = pendingEntries ?? translatedEntries;
   const translatedMap = useMemo(
-    () => new Map(effectiveEntries.map((entry) => [entry.id, entry.text])),
+    () => new Map([...effectiveEntries].reverse().map((entry) => [entry.id, entry.text])),
     [effectiveEntries],
   );
   const savedTranslatedMap = useMemo(
-    () => new Map(translatedEntries.map((entry) => [entry.id, entry.text])),
+    () => new Map([...translatedEntries].reverse().map((entry) => [entry.id, entry.text])),
     [translatedEntries],
   );
   const [speechDrafts, setSpeechDrafts] = useState<Set<string>>(() => new Set());
@@ -779,8 +779,6 @@ export function LanguageView({
       entries: pendingEntries,
       ...pendingVersions.current,
     });
-    setPendingEntries(null);
-    setAppliedSuggestionEntryIds(new Set());
     await queryClient.invalidateQueries({ queryKey: ["books", bookLabel, "outputs"] });
     await queryClient.invalidateQueries({
       queryKey: ["books", bookLabel, "text-catalog"],
@@ -796,6 +794,8 @@ export function LanguageView({
       queryKey: ["books", bookLabel, "step-status"],
     });
     await minDelay;
+    setPendingEntries((current) => current === pendingEntries ? null : current);
+    setAppliedSuggestionEntryIds(new Set());
     } catch (error) { setSaveError(error instanceof Error ? error.message : String(error)); }
     finally { setSaving(false); }
   }, [pendingEntries, translationItemId, bookLabel, queryClient]);
@@ -1283,6 +1283,7 @@ export function LanguageView({
     },
     onSuccess: async () => {
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["books", bookLabel, "outputs"] }),
         queryClient.invalidateQueries({
           queryKey: ["books", bookLabel, "tts"],
         }),
@@ -1345,6 +1346,7 @@ export function LanguageView({
     },
     onSuccess: async () => {
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["books", bookLabel, "outputs"] }),
         queryClient.invalidateQueries({
           queryKey: ["books", bookLabel, "tts"],
         }),

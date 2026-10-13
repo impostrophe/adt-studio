@@ -2611,6 +2611,9 @@ msgstr "Konfiguruar në server"
 msgid "Confirm merge"
 msgstr "Konfirmoni bashkimin"
 
+msgid "Conflicting source text uses this ID. Resolve the source conflict before accepting dependent output."
+msgstr "Tekste burimore kundërthënëse përdorin këtë ID. Zgjidheni konfliktin në burim para se të pranoni përmbajtjen e varur."
+
 msgid "Connect the engines that run the pipeline and narrate books. Keys stay on this machine; CLI providers reuse the login already on it."
 msgstr "Lidh motorët që drejtojnë linjën dhe tregojnë libra. Çelësat qëndrojnë në këtë makinë; ofruesit CLI ripërdorin hyrjen tashmë në të."
 
@@ -6028,6 +6031,9 @@ msgstr "me zgjedhje të shumëfishta"
 
 msgid "Multiple choice"
 msgstr "Zgjedhje e shumëfishtë"
+
+msgid "Multiple retained outputs share this ID. Save one reviewed value or explicitly replace it. Earlier versions remain in history."
+msgstr "Disa rezultate të ruajtura ndajnë këtë ID. Ruani një vlerë të rishikuar ose zëvendësojeni shprehimisht. Versionet e mëparshme mbeten në historik."
 
 msgid "Mute all from read-aloud"
 msgstr "Heshtni të gjitha nga leximi me zë"
@@ -10366,6 +10372,10 @@ msgstr "Ky sistem nuk mund të shfaqë njoftime në desktop."
 msgid "This text is only perceptible to assistive technologies."
 msgstr "Ky tekst perceptohet vetëm nga teknologjitë ndihmëse."
 
+#. placeholder {0}: output.sectionIds.length
+msgid "This text is shared by {0} sections. Updating it changes the shared text in every referring section."
+msgstr "Ky tekst ndahet nga {0} seksione. Përditësimi i tij ndryshon tekstin e përbashkët në çdo seksion që e përdor."
+
 msgid "This version is empty."
 msgstr "Ky version është bosh."
 
@@ -10793,8 +10803,11 @@ msgstr "Përditësimet janë në proces. Mund të vazhdoni shqyrtimin e librit."
 msgid "Updates preserve manual edits."
 msgstr "Përditësimet ruajnë redaktimet manuale."
 
-msgid "Updates: {updates}. Warnings: {warnings}. Missing: {missing}."
-msgstr "Përditësime: {updates}. Paralajmërime: {warnings}. Të munguara: {missing}."
+msgid "Updates: {updates}. Needs review: {reviews}. Warnings: {warnings}. Missing: {missing}."
+msgstr "Përditësime: {updates}. Për rishikim: {reviews}. Paralajmërime: {warnings}. Mungojnë: {missing}."
+
+#~ msgid "Updates: {updates}. Warnings: {warnings}. Missing: {missing}."
+#~ msgstr "Përditësime: {updates}. Paralajmërime: {warnings}. Të munguara: {missing}."
 
 msgid "Updating…"
 msgstr "Duke përditësuar…"

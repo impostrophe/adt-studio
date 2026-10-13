@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import React from "react"
-import { afterEach, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { OutputStatus } from "@adt/types"
 import { buildReviewPlan, reviewGuard } from "./review-plan"
 
-const calls = vi.hoisted(() => ({ run: vi.fn(), review: vi.fn(), dirty: false, running: false }))
+const calls = vi.hoisted(() => ({ run: vi.fn(), review: vi.fn(), dirty: false, running: false, status: vi.fn() }))
 vi.mock("@lingui/react/macro", () => ({ useLingui: () => ({
   i18n: { locale: "en" },
   t: (strings: TemplateStringsArray, ...values: unknown[]) => strings.reduce((text, part, index) => text + part + (values[index] ?? ""), ""),
@@ -15,13 +15,18 @@ vi.mock("@/hooks/use-api-key", () => ({ useApiKey: () => ({ apiKey: undefined })
 vi.mock("@/hooks/use-book-run", () => ({ useBookRun: () => ({ isRunning: calls.running }) }))
 vi.mock("../floating-save", () => ({ useFloatingSaveDirtyEntries: () => calls.dirty ? [{ id: "draft" }] : [] }))
 vi.mock("../../pipeline-i18n", () => ({ getStageLabelI18n: (value: string) => value === "easy-read" ? "Easy Read" : value }))
-vi.mock("@/api/client", () => ({ api: { runStages: calls.run, reviewOutput: calls.review } }))
+vi.mock("@/api/client", () => ({ api: { runStages: calls.run, reviewOutput: calls.review, getStagesStatus: calls.status } }))
 
 const { OutputReviewPanel } = await import("./OutputReviewPanel")
 const clients: QueryClient[] = []
 afterEach(() => {
   cleanup(); clients.splice(0).forEach((client) => client.clear())
   vi.resetAllMocks(); calls.dirty = false; calls.running = false
+})
+
+beforeEach(() => {
+  calls.run.mockResolvedValue({ id: "review-run", status: "started" })
+  calls.status.mockImplementation(async () => ({ id: "review-run", status: calls.running ? "running" : "completed" }))
 })
 
 function output(id: string, overrides: Partial<OutputStatus> = {}): OutputStatus {
@@ -39,7 +44,7 @@ function setup(outputs: OutputStatus[], catalog = outputs, disclosure = false, c
     <OutputReviewPanel bookLabel="book" outputs={outputs} catalog={catalog} conflicts={conflicts} disclosure={disclosure} renderDetail={(item) => <p>{item.identity.id}</p>} />
   </QueryClientProvider>
   const view = render(ui())
-  return { ...view, refresh, ui }
+  return { ...view, refresh, ui, client }
 }
 
 it("offers Update all immediately, ignores healthy/excluded content and never replaces edits", async () => {
@@ -182,7 +187,7 @@ it.each(["draft", "run"])("blocks all bulk changes during a %s", (mode) => {
 
 it("styles Update all as the amber primary action and shows progress until the run it started finishes", async () => {
   let finish = () => {}
-  calls.run.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve }))
+  calls.run.mockImplementation(() => new Promise((resolve) => { finish = () => resolve({ id: "review-run", status: "started" }) }))
   const view = setup([output("outdated")])
   const button = screen.getByRole("button", { name: "Update all" }) as HTMLButtonElement
   expect(button.className).toContain("bg-amber-500")
@@ -202,6 +207,7 @@ it("styles Update all as the amber primary action and shows progress until the r
   view.rerender(view.ui())
   expect(screen.getByRole("button", { name: "Updating…" })).toBe(button)
   calls.running = false
+  await view.client.invalidateQueries({ queryKey: ["books", "book", "output-review-status"] })
   view.rerender(view.ui())
   await waitFor(() => expect(screen.getByRole("button", { name: "Update all" }).getAttribute("aria-busy")).toBeNull())
 })
@@ -285,4 +291,31 @@ it("keeps long item text to one line in the list and exposes the full text on ho
   const line = screen.getByTitle(long)
   expect(line.className).toContain("truncate")
   expect(screen.getByRole("region", { name: "Content updates" }).className).toContain("min-w-0")
+})
+
+it("keeps the owned run's Updating state after the dialog unmounts and does not adopt another run", async () => {
+  calls.running = true
+  const view = setup([output("outdated")])
+  view.client.setQueryData(["books", "book", "output-review-runs"], ["owned-run"])
+  calls.status.mockResolvedValue({ id: "owned-run", status: "running" })
+  view.rerender(view.ui())
+  await screen.findByRole("button", { name: "Updating…" })
+  view.rerender(<QueryClientProvider client={view.client}><span>Closed</span></QueryClientProvider>)
+  view.rerender(view.ui())
+  expect(await screen.findByRole("button", { name: "Updating…" })).toBeTruthy()
+  calls.status.mockResolvedValue({ id: "different-run", status: "running" })
+  await view.client.invalidateQueries({ queryKey: ["books", "book", "output-review-status"] })
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Updating…" })).toBeNull())
+  expect(screen.getByRole("button", { name: "Update all" }).getAttribute("disabled")).not.toBeNull()
+})
+
+
+it("keeps unrelated reviewed content without trying to accept unresolved duplicate outputs", async () => {
+  const conflicting = output("duplicate", { protected: true, updateNeeded: false, warnings: [{ reason: "legacy" }, { reason: "output-conflict", conflictId: "duplicate" }] })
+  const manual = output("safe", { protected: true, updateNeeded: false, warnings: [{ reason: "source-changed" }] })
+  setup([conflicting, manual])
+  fireEvent.click(screen.getByRole("button", { name: "Keep all existing content" }))
+  await waitFor(() => expect(calls.review).toHaveBeenCalledTimes(1))
+  expect(calls.review).toHaveBeenCalledWith("book", { ...reviewGuard(manual), action: "keep" })
+  expect(calls.run).not.toHaveBeenCalled()
 })

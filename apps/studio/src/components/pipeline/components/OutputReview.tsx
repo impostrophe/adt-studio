@@ -1,4 +1,5 @@
 import { OutputReviewPanel } from "./output-review/OutputReviewPanel"
+import { hasOutputConflict } from "./output-review/review-plan"
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useLingui } from "@lingui/react/macro"
@@ -59,11 +60,13 @@ function OutputReviewItem({ bookLabel, output, outputs, dirty = false, disclosur
   if (output.excluded) return null
   const warnings = output.warnings
   const fallback = output.identity.kind === "preparation" && warnings.some((warning) => !warning.source && warning.reason.startsWith("preparation-"))
-  const ownWarning = warnings.some((warning) => !warning.source)
+  const ownWarning = !hasOutputConflict(output) && warnings.some((warning) => !warning.source && warning.reason !== "source-conflict" && warning.reason !== "output-conflict")
   const upstream = outputs.filter((item) => warnings.some(({ source }) => source && item.identity.kind === source.kind && item.identity.id === source.id && item.identity.language === source.language && item.identity.voiceSlot === source.voiceSlot))
   if (!warnings.length && !output.updateNeeded && !output.missing && !output.manual && !edited) return null
   const label = output.identity.kind === "translation" ? t`Translation` : output.identity.kind === "preparation" ? t`Speech text` : output.identity.kind === "audio" ? t`Audio` : output.identity.kind === "caption" ? t`Caption` : output.identity.kind === "easy-read" ? t`Easy Read` : output.identity.kind === "timestamps" ? t`Timestamps` : t`Image translation`
   const reasons = [...new Set(warnings.map((warning) => warning.reason === "legacy" ? t`Freshness is unknown. Existing content has been kept.`
+    : warning.reason === "output-conflict" ? t`Multiple retained outputs share this ID. Save one reviewed value or explicitly replace it. Earlier versions remain in history.`
+    : warning.reason === "source-conflict" ? t`Conflicting source text uses this ID. Resolve the source conflict before accepting dependent output.`
     : warning.reason === "source-changed" ? t`Source changed. Your edit has been kept.`
     : warning.reason === "preparation-failed" ? t`Text preparation failed. Speech text uses the original text.`
     : warning.reason === "preparation-outdated" ? t`Text preparation is outdated. Speech text uses the original text.`
@@ -87,13 +90,14 @@ function OutputReviewItem({ bookLabel, output, outputs, dirty = false, disclosur
     {!hasDraft && !disclosure && <div className="mt-1 flex flex-wrap gap-1">
       {isRunning && <Button size="sm" variant="ghost" disabled={mutation.isPending} onClick={() => mutation.mutate("skip")}>{t`Skip this run`}</Button>}
       {output.usable && output.protected && ownWarning && <Button size="sm" variant="ghost" disabled={mutation.isPending} onClick={() => mutation.mutate("keep")}>{output.manual ? t`Keep my edit` : t`Keep existing content`}</Button>}
-      {fallback && output.usable && <Button size="sm" variant="ghost" disabled={mutation.isPending} onClick={() => mutation.mutate("checked")}>{t`Mark checked`}</Button>}
+      {fallback && output.usable && !hasOutputConflict(output) && <Button size="sm" variant="ghost" disabled={mutation.isPending} onClick={() => mutation.mutate("checked")}>{t`Mark checked`}</Button>}
       {fallback && <Button size="sm" variant="ghost" disabled={mutation.isPending} onClick={() => mutation.mutate("retry")}>{t`Retry preparation`}</Button>}
       {(output.updateNeeded || output.missing) && (!output.protected) && <Button size="sm" variant="ghost" disabled={mutation.isPending} onClick={() => mutation.mutate("generate")}>{t`Generate selected output`}</Button>}
       {output.protected && <Button size="sm" variant="ghost" disabled={mutation.isPending} onClick={() => setReplace(!replace)}>{t`Regenerate`}</Button>}
       {replace && <Button size="sm" variant="outline" disabled={mutation.isPending} onClick={() => mutation.mutate("replace")}>{t`Regenerate and replace my edit`}</Button>}
       {upstream.length > 0 && <Button size="sm" variant="ghost" onClick={() => setShowSource(!showSource)}>{t`Review source`}</Button>}
     </div>}
+    {output.identity.kind === "easy-read" && output.sectionIds.length > 1 && <p className="mt-1 text-muted-foreground">{t`This text is shared by ${output.sectionIds.length} sections. Updating it changes the shared text in every referring section.`}</p>}
     {showSource && upstream.map((source) => <div key={JSON.stringify(source.identity)} className="mt-2 border-l pl-2"><p className="mb-1 font-mono">{source.identity.id} {source.identity.language}</p><OutputReviewItem bookLabel={bookLabel} output={source} outputs={outputs} dirty={dirty} disclosure={disclosure} detail inline={inline} /></div>)}
     {mutation.error && <p className="mt-1 text-red-700">{mutation.error.message}</p>}
   </div>
@@ -124,9 +128,10 @@ export function CatalogSummary({ bookLabel, stage, disclosure = false, features,
   // Optional speech preparation is reviewed beside saved speech text, not as
   // unfinished translation work merely because a display string was edited.
   const outputs = (data?.outputs ?? []).filter((output) => !output.excluded && (!stage || OUTPUT_KIND_TO_STAGE[output.identity.kind] === stage) &&
-    (disclosure || stage !== "translate" || output.identity.kind !== "preparation"))
+    (disclosure || stage !== "translate" || output.identity.kind !== "preparation") &&
+    (disclosure || stage !== "speech" || data?.showMissingSpeech || !output.missing))
   if (error) return <p className="text-xs text-red-700">{error.message}</p>
   const ownershipPages = [...new Set(data?.ownershipWarnings?.map((warning) => warning.pageId) ?? [])].join(", ")
-  return <>{ownershipPages && <p className="rounded border border-amber-300 p-2 text-xs text-amber-800">{t`Some rendered sections on ${ownershipPages} have no verified section owner and are omitted from preview and export. Their content and history are retained. Review their section identities in Storyboard.`}</p>}<OutputReviewPanel defaultOpen={expanded} bookLabel={bookLabel} outputs={outputs} catalog={data?.outputs ?? []} conflicts={data?.conflicts} disclosure={disclosure}
+  return <>{ownershipPages && <p className="rounded border border-amber-300 p-2 text-xs text-amber-800">{t`Some rendered sections on ${ownershipPages} have no verified section owner and are omitted from preview and export. Their content and history are retained. Review their section identities in Storyboard.`}</p>}<OutputReviewPanel defaultOpen={expanded} bookLabel={bookLabel} outputs={outputs} catalog={data?.outputs ?? []} conflicts={stage ? data?.conflicts?.filter((conflict) => outputs.some((output) => output.identity.id === conflict.id)) : data?.conflicts} disclosure={disclosure}
     renderDetail={(output) => <OutputReviewItem bookLabel={bookLabel} output={output} outputs={data?.outputs ?? []} disclosure={disclosure} detail inline />} /></>
 }

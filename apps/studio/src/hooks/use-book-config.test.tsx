@@ -9,12 +9,17 @@ vi.mock("@/api/client", () => ({ api: { updateBookConfig: vi.fn().mockResolvedVa
 const { useUpdateBookConfig } = await import("./use-book-config")
 afterEach(() => cleanup())
 
-it("refreshes output attention after a settings save, e.g. muting Easy Read read-aloud", async () => {
+it.each([
+  { speech: { excluded_categories: ["easy-read"] } },
+  { speech: { excluded_text_ids: ["phrase"] } },
+  { easy_read: { enabled: true } },
+  { easy_read: { enabled: false } },
+])("refreshes output attention after a config or exclusion save: %j", async (config) => {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
   const refresh = vi.spyOn(client, "invalidateQueries")
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
   const { result } = renderHook(() => useUpdateBookConfig(), { wrapper })
-  await result.current.mutateAsync({ label: "book", config: { speech: { excluded_categories: ["easy-read"] } } })
+  await result.current.mutateAsync({ label: "book", config })
   expect(refresh).toHaveBeenCalledWith({ queryKey: ["books", "book", "outputs"] })
   client.clear()
 })

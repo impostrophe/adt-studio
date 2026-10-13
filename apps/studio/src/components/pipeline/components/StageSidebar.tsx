@@ -18,11 +18,9 @@ import type { MessageDescriptor } from "@lingui/core"
 import { Button } from "@/components/ui/button"
 import { toast } from "@/components/ui/sonner"
 import { useBookRun } from "@/hooks/use-book-run"
-import { useTTSData } from "@/hooks/use-tts"
-import { shouldShowMissingSpeech } from "../stages/languages/lib/speech-review-state"
 import { useAccessibilityAssessment } from "@/hooks/use-debug"
 import { useBookTasks } from "@/hooks/use-book-tasks"
-import { useOutputs } from "./OutputReview"
+import { useOutputSummary } from "@/hooks/use-outputs"
 import { StageOutputStatus } from "./StageOutputStatus"
 import { useDirtyTabsForStage } from "@/hooks/use-settings-dirty-tabs"
 import { getSettingsTabs } from "../settings-tabs"
@@ -86,8 +84,7 @@ export function StageSidebar({
   const { data: signLanguageData } = useSignLanguageVideos(bookLabel)
   const { data: packageStatus } = usePackageAdtStatus(bookLabel)
   const { tasks } = useBookTasks(bookLabel)
-  const { data: catalog } = useOutputs(bookLabel)
-  const { data: speech } = useTTSData(bookLabel)
+  const { data: catalog } = useOutputSummary(bookLabel)
   const activeDirtyTabs = useDirtyTabsForStage(activeStep)
   const { data: sidebarPages } = usePages(bookLabel, { enabled: false })
   const hasNoTextLayer = (sidebarPages ?? []).some((p) => p.extractionWarning)
@@ -178,16 +175,16 @@ export function StageSidebar({
     const isActive = step.slug === activeStep
     const Icon = step.icon
     const state = completionOverrides[step.slug] ? "done" : stageState(step.slug)
-    const content = catalog?.summaries?.stages[step.slug]
+    const content = catalog?.stages[step.slug]
     // Keep complete expected counts in the read model. Optional speech only
     // surfaces missing-output attention after an attempt, and not during it.
-    const hideMissingSpeech = step.slug === "speech" && !shouldShowMissingSpeech(state, speech)
-    const visibleContent = content && hideMissingSpeech ? { ...content, missing: 0 } : content
-    const { updates = 0, warnings = 0, missing = 0 } = visibleContent ?? {}
-    const attentionLabel = updates || warnings || missing
-      ? i18n._(msg`Updates: ${updates}. Warnings: ${warnings}. Missing: ${missing}.`)
+    const hideMissingSpeech = step.slug === "speech" && (["running", "queued"].includes(state) || !catalog?.showMissingSpeech)
+    const visibleContent = hideMissingSpeech ? catalog?.stagesWithoutMissingSpeech[step.slug] : content
+    const { updates = 0, reviews = 0, warnings = 0, missing = 0 } = visibleContent ?? {}
+    const attentionLabel = updates || reviews || warnings || missing
+      ? i18n._(msg`Updates: ${updates}. Needs review: ${reviews}. Warnings: ${warnings}. Missing: ${missing}.`)
       : undefined
-    const stageCompleted = content ? content.current : state === "done"
+    const stageCompleted = visibleContent?.current || (!(updates || missing) && state === "done")
     // Overview is the stage's landing page, and its Run button. It is normally
     // redundant while a stage is idle, because the stage's own view *is* the
     // landing page — but a stale Storyboard shows the editor instead, so hiding
@@ -201,7 +198,7 @@ export function StageSidebar({
     const settingsTabs = getSettingsTabs(step.slug, i18n, showOverviewTab)
     const showSubTabs = isActive && isSettings && !!settingsTabs
 
-    const stageNeedsRerun = !!content && !content.current
+    const stageNeedsRerun = updates > 0 || missing > 0
     const activeAttempt = state === "running" || state === "queued"
     const ringState = activeAttempt ? state : stageNeedsRerun || state === "error" ? "idle" : content?.current ? "done" : state
 

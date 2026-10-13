@@ -244,3 +244,11 @@ it("keeps optional preparation out of Language totals while still surfacing tran
   render(<CatalogSummary bookLabel="book" stage="translate" />, { wrapper })
   expect(screen.getByText("Items needing attention: 1")).toBeTruthy()
 })
+
+
+it("requires resolving duplicate retained values rather than offering an ineffective Keep action", () => {
+  render(<OutputReview {...review} compact={false} />, { wrapper: setup([status({ warnings: [{ reason: "legacy" }, { reason: "output-conflict", conflictId: "phrase" }] })]) })
+  expect(screen.queryByRole("button", { name: "Keep my edit" })).toBeNull()
+  expect(screen.getByRole("button", { name: "Regenerate", exact: true })).toBeTruthy()
+  expect(screen.getByText(/Multiple retained outputs share this ID/)).toBeTruthy()
+})

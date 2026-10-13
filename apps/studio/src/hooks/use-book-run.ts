@@ -354,7 +354,7 @@ export function useBookRunStatus(label: string): BookRunContextValue {
         progressRef.current.delete(pipelineStep)
 
         // Also invalidate data queries for the completed step's stage
-        invalidateStageData(queryClient, label, uiStage)
+        if (stageJustCompleted) invalidateStageData(queryClient, label, uiStage)
         if (pipelineStep === "metadata") {
           queryClient.invalidateQueries({ queryKey: ["books", label] })
           queryClient.invalidateQueries({ queryKey: ["books"] })

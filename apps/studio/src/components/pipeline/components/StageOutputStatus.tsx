@@ -12,10 +12,10 @@ export function StageOutputStatus({ bookLabel, stage, summary, active = false }:
   bookLabel: string; stage: string; summary: OutputScopeSummary; active?: boolean
 }) {
   const { t } = useLingui()
-  const { updates, warnings, missing } = summary
-  if (!updates && !warnings && !missing) return null
+  const { updates, reviews = 0, warnings, missing } = summary
+  if (!updates && !reviews && !warnings && !missing) return null
   const label = getStageLabelI18n(stage)
-  const description = t`Updates: ${updates}. Warnings: ${warnings}. Missing: ${missing}.`
+  const description = t`Updates: ${updates}. Needs review: ${reviews}. Warnings: ${warnings}. Missing: ${missing}.`
   const title = t`Review ${label} outputs`
   return <Dialog>
     <DialogTrigger asChild>

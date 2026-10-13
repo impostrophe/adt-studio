@@ -1,5 +1,5 @@
 import type { OutputSkipRequest } from "@adt/types"
-import type { OutputStatus, OutputSummary, OutputRunScope, OutputReviewRequest, OutputDisclosureOptions, OutputReplacement } from "@adt/types"
+import type { OutputStatus, OutputSummary, OutputStageSummaryResponse, OutputRunScope, OutputReviewRequest, OutputDisclosureOptions, OutputReplacement } from "@adt/types"
 import { isElectron } from "@/lib/utils"
 import type {
   AccessibilityAssessmentOutput,
@@ -395,6 +395,7 @@ export interface PendingDecision {
 }
 
 export interface StageRunStatus {
+  id?: string
   label: string
   status: "idle" | "running" | "cancelling" | "cancelled" | "completed" | "failed"
   fromStage?: string
@@ -1242,7 +1243,7 @@ export const api = {
     options: RunStagesOptions,
     providerCredentials?: StageRunProviderCredentials
   ) =>
-    request<{ status: string; label: string; fromStage: string; toStage: string }>(
+    request<{ id: string; status: string; label: string; fromStage: string; toStage: string }>(
       `/books/${label}/stages/run`,
       {
         method: "POST",
@@ -1839,8 +1840,9 @@ export const api = {
   getTocSections: (label: string) =>
     request<TocSection[]>(`/books/${label}/toc/sections`),
 
-  getOutputDisclosure: (label: string, features: OutputDisclosureOptions = {}) => request<{ outputs: OutputStatus[]; summary: OutputSummary; summaries?: import("@adt/types").OutputSummaries; conflicts?: import("@adt/types").CatalogConflict[]; ownershipWarnings?: import("@adt/types").PackagingWarning[] }>(`/books/${label}/outputs/disclosure?features=${encodeURIComponent(JSON.stringify(features))}`),
-  getOutputs: (label: string) => request<{ outputs: OutputStatus[]; summary: OutputSummary; summaries?: import("@adt/types").OutputSummaries; conflicts?: import("@adt/types").CatalogConflict[]; ownershipWarnings?: import("@adt/types").PackagingWarning[] }>(`/books/${label}/outputs`),
+  getOutputDisclosure: (label: string, features: OutputDisclosureOptions = {}) => request<{ showMissingSpeech?: boolean; outputs: OutputStatus[]; summary: OutputSummary; summaries?: import("@adt/types").OutputSummaries; conflicts?: import("@adt/types").CatalogConflict[]; ownershipWarnings?: import("@adt/types").PackagingWarning[] }>(`/books/${label}/outputs/disclosure?features=${encodeURIComponent(JSON.stringify(features))}`),
+  getOutputSummary: (label: string) => request<OutputStageSummaryResponse>(`/books/${label}/outputs/summary`),
+  getOutputs: (label: string) => request<{ showMissingSpeech: boolean; outputs: OutputStatus[]; summary: OutputSummary; summaries?: import("@adt/types").OutputSummaries; conflicts?: import("@adt/types").CatalogConflict[]; ownershipWarnings?: import("@adt/types").PackagingWarning[] }>(`/books/${label}/outputs`),
   reviewOutput: (label: string, review: OutputReviewRequest) => request<{ version: number }>(`/books/${label}/outputs/review`, { method: "POST", body: JSON.stringify(review) }),
 
   getTextCatalog: (label: string) =>

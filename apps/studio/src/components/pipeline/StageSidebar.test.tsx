@@ -15,6 +15,14 @@ const searchMock = { tab: "reviewer-checklist" }
 const ttsMock = vi.fn((): { data?: import("@/api/client").TTSResponse } => ({}))
 vi.mock("@/hooks/use-tts", () => ({ useTTSData: () => ttsMock() }))
 const outputsMock = vi.fn((): { data?: { summaries: { stages: Record<string, { applicable: number; current: boolean; updates: number; warnings: number; missing: number }> } } } => ({}))
+vi.mock("@/hooks/use-outputs", () => ({ useOutputSummary: () => {
+  const data = outputsMock().data
+  if (!data) return {}
+  return { data: { stages: data.summaries.stages,
+    stagesWithoutMissingSpeech: { ...data.summaries.stages, speech: data.summaries.stages.speech?.missing ? { applicable: 0, current: true, updates: 0, reviews: 0, warnings: 0, missing: 0 } : data.summaries.stages.speech },
+    showMissingSpeech: ["done", "error"].includes(stageStateMock("speech")) || Object.values(ttsMock().data?.languages ?? {}).some((language) => language.entries.length || language.failed?.length),
+  } }
+} }))
 vi.mock("./components/OutputReview", () => ({ useOutputs: () => outputsMock(), CatalogSummary: () => <div>Selected stage outputs</div> }))
 
 vi.mock("@lingui/core", () => ({
@@ -190,7 +198,7 @@ describe("StageSidebar", () => {
     outputsMock.mockReturnValue({ data: { summaries: { stages: { translate: { applicable: 4, current: false, updates: 1, warnings: 0, missing: 0 } } } } })
     const { StageSidebar } = await import("./components/StageSidebar")
     const view = render(<StageSidebar bookLabel="demo-book" activeStep="sectioning" />)
-    const badge = screen.getByRole("img", { name: "Updates: 1. Warnings: 0. Missing: 0." })
+    const badge = screen.getByRole("img", { name: "Updates: 1. Needs review: 0. Warnings: 0. Missing: 0." })
     expect(badge.className).toContain("bg-amber-600")
     expect(screen.getByTitle("Language").contains(badge)).toBe(true)
     // Expanded rail: the review button beside the label is visible instead.

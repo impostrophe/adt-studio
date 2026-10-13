@@ -2609,6 +2609,9 @@ msgstr "Configurado en el servidor"
 msgid "Confirm merge"
 msgstr "Confirmar fusión"
 
+msgid "Conflicting source text uses this ID. Resolve the source conflict before accepting dependent output."
+msgstr "Hay textos de origen contradictorios con este ID. Resuelve el conflicto de origen antes de aceptar el contenido dependiente."
+
 msgid "Connect the engines that run the pipeline and narrate books. Keys stay on this machine; CLI providers reuse the login already on it."
 msgstr "Conecta los motores que ejecutan la tubería y narran libros. Las claves permanecen en esta máquina; los proveedores CLI reutilizan el inicio de sesión ya presente."
 
@@ -6026,6 +6029,9 @@ msgstr "opción múltiple"
 
 msgid "Multiple choice"
 msgstr "Opción múltiple"
+
+msgid "Multiple retained outputs share this ID. Save one reviewed value or explicitly replace it. Earlier versions remain in history."
+msgstr "Varios contenidos conservados comparten este ID. Guarda un valor revisado o reemplázalo explícitamente. Las versiones anteriores permanecen en el historial."
 
 msgid "Mute all from read-aloud"
 msgstr "Silenciar todos en la lectura en voz alta"
@@ -10364,6 +10370,10 @@ msgstr "Este sistema no puede mostrar notificaciones de escritorio."
 msgid "This text is only perceptible to assistive technologies."
 msgstr "Este texto solo es perceptible para tecnologías de asistencia."
 
+#. placeholder {0}: output.sectionIds.length
+msgid "This text is shared by {0} sections. Updating it changes the shared text in every referring section."
+msgstr "Este texto se comparte entre {0} secciones. Al actualizarlo, cambia el texto compartido en todas las secciones que lo utilizan."
+
 msgid "This version is empty."
 msgstr "Esta versión está vacía."
 
@@ -10791,8 +10801,11 @@ msgstr "Las actualizaciones están en curso. Puedes seguir revisando el libro."
 msgid "Updates preserve manual edits."
 msgstr "Las actualizaciones conservan las ediciones manuales."
 
-msgid "Updates: {updates}. Warnings: {warnings}. Missing: {missing}."
-msgstr "Actualizaciones: {updates}. Advertencias: {warnings}. Faltantes: {missing}."
+msgid "Updates: {updates}. Needs review: {reviews}. Warnings: {warnings}. Missing: {missing}."
+msgstr "Actualizaciones: {updates}. Por revisar: {reviews}. Advertencias: {warnings}. Faltantes: {missing}."
+
+#~ msgid "Updates: {updates}. Warnings: {warnings}. Missing: {missing}."
+#~ msgstr "Actualizaciones: {updates}. Advertencias: {warnings}. Faltantes: {missing}."
 
 msgid "Updating…"
 msgstr "Actualizando…"
