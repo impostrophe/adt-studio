@@ -54,8 +54,11 @@ export function ReviewActions({ bookLabel, outputs, catalog, filtered, heading, 
       }
     },
     onSuccess: () => setConfirmReplace(false),
-    // A partial bulk acceptance or a rejected stale guard must also refresh.
-    onSettled: () => client.invalidateQueries({ queryKey: ["books", bookLabel] }),
+    // Generation admission has not published anything yet. The run boundary
+    // refreshes outputs; acceptance and rejected/partial actions refresh now.
+    onSettled: (_data, error, action) => {
+      if (error || action === "keep") return client.invalidateQueries({ queryKey: ["books", bookLabel] })
+    },
   })
   const disabled = dirty || isRunning || mutation.isPending
   const count = plan.replace.length

@@ -360,3 +360,39 @@ it("exposes the accepted run identity through HTTP before and after queue promot
   await tick()
   expect(await status()).toMatchObject({ status: "idle", queue: [] })
 })
+
+
+it.each(["completed", "cancelled", "failed"])("retains a publication receipt for %s after queue drain and exposes it to polling", async (outcome) => {
+  const label = `receipt-${outcome}`
+  makeBook(label)
+  const bus = createBookEventBus()
+  const rc = controllableRunner()
+  const service = createStageService(rc.runner, bus)
+  const before = service.getStatus(label).runRevision
+  let receiptAtEvent: string | undefined
+  bus.addListener(label, (event) => {
+    if (event.type.startsWith("stage-run-")) receiptAtEvent = service.getStatus(label).runRevision
+  })
+  const run = service.startStageRun(label, baseOptions(label))
+  await tick()
+  expect(service.getStatus(label).runRevision).toBe(before)
+  if (outcome === "completed") rc.finish()
+  else {
+    if (outcome === "cancelled") service.cancelStageRun(label)
+    rc.fail(new Error(outcome))
+  }
+  await tick()
+  expect(receiptAtEvent).toBe(run.id)
+  expect(service.getStatus(label).runRevision).toBe(run.id)
+  const routes = createStageRoutes(service, bus, createPageErrorDecisions(), tmpDir, "", "")
+  const response = await routes.request(`/books/${label}/step-status`)
+  expect(response.status).toBe(200)
+  expect((await response.json()).runRevision).toBe(run.id)
+  const second = service.startStageRun(label, baseOptions(label))
+  await tick()
+  expect(service.getStatus(label).runRevision).toBe(run.id)
+  rc.finish()
+  await tick()
+  expect(service.getStatus(label).runRevision).toBe(second.id)
+  expect(createStageService(rc.runner, bus).getStatus(label).runRevision).not.toBe(run.id)
+})

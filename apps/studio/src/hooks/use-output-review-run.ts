@@ -1,3 +1,4 @@
+import { refreshRunStatus } from "./run-query-invalidation"
 import { useMutationState, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api, type StageRunStatus } from "@/api/client"
 
@@ -34,7 +35,10 @@ export function useOutputReviewRun(bookLabel: string) {
     updating: pending || ownsActiveRun(status) || (ids.length > 0 && !status),
     accepted: async (id: string) => {
       client.setQueryData<string[]>(key, (previous = []) => [...new Set([...previous, id])])
-      await client.invalidateQueries({ queryKey: ["books", bookLabel, "output-review-status"] })
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["books", bookLabel, "output-review-status"] }),
+        refreshRunStatus(client, bookLabel),
+      ])
     },
   }
 }

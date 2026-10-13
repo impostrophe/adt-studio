@@ -51,7 +51,7 @@ it("offers Update all immediately, ignores healthy/excluded content and never re
   const generated = output("outdated")
   const missing = output("absent", { missing: true, usable: false })
   const manual = output("my edit", { protected: true, manual: true, updateNeeded: false, warnings: [{ reason: "source-changed" }] })
-  setup([generated, missing, manual, output("healthy", { current: true, updateNeeded: false }), output("excluded", { excluded: true })])
+  const { refresh } = setup([generated, missing, manual, output("healthy", { current: true, updateNeeded: false }), output("excluded", { excluded: true })])
   expect(screen.getByText("Items needing attention: 3")).toBeTruthy()
   expect(screen.queryByRole("checkbox")).toBeNull()
   fireEvent.click(screen.getByRole("button", { name: "Update all", exact: true }))
@@ -60,6 +60,10 @@ it("offers Update all immediately, ignores healthy/excluded content and never re
     fromStage: "translate", toStage: "translate", outputScope: { selection: { identities: [generated.identity, missing.identity] }, retry: [] },
   })
   expect(calls.review).not.toHaveBeenCalled()
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Updating…" })).toBeNull())
+  // Admission only updates the accepted-run status. Publication is refreshed
+  // by the run boundary, not by an immediate full catalog read.
+  expect(refresh.mock.calls.some(([filter]) => JSON.stringify(filter?.queryKey) === JSON.stringify(["books", "book"]))).toBe(false)
 })
 
 it("keeps count, list and bulk targets aligned with content, language and status filters", async () => {

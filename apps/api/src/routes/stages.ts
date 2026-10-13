@@ -351,7 +351,7 @@ export function createStageRoutes(
     const resolvedDir = path.resolve(booksDir)
     const dbPath = path.join(resolvedDir, safeLabel, `${safeLabel}.db`)
 
-    const { active } = stageService.getStatus(label)
+    const { active, runRevision } = stageService.getStatus(label)
     // Explicitly queued stages (waiting behind the active run) — always
     // override "done" so re-runs show as queued before data is cleared.
     const queuedStages = new Set(stageService.getQueuedStages(label))
@@ -466,6 +466,7 @@ export function createStageRoutes(
       stepErrors: hasStepErrors ? stepErrors : null,
       stepMessages: hasStepMessages ? stepMessages : null,
       runStatus,
+      runRevision,
       pendingDecisions,
     })
   })

@@ -1922,6 +1922,7 @@ export const api = {
       error: string | null
       stepErrors: Record<string, string> | null
       stepMessages: Record<string, string> | null
+      runRevision?: string
       runStatus: "idle" | "running" | "cancelling" | "cancelled" | "completed" | "failed"
       pendingDecisions: PendingDecision[]
     }>(`/books/${label}/step-status`),

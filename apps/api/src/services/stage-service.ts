@@ -39,9 +39,12 @@ export interface QueuedStageRun {
 interface BookRunState {
   active: StageRunJob | null
   queue: QueuedStageRun[]
+  runRevision: string
 }
 
 export interface BookRunStatus {
+  /** Changes after a run settles or the service restarts; survives queue drain. */
+  runRevision?: string
   active: StageRunJob | null
   queue: Array<{ id: string; fromStage: string; toStage: string }>
 }
@@ -109,11 +112,12 @@ export function createStageService(
   decisions?: PageErrorDecisions
 ): StageService {
   const books = new Map<string, BookRunState>()
+  const initialRunRevision = randomUUID()
 
   function getOrCreateState(label: string): BookRunState {
     let state = books.get(label)
     if (!state) {
-      state = { active: null, queue: [] }
+      state = { active: null, queue: [], runRevision: initialRunRevision }
       books.set(label, state)
     }
     return state
@@ -153,6 +157,7 @@ export function createStageService(
       // no cancelled event, no step reset (the run genuinely finished).
       job.status = "completed"
       job.completedAt = Date.now()
+      getOrCreateState(label).runRevision = job.id
       eventBus.emit(label, { type: "stage-run-complete", label })
     } catch (err) {
       if (job.controller.signal.aborted) {
@@ -172,6 +177,7 @@ export function createStageService(
         }
         job.status = "cancelled"
         job.completedAt = Date.now()
+        getOrCreateState(label).runRevision = job.id
         eventBus.emit(label, { type: "stage-run-cancelled", label })
       } else {
         const message = err instanceof Error ? err.message : String(err)
@@ -179,6 +185,7 @@ export function createStageService(
         job.status = "failed"
         job.error = message
         job.completedAt = Date.now()
+        getOrCreateState(label).runRevision = job.id
         eventBus.emit(label, { type: "stage-run-error", label, error: message })
       }
     } finally {
@@ -230,9 +237,10 @@ export function createStageService(
   return {
     getStatus(label: string): BookRunStatus {
       const state = books.get(label)
-      if (!state) return { active: null, queue: [] }
+      if (!state) return { active: null, queue: [], runRevision: initialRunRevision }
       return {
         active: state.active,
+        runRevision: state.runRevision,
         queue: state.queue.map((q) => ({
           id: q.id,
           fromStage: q.fromStage,

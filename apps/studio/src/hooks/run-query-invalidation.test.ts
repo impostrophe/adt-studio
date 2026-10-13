@@ -1,6 +1,6 @@
-import { expect, it } from "vitest"
+import { expect, it, vi } from "vitest"
 import { QueryClient, QueryObserver } from "@tanstack/react-query"
-import { invalidateBookQueries } from "./run-query-invalidation"
+import { invalidateBookQueries, reconcileRunPublication, refreshRunStatus } from "./run-query-invalidation"
 
 it.each([false, true])("ignores pre-publication responses including initial reads (initial: %s)", async (initial) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
@@ -31,4 +31,40 @@ it.each([false, true])("ignores pre-publication responses including initial read
     expect(client.getQueryData(keys[0])).toBe(2)
     expect(counts).toEqual([initial ? 2 : 3, 2, 2, 2, 1])
   } finally { unsubscribe.forEach((stop) => stop()); client.clear() }
+})
+
+
+it("deduplicates receipts across polling, late events, and route remounts, including service restart", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } })
+  const read = vi.fn(async () => "current")
+  const observer = new QueryObserver(client, { queryKey: ["books", "book", "outputs"], queryFn: read, initialData: "old" })
+  const stop = observer.subscribe(() => {})
+  try {
+    await Promise.all([reconcileRunPublication(client, "book", "A"), reconcileRunPublication(client, "book", "A")])
+    await reconcileRunPublication(client, "book", "B")
+    await reconcileRunPublication(client, "book", "A")
+    expect(read).toHaveBeenCalledTimes(2)
+    await reconcileRunPublication(client, "book", "restarted-service")
+    expect(read).toHaveBeenCalledTimes(3)
+  } finally { stop(); client.clear() }
+})
+
+it("admission supersedes an initial status read captured before a fast run", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  let finishOld: (() => void) | undefined
+  let calls = 0
+  const key = ["books", "book", "step-status"]
+  const observer = new QueryObserver(client, { queryKey: key, queryFn: async () => {
+    if (++calls === 1) { await new Promise<void>((resolve) => { finishOld = resolve }); return "before" }
+    return "completed"
+  } })
+  const stop = observer.subscribe(() => {})
+  try {
+    await refreshRunStatus(client, "book")
+    expect(client.getQueryData(key)).toBe("completed")
+    finishOld!()
+    await Promise.resolve()
+    expect(client.getQueryData(key)).toBe("completed")
+    expect(calls).toBe(2)
+  } finally { stop(); client.clear() }
 })
