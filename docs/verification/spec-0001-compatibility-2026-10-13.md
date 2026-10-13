@@ -1,5 +1,9 @@
 # SPEC-0001 compatibility follow-up — 2026-10-13
 
+**Historical checkpoint:** the AC-7/12 blocked conclusion below is superseded by
+[the gap-closure implementation and evidence](spec-0001-gap-closure-2026-10-13.md),
+which adds historical-format recovery and explicit guarded ownership repair.
+
 Implementation target: PR #879, starting at `618153d3`, base `develop`
 `0b18602f`. The user authorized both compatibility fixes, autonomous decisions,
 independent review, full checks and same-PR publication. Human specification
