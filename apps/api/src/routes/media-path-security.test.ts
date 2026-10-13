@@ -48,7 +48,10 @@ beforeEach(() => {
   } finally {
     storage.close()
   }
-  transcribe.mockReset().mockResolvedValue({ words: [{ word: "Hello", start: 0, end: 1 }], duration: 1 })
+  transcribe.mockReset().mockImplementation(async ({ audioBuffer, audioHash }) => ({
+    words: [{ word: "Hello", start: 0, end: 1 }], duration: 1,
+    audioHash: audioHash ?? createHash("sha256").update(audioBuffer).digest("hex"),
+  }))
 })
 afterEach(() => {
   vi.restoreAllMocks()
