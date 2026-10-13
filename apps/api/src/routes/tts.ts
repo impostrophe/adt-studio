@@ -25,7 +25,7 @@ import {
   type WordTimestampEntry,
   type WordTimestampOutput,
 } from "@adt/types"
-import { openBookDb, createBookStorage, storeImmutableAsset, CURRENT_VERSION_ORDER } from "@adt/storage"
+import { openBookDb, createBookStorage, storeImmutableAsset, UnsafeAssetPathError, CURRENT_VERSION_ORDER } from "@adt/storage"
 import {
   AiProviderError,
   createAzureTTSSynthesizer,
@@ -723,7 +723,15 @@ export function createTTSRoutes(booksDir: string, configPath?: string, taskServi
 
       const bookDir = path.join(path.resolve(booksDir), safeLabel)
       const existingEntries = getLatestTtsEntries(storage, normalizedLanguage)
-      const asset = storeImmutableAsset(bookDir, ["audio", normalizedLanguage], voiceSlotEntryId(textEntry.id, voiceSlot), format, buffer)
+      const destination = resolvePathWithin(booksDir, safeLabel, "audio", normalizedLanguage, nextEntry.fileName)
+      if (!destination) throw new HTTPException(400, { message: "Invalid audio file path" })
+      let asset: ReturnType<typeof storeImmutableAsset>
+      try {
+        asset = storeImmutableAsset(bookDir, ["audio", normalizedLanguage], voiceSlotEntryId(textEntry.id, voiceSlot), format, buffer, { repairCorruptFile: true })
+      } catch (error) {
+        if (error instanceof UnsafeAssetPathError) throw new HTTPException(400, { message: "Invalid audio file path" })
+        throw error
+      }
       nextEntry.fileName = asset.fileName
       nextEntry.audioHash = asset.contentHash
       nextEntry.input = outputEvidence(status.signature, asset.contentHash, captureOutputReferences(storage, status.identity.kind, status.identity.language))

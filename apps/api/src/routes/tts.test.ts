@@ -994,6 +994,39 @@ describe("POST /books/:label/tts/upload-one", () => {
     configPath = ""
   })
 
+  it("repairs a repeated recording into a new file without overwriting the corrupt historical asset", async () => {
+    const label = "repair-upload"
+    seedBook(label)
+    const app = createTTSRoutes(tmpDir, configPath)
+    const recording = new Uint8Array([9, 8, 7, 6])
+    const upload = async () => {
+      const form = new FormData()
+      form.set("textId", "pg001_t001")
+      form.set("language", "en")
+      form.set("audio", new File([recording], "recording.wav", { type: "audio/wav" }))
+      addUploadBaseline(form, label)
+      const response = await app.request(`/books/${label}/tts/upload-one`, { method: "POST", body: form })
+      expect(response.status, await response.clone().text()).toBe(201)
+      return response.json()
+    }
+    const original = await upload()
+    const directory = path.join(tmpDir, label, "audio", "en")
+    const oldPath = path.join(directory, original.entry.fileName)
+    fs.writeFileSync(oldPath, "corrupted")
+    const repaired = await upload()
+    expect(repaired.entry.fileName).toContain("-recovered-")
+    expect(repaired.entry.fileName).not.toBe(original.entry.fileName)
+    expect(repaired.entry.audioHash).toBe(original.entry.audioHash)
+    expect(fs.readFileSync(oldPath, "utf8")).toBe("corrupted")
+    expect(fs.readFileSync(path.join(directory, repaired.entry.fileName))).toEqual(Buffer.from(recording))
+    const storage = createBookStorage(label, tmpDir)
+    try {
+      const history = storage.getAllNodeVersions("tts", "en")
+      expect(history.find((row) => row.version === original.version)?.data).toMatchObject({ entries: [expect.objectContaining({ fileName: original.entry.fileName })] })
+      expect(storage.getLatestNodeData("tts", "en")?.data).toMatchObject({ entries: [expect.objectContaining({ fileName: repaired.entry.fileName, source: "manual" })] })
+    } finally { storage.close() }
+  })
+
   it("stores uploaded audio as a TTS entry and clears stale timestamps for that text", async () => {
     const label = "manual-audio"
     seedBook(label)

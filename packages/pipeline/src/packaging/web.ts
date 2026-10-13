@@ -12,7 +12,7 @@ import { pathToFileURL } from "node:url"
 import { parseDocument, DomUtils } from "htmlparser2"
 import temml from "temml"
 import type { Storage } from "@adt/storage"
-import { readBookAsset } from "@adt/storage"
+import { bookAssetExists } from "@adt/storage"
 import type {
   ContentNodeData,
   PageSectioningSection,
@@ -61,7 +61,7 @@ import { getGlossaryItemTextId } from "../glossary.js"
 import { getBaseLanguage, normalizeLocale } from "../language-context.js"
 import { buildTextCatalog } from "../text-catalog.js"
 import { flattenEasyReadEntries, buildEasyReadSourceBlocks } from "../easy-read.js"
-import { retainedEasyRead } from "../retained-catalog.js"
+import { activeEasyRead } from "../retained-catalog.js"
 import { getCoreTtsCatalog, getReadyCoreTtsEntries } from "../core-tts.js"
 import { renderingOwnershipWarnings } from "../render-sectioning.js"
 import { resolveReadingOrder, toPageEntry, type PageEntry } from "../reading-order.js"
@@ -191,7 +191,7 @@ function buildRuntimeTimecodeMap(
 // Folded into the packaging cache hash so already-packaged books regenerate
 // when renderPageHtml's output format changes (which book inputs don't capture).
 // Bump on any such change.
-const PACKAGING_FORMAT_VERSION = 9
+const PACKAGING_FORMAT_VERSION = 10
 
 export interface ComputePackagingInputHashOptions {
   storage: Storage
@@ -254,17 +254,25 @@ export function computePackagingInputHash(options: ComputePackagingInputHashOpti
   const assetEntries = collectDirectoryFingerprint(options.webAssetsDir).sort((a, b) => a[0].localeCompare(b[0]))
   hash.update(JSON.stringify(assetEntries))
 
-  // 6. Verify physical image bytes, including same-size/restored-mtime edits.
-  const imagesDir = path.join(options.bookDir, "images")
-  const imageEntries = collectDirectoryFingerprint(imagesDir).sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([file]) => [file, createHash("sha256").update(readBookAsset(options.bookDir, path.join("images", file))).digest("hex")])
-  hash.update(JSON.stringify(imageEntries))
-
-  // Physical audio identity is checked as well as the active manifest.
-  const audioDir = path.join(options.bookDir, "audio")
-  const audioEntries = collectDirectoryFingerprint(audioDir).sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([file]) => [file, createHash("sha256").update(readBookAsset(options.bookDir, path.join("audio", file))).digest("hex")])
-  hash.update(JSON.stringify(audioEntries))
+  // 6. Active asset references and availability. Entity data above records
+  // immutable hashes/filenames. Retained historical files do not invalidate the
+  // package and are never read just to compute its cache key.
+  const activeAssets = new Set<string>()
+  for (const image of buildImageInventory(options.storage)) {
+    const source = options.storage.getImageMeta(image.id)
+    if (source) activeAssets.add(source.relativePath)
+    for (const language of options.outputLanguages) {
+      const translated = options.storage.getLatestNodeData("image-translation", `${image.id}_tr_${language}`)?.data as { relativePath?: string } | undefined
+      const legacy = options.storage.getImageMeta(`${image.id}_tr_${language}`)
+      const relative = translated?.relativePath ?? legacy?.relativePath
+      if (relative) activeAssets.add(relative)
+    }
+  }
+  for (const language of options.storage.getNodeItemIds("tts")) {
+    const output = options.storage.getLatestNodeData("tts", language)?.data as TTSOutput | undefined
+    for (const entry of output?.entries ?? []) activeAssets.add(path.join("audio", language, entry.fileName))
+  }
+  hash.update(JSON.stringify([...activeAssets].sort().map((file) => [file, bookAssetExists(options.bookDir, file)])))
 
   // 7. Videos directory fingerprint
   const videosDir = path.join(options.bookDir, "videos")
@@ -388,7 +396,7 @@ export async function packageAdtWeb(
   const llmToc = tocRow?.data as TocGenerationOutput | undefined
 
   const easyRead = options.config
-    ? options.config.easy_read?.enabled ? retainedEasyRead(storage, buildEasyReadSourceBlocks(storage, pages)) : undefined
+    ? options.config.easy_read?.enabled ? activeEasyRead(storage, buildEasyReadSourceBlocks(storage, pages)) : undefined
     : storage.getLatestNodeData("easy-read", "book")?.data as EasyReadOutput | undefined
   const easyReadEntries = flattenEasyReadEntries(easyRead)
   const eligibleIds = new Set([...catalog.entries, ...easyReadEntries].map((entry) => entry.id))
@@ -715,7 +723,7 @@ export async function packageAdtWeb(
       if (transRow) {
         const translated = transRow.data as TextCatalogOutput
         const activeIds = new Set([...catalog.entries, ...easyReadEntries].map((entry) => entry.id))
-        for (const e of translated.entries) if (activeIds.has(e.id)) textsMap[e.id] = e.text
+        for (const e of translated.entries) if (activeIds.has(e.id) && !Object.hasOwn(textsMap, e.id)) textsMap[e.id] = e.text
       }
     }
     // Convert any LaTeX in text catalog entries to MathML

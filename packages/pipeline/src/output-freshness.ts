@@ -1,3 +1,4 @@
+import type { CatalogConflict } from "@adt/types"
 import { createHash } from "node:crypto"
 import { OUTPUT_KIND_TO_STAGE, type OutputSummaries, type OutputScopeSummary } from "@adt/types"
 import type {
@@ -88,17 +89,21 @@ export function selectedOutput(status: OutputStatus, selection?: OutputSelection
 
 export function summarizeOutputs(outputs: OutputStatus[]): OutputSummary {
   const unique = new Map(outputs.map((output) => [outputIdentityKey(output.identity), output]))
-  return [...unique.values()].reduce((total, output) => ({
-    updates: total.updates + Number(output.updateNeeded && !output.excluded),
-    warnings: total.warnings + Number(output.warnings.length > 0 && !output.excluded),
-    missing: total.missing + Number(output.missing && !output.excluded),
-  }), { updates: 0, warnings: 0, missing: 0 })
+  const total = { updates: 0, reviews: 0, warnings: 0, missing: 0 }
+  for (const output of unique.values()) {
+    if (output.excluded) continue
+    if (output.missing) total.missing++
+    else if (output.updateNeeded) total.updates++
+    else if (output.protected && output.warnings.some((warning) => !warning.source && warning.reason !== "source-conflict")) total.reviews++
+    else if (output.warnings.length) total.warnings++
+  }
+  return total
 }
 
 /** One projection powers stage, page, section and standalone-group summaries.
  * Optional preparation is reviewed with speech, not unfinished Language work.
  * Its warnings remain visible through consuming audio and inline details. */
-export function summarizeOutputScopes(outputs: OutputStatus[]): OutputSummaries {
+export function summarizeOutputScopes(outputs: OutputStatus[], conflicts: CatalogConflict[] = []): OutputSummaries {
   const scopes: Record<keyof OutputSummaries, Map<string, OutputStatus[]>> = {
     stages: new Map(), pages: new Map(), sections: new Map(), groups: new Map(),
   }
@@ -119,7 +124,12 @@ export function summarizeOutputScopes(outputs: OutputStatus[]): OutputSummaries 
     return { ...summarizeOutputs(unique), applicable: unique.length, current: unique.every((output) => output.current) }
   }
   const project = (scope: keyof OutputSummaries) => Object.fromEntries([...scopes[scope]].map(([key, items]) => [key, summarize(items)]))
-  return { stages: project("stages"), pages: project("pages"), sections: project("sections"), groups: project("groups") }
+  const stages = project("stages")
+  for (const [stage, items] of scopes.stages) {
+    const ids = new Set(items.map((item) => item.identity.id))
+    stages[stage].warnings += conflicts.filter((conflict) => ids.has(conflict.id)).length
+  }
+  return { stages, pages: project("pages"), sections: project("sections"), groups: project("groups") }
 }
 
 /** A warning is not a reason to repeat identical successful work. */
@@ -153,6 +163,14 @@ export function selectedForGeneration(status: OutputStatus, metadata?: OutputMet
   return scope?.retry?.some((identity) => outputIdentityKey(identity) === key) || needsOutputGeneration(status, metadata)
 }
 
+export class OutputPublicationConflict extends Error {
+  readonly code = "OUTPUT_CHANGED"
+  constructor() {
+    super("Output or its inputs changed during generation. Previous output has been preserved.")
+    this.name = "OutputPublicationConflict"
+  }
+}
+
 /** Check the captured inputs, selected membership and target content immediately
  * before publication. A warning already present at planning is not a conflict. */
 export function assertOutputPublication(before: OutputStatus[], after: OutputStatus[], identities: OutputIdentity[]): void {
@@ -164,7 +182,7 @@ export function assertOutputPublication(before: OutputStatus[], after: OutputSta
     const latest = current.get(key)
     if (!captured || !latest || captured.signature !== latest.signature || captured.contentHash !== latest.contentHash ||
       captured.protected !== latest.protected || captured.excluded !== latest.excluded) {
-      throw new Error("Output or its inputs changed during generation. Previous output has been preserved.")
+      throw new OutputPublicationConflict()
     }
   }
 }

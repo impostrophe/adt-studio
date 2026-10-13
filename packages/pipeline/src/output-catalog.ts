@@ -1,24 +1,21 @@
-import { retainedCoreTts, retainedEasyRead } from "./retained-catalog.js"
+import { buildOutputSources, firstCatalogEntries, conflictingCatalogHashes, translatedDisplayEntries } from "./output-sources.js"
+import { retainedCoreTts } from "./retained-catalog.js"
 import { supportsPageBatchedSpeech } from "./speech-batch.js"
-import fs from "node:fs"
-import { createHash } from "node:crypto"
 import { buildImageTranslationConfig } from "./image-translation.js"
 import path from "node:path"
-import type { Storage } from "@adt/storage"
+import { bookAssetExists, type Storage } from "@adt/storage"
 import { createPromptEngine } from "@adt/llm"
-import { isTtsExcluded, voiceSlotEntryId, type AppConfig, type TextCatalogEntry, type TextCatalogOutput, type EasyReadOutput, type ImageCaptioningOutput, type TTSOutput, type WordTimestampOutput, type OutputStatus, type OutputMetadata, type TranslatedImageAsset } from "@adt/types"
-import { buildTextCatalogSnapshot } from "./text-catalog.js"
-import { buildImageInventory } from "./catalog-reconciliation.js"
+import { isTtsExcluded, voiceSlotEntryId, type AppConfig, type TextCatalogEntry, type TextCatalogOutput, type ImageCaptioningOutput, type TTSOutput, type WordTimestampOutput, type OutputStatus, type OutputMetadata, type TranslatedImageAsset } from "@adt/types"
 import { buildCaptionConfig } from "./image-captioning.js"
 import { buildCatalogTranslationConfig, getTargetLanguages, translationInputSignature } from "./catalog-translation.js"
-import { buildEasyReadConfig, buildEasyReadSourceBlocks, easyReadInputSignature, flattenEasyReadEntries, indexEasyReadEntries } from "./easy-read.js"
-import { buildCoreTtsPreparationConfig, buildCoreTtsSourceContext, resolveCoreTtsSpeechCatalog, coreTtsInputBasis, getCoreTtsCatalog, loadCoreTtsProfiles, resolveCoreTtsProfile } from "./core-tts.js"
+import { conflictingEasyReadHashes, buildEasyReadConfig, easyReadInputSignature, flattenEasyReadEntries, indexEasyReadEntries } from "./easy-read.js"
+import { buildCoreTtsPreparationConfig, buildCoreTtsSourceContext, resolveCoreTtsSpeechCatalog, coreTtsInputBasis, loadCoreTtsProfiles, resolveCoreTtsProfile } from "./core-tts.js"
 import { normalizeLocale, getBaseLanguage } from "./language-context.js"
 import { deriveOutputStatus, inputSignature, outputIdentityKey, withOutputLocations } from "./output-freshness.js"
 import { speechPageId, isSpeakableText, computePageSpeechInputSignature, computeSpeechCacheKey, loadVoicesConfig, loadSpeechInstructions, resolveSpeechVoice, resolveSpeechFormat, resolveInstructions, stripEmojis, elevenLabsVoiceSettingsFromConfig, findAdjacentSpeechText } from "./speech.js"
 
-export function captionInputSignature(options: { assetHash: string | null; pageImage: string | null; language: string; summary?: string; config: ReturnType<typeof buildCaptionConfig>; prompt: string }): string {
-  return inputSignature({ image: options.assetHash, page: options.pageImage, language: options.language,
+export function captionInputSignature(options: { language: string; summary?: string; config: ReturnType<typeof buildCaptionConfig>; prompt: string }): string {
+  return inputSignature({ language: options.language,
     summary: options.summary, prompt: options.prompt, model: options.config.modelId,
     userPrompt: options.config.userPrompt, gradeLevel: options.config.gradeLevel })
 }
@@ -30,37 +27,51 @@ export function readOutputCatalog(options: {
   onConflicts?: (conflicts: import("@adt/types").CatalogConflict[]) => void
 }): OutputStatus[] {
   const { storage, config, bookDir, promptsDir, configDir } = options
-  // Request-local only: verify bytes again on the next projection/publication.
-  const assetHashes = new Map<string, string | null>()
-  const readAssetHash = (relativePath: string) => assetContentHash(bookDir, relativePath, assetHashes)
-  const pageImages = new Map<string, string | null>()
+  const assets = new Map<string, boolean>()
+  const available = (relative: string) => {
+    if (!assets.has(relative)) assets.set(relative, bookAssetExists(bookDir, relative))
+    return assets.get(relative)!
+  }
   const sourceLanguage = normalizeLocale(config.editing_language ?? (storage.getLatestNodeData("metadata", "book")?.data as { language_code?: string })?.language_code ?? "en")
   const languages = [...new Set([sourceLanguage, ...(config.output_languages ?? []).map(normalizeLocale)])]
   const engine = createPromptEngine([path.join(bookDir, "prompts"), promptsDir], { basePromptModelId: config.base_prompt_model })
+  const fingerprints = new Map<string, string>()
   const prompt = (name: string, model: string) => {
-    try { return engine.fingerprint(name, { modelId: model }) }
-    catch { return inputSignature({ missingPrompt: name, model }) }
+    const key = JSON.stringify([name, model])
+    if (!fingerprints.has(key)) {
+      try { fingerprints.set(key, engine.fingerprint(name, { modelId: model })) }
+      catch { fingerprints.set(key, inputSignature({ missingPrompt: name, model })) }
+    }
+    return fingerprints.get(key)!
+  }
+  const { inventory, catalog, entries: sources, easyBlocks, easy } = buildOutputSources(storage, config)
+  const conflictedIds = new Set(catalog.conflicts?.map((conflict) => conflict.id))
+  const inheritSourceConflicts = (status: OutputStatus, ids: string[]) => {
+    for (const id of new Set(ids)) if (!status.excluded && conflictedIds.has(id) && !status.warnings.some((warning) => warning.conflictId === id)) {
+      status.current = false
+      status.warnings.push({ reason: "source-conflict", conflictId: id })
+    }
+    return status
   }
   const dependencies = new Map<string, string[]>()
   const statuses: OutputStatus[] = []
   const byKey = new Map<string, OutputStatus>()
-  const add = (status: OutputStatus) => { statuses.push(status); byKey.set(outputIdentityKey(status.identity), status); return status }
+  const add = (status: OutputStatus) => {
+    if (["translation", "preparation"].includes(status.identity.kind)) inheritSourceConflicts(status, [status.identity.id])
+    if (status.identity.kind === "easy-read") inheritSourceConflicts(status, easyBlocks.filter((block) => block.entries.some((entry) => entry.easyReadId === status.identity.id)).flatMap((block) => block.entries.map((entry) => entry.sourceId)))
+    statuses.push(status); byKey.set(outputIdentityKey(status.identity), status); return status
+  }
   const find = (kind: OutputStatus["identity"]["kind"], id: string, language?: string) => byKey.get(outputIdentityKey({ kind, id, language }))
-  const inventory = buildImageInventory(storage)
   const decorativeImages = new Set<string>()
   const captionConfig = buildCaptionConfig(config)
+  const captionsByPage = new Map<string, ImageCaptioningOutput | undefined>()
   const summary = (storage.getLatestNodeData("book-summary", "book")?.data as { summary?: string })?.summary
   for (const image of inventory) {
-    const previous = image.pageId ? (storage.getLatestNodeData("image-captioning", image.pageId)?.data as ImageCaptioningOutput | undefined)?.captions.find((entry) => entry.imageId === image.id) : undefined
+    if (image.pageId && !captionsByPage.has(image.pageId)) captionsByPage.set(image.pageId, storage.getLatestNodeData("image-captioning", image.pageId)?.data as ImageCaptioningOutput | undefined)
+    const previous = image.pageId ? captionsByPage.get(image.pageId)?.captions.find((entry) => entry.imageId === image.id) : undefined
     if (previous?.decorative) decorativeImages.add(image.id)
-    if (image.pageId && !pageImages.has(image.pageId)) {
-      let hash: string | null = null
-      try { hash = inputSignature(storage.getPageImageBase64(image.pageId)) } catch { /* This input alone is unavailable. */ }
-      pageImages.set(image.pageId, hash)
-    }
-    const pageImage = image.pageId ? pageImages.get(image.pageId) ?? null : null
     const status = deriveOutputStatus({ identity: { kind: "caption", id: image.id },
-      signature: captionInputSignature({ assetHash: image.assetHash, pageImage, language: sourceLanguage, summary, config: captionConfig, prompt: prompt(captionConfig.promptName, captionConfig.modelId) }),
+      signature: captionInputSignature({ language: sourceLanguage, summary, config: captionConfig, prompt: prompt(captionConfig.promptName, captionConfig.modelId) }),
       content: previous ? { caption: previous.caption, decorative: previous.decorative === true } : undefined,
       metadata: previous, usable: !!previous && (previous.decorative === true || !!previous.caption.trim()),
     })
@@ -72,36 +83,33 @@ export function readOutputCatalog(options: {
     const previous = storage.getLatestNodeData("image-translation", itemId)?.data as TranslatedImageAsset | undefined
     const legacy = storage.getImageMeta(itemId)
     const relativePath = previous?.relativePath ?? legacy?.relativePath
-    const actual = relativePath ? readAssetHash(relativePath) : null
-    const hash = previous?.hash ?? actual ?? undefined
+    const usable = !!relativePath && available(relativePath)
+    const hash = previous?.hash ?? relativePath
     add({ ...deriveOutputStatus({ identity: { kind: "image-translation", id: image.id, language },
-      signature: inputSignature({ image: image.assetHash, sourceLanguage, language, model: imageConfig.modelId, prompt: prompt(config.image_translation?.prompt ?? "image_translation", imageConfig.modelId) }),
-      content: hash, metadata: previous, usable: !!actual && (!hash || actual.startsWith(hash)),
+      signature: inputSignature({ sourceLanguage, language, model: imageConfig.modelId, prompt: prompt(config.image_translation?.prompt ?? "image_translation", imageConfig.modelId) }),
+      content: hash, metadata: previous, usable,
       excluded: !imageConfig.enabled || !imageConfig.selectedImageIds.includes(image.id),
     }), locations: image.locations, pageIds: image.pageIds, sectionIds: image.sectionIds, group: image.glossary ? "glossary" : undefined })
   }
-  const snapshot = buildTextCatalogSnapshot(storage, storage.getPages())
-  options.onConflicts?.(snapshot.conflicts ?? [])
-  const hasAuthored = storage.getPages().some((page) => storage.getLatestNodeData("web-rendering", page.pageId)) || storage.getLatestNodeData("glossary", "book") || storage.getLatestNodeData("quiz-generation", "book")
-  const catalog = hasAuthored ? snapshot : (storage.getLatestNodeData("text-catalog", "book")?.data as TextCatalogOutput | undefined) ?? snapshot
-  // Missing captions still imply expected dependent work for actual consumers.
-  const sources = [...catalog.entries]
-  for (const image of inventory) {
-    if (!decorativeImages.has(image.id) && image.catalogLocations.length && !sources.some((entry) => entry.id === image.id)) sources.push({ id: image.id, text: "", locations: image.catalogLocations })
-  }
+  options.onConflicts?.(catalog.conflicts ?? [])
   const easyConfig = buildEasyReadConfig(config, sourceLanguage)
   easyConfig.promptSignature = prompt(easyConfig.promptName, easyConfig.modelId)
-  const easyBlocks = buildEasyReadSourceBlocks(storage, storage.getPages())
+  const easyConflicts = conflictingEasyReadHashes(easy)
   const easySources = indexEasyReadEntries({ blocks: easyBlocks, generatedAt: "" })
-  const easy = retainedEasyRead(storage, easyBlocks)
   const easyById = new Map(flattenEasyReadEntries(easy).map((entry) => [entry.id, entry]))
   if (easyConfig.enabled) for (const entry of flattenEasyReadEntries({ blocks: easyBlocks, generatedAt: "" })) {
     const previous = easyById.get(entry.id)
     const source = { id: entry.id, text: previous?.text ?? "", locations: entry.locations }
-    sources.push(source)
-    add(withOutputLocations(deriveOutputStatus({ identity: { kind: "easy-read", id: entry.id, language: sourceLanguage },
+    const status = add(withOutputLocations(deriveOutputStatus({ identity: { kind: "easy-read", id: entry.id, language: sourceLanguage },
       signature: easyReadInputSignature(easyBlocks, entry.id.slice(0, -"_easy_read".length), easyConfig), content: previous?.text, metadata: previous, usable: !!previous?.text.trim(),
     }), { ...source, text: easySources.get(entry.id)!.originalText }))
+    if (easyConflicts.has(entry.id)) {
+      status.contentHash = easyConflicts.get(entry.id)!
+      status.current = false
+      status.protected = true
+      status.updateNeeded = false
+      status.warnings.push({ reason: "output-conflict", conflictId: entry.id })
+    }
   }
   const translationConfig = buildCatalogTranslationConfig(config, sourceLanguage)
   translationConfig.promptSignature = prompt(translationConfig.promptName, translationConfig.modelId)
@@ -109,15 +117,22 @@ export function readOutputCatalog(options: {
   const sourceStatus = (entry: TextCatalogEntry) => find("caption", entry.id) ?? find("easy-read", entry.id, sourceLanguage)
   for (const language of getTargetLanguages(languages, sourceLanguage)) {
     const prior = ((storage.getLatestNodeData("text-catalog-translation", language) ?? storage.getLatestNodeData("text-catalog-translation", language.replace("-", "_")))?.data as TextCatalogOutput | undefined)?.entries ?? []
-    const byId = new Map(prior.map((entry) => [entry.id, entry]))
-    const display: TextCatalogEntry[] = []
+    const byId = firstCatalogEntries(prior)
+    const conflicts = conflictingCatalogHashes(prior)
+    const display = translatedDisplayEntries(storage, language, sources)
     for (const source of sources) {
       const previous = byId.get(source.id)
       const upstream = sourceStatus(source)
-      add(withOutputLocations(deriveOutputStatus({ identity: { kind: "translation", id: source.id, language },
+      const status = add(withOutputLocations(deriveOutputStatus({ identity: { kind: "translation", id: source.id, language },
         signature: translationInputSignature(source, language, translationConfig), content: previous?.text, metadata: previous, usable: !!previous?.text.trim(), upstream: upstream ? [upstream] : [],
       }), source))
-      display.push({ ...source, text: previous?.text ?? "" })
+      if (conflicts.has(source.id)) {
+        status.contentHash = conflicts.get(source.id)!
+        status.current = false
+        status.protected = true
+        status.updateNeeded = false
+        status.warnings.push({ reason: "output-conflict", conflictId: source.id })
+      }
     }
     displays.set(language, display)
   }
@@ -134,6 +149,7 @@ export function readOutputCatalog(options: {
     const core = retainedCoreTts(storage, language, entries.map((entry) => entry.id))
     const coreById = new Map((core?.entries ?? []).map((entry) => [entry.id, entry]))
     const audio = ((storage.getLatestNodeData("tts", language) ?? storage.getLatestNodeData("tts", language.replace("-", "_")))?.data as TTSOutput | undefined)?.entries ?? []
+    const timings = ((storage.getLatestNodeData("tts-timestamps", language) ?? storage.getLatestNodeData("tts-timestamps", language.replace("-", "_")))?.data as WordTimestampOutput | undefined)?.entries
     const effectiveCore = resolveCoreTtsSpeechCatalog({ entries, language, config: preparation, profile: resolveCoreTtsProfile(language, profiles), previous: core, sourceContext: language === sourceLanguage ? undefined : sourceContext })
     const effectiveById = new Map(effectiveCore.entries.map((entry) => [entry.id, entry]))
     const pageOf = (entry: TextCatalogEntry) => speechPageId(entry.id, entry.locations?.flatMap((location) => location.pageId ? [location.pageId] : []))
@@ -155,6 +171,7 @@ export function readOutputCatalog(options: {
         const status = getBaseLanguage(language) === getBaseLanguage(sourceLanguage) ? sourceStatus(entry) : find("translation", entry.id, language)
         return status ? [outputIdentityKey(status.identity)] : []
       })
+      inheritSourceConflicts(prepStatus, (input.enabled_transformations.length ? entries.slice(Math.max(0, index - 1), index + 2) : [source]).map((entry) => entry.id))
       if (input.enabled_transformations.length && language !== sourceLanguage) contextWarnings.push(outputIdentityKey({ kind: "preparation", id: source.id, language: sourceLanguage }))
       dependencies.set(outputIdentityKey(prepStatus.identity), contextWarnings)
       for (const voiceSlot of ["primary", "secondary"] as const) {
@@ -175,16 +192,14 @@ export function readOutputCatalog(options: {
           speechSignature = computePageSpeechInputSignature({ entries: context, voice: voice.voice, model: voice.model, instructions: resolveInstructions(language, instructions), provider: voice.provider, geminiTemperature: config.speech?.temperature, geminiSeed: config.speech?.seed })
         }
         let usable = false
-        let actualAudioHash: string | undefined
         if (prior && path.basename(prior.fileName) === prior.fileName) {
           const file = path.join(bookDir, "audio", language, prior.fileName)
-          actualAudioHash = readAssetHash(path.relative(bookDir, file)) ?? readAssetHash(path.join("audio", language.replace("-", "_"), prior.fileName)) ?? undefined
-          usable = !!actualAudioHash && (!prior.audioHash || actualAudioHash === prior.audioHash)
+          usable = available(path.relative(bookDir, file)) || available(path.join("audio", language.replace("-", "_"), prior.fileName))
         }
         const audioMetadata = prior ? { ...prior, source: prior.provider === "manual" ? "manual" as const : prior.source,
-          input: prior.speechInputSignature ? { signature: prior.speechInputSignature, contentHash: inputSignature(prior.audioHash ?? actualAudioHash ?? prior.fileName), references: [] } : prior.input } : undefined
+          input: prior.speechInputSignature ? { signature: prior.speechInputSignature, contentHash: inputSignature(prior.audioHash ?? prior.fileName), references: [] } : prior.input } : undefined
         const audioStatus = add(withOutputLocations(deriveOutputStatus({ identity: { kind: "audio", id: source.id, language, voiceSlot }, signature: speechSignature,
-          content: prior?.audioHash ?? actualAudioHash ?? prior?.fileName, metadata: audioMetadata, usable, excluded: speechExcluded, upstream: [prepStatus],
+          content: prior?.audioHash ?? prior?.fileName, metadata: audioMetadata, usable, excluded: speechExcluded, upstream: [prepStatus],
         }), source))
         let speechContext = [source.id]
         if (config.speech?.batch_by_page && voice.provider === "gemini" && supportsPageBatchedSpeech(language) && pageId && !source.id.endsWith("_easy_read")) {
@@ -199,11 +214,11 @@ export function readOutputCatalog(options: {
         }
         dependencies.set(outputIdentityKey(audioStatus.identity), speechContext.map((id) => outputIdentityKey({ kind: "preparation", id, language })))
         if (config.speech?.word_highlighting) {
-          const timing = ((storage.getLatestNodeData("tts-timestamps", language) ?? storage.getLatestNodeData("tts-timestamps", language.replace("-", "_")))?.data as WordTimestampOutput | undefined)?.entries[voiceSlotEntryId(source.id, voiceSlot)]
+          const timing = timings?.[voiceSlotEntryId(source.id, voiceSlot)]
           add(withOutputLocations(deriveOutputStatus({ identity: { kind: "timestamps", id: source.id, language, voiceSlot },
-            signature: timestampInputSignature(prior?.audioHash ?? actualAudioHash ?? prior?.fileName ?? null, language, speechEntries[index].text),
+            signature: timestampInputSignature(prior?.audioHash ?? prior?.fileName ?? null, language, speechEntries[index].text),
             content: timing ? { words: timing.words, duration: timing.duration } : undefined, metadata: timing,
-            usable: usable && !!timing?.words.length && (!timing.audioHash || timing.audioHash === (prior?.audioHash ?? actualAudioHash)),
+            usable: usable && !!timing?.words.length && (!timing.audioHash || timing.audioHash === prior?.audioHash),
             excluded: speechExcluded, upstream: [audioStatus],
           }), source))
         }
@@ -227,20 +242,4 @@ export function readOutputCatalog(options: {
 
 export function timestampInputSignature(audioHash: string | null, language: string, text: string): string {
   return inputSignature({ audioHash, language: getBaseLanguage(language), prompt: text, model: "whisper-1" })
-}
-
-/** Read-only physical verification. A path or cached database hash is not proof
- * that the retained bytes are usable. Never follow an asset outside the book. */
-function assetContentHash(bookDir: string, relativePath: string, hashes: Map<string, string | null>): string | null {
-  try {
-    const root = fs.realpathSync(bookDir)
-    const file = fs.realpathSync(path.resolve(root, relativePath))
-    const relative = path.relative(root, file)
-    if (relative.startsWith("..") || path.isAbsolute(relative)) return null
-    if (hashes.has(file)) return hashes.get(file)!
-    const bytes = fs.readFileSync(file)
-    const hash = bytes.length ? createHash("sha256").update(bytes).digest("hex") : null
-    hashes.set(file, hash)
-    return hash
-  } catch { return null }
 }

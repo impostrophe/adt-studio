@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import { z } from "zod"
 import type { Storage } from "@adt/storage"
 import { WebRenderingOutput, PageSectioningOutput } from "@adt/types"
+import { stampRenderedOwner, resolveRenderedSection } from "@adt/pipeline"
 import { createLLMModel } from "@adt/llm"
 import type { AgentCredentials } from "./credentials.js"
 import { buildSectioningSectionFromHtml } from "./tools/build-sectioning.js"
@@ -151,6 +152,8 @@ export async function mirrorLayout(
         target.pageId,
         target.sectionIndex,
       )
+      const renderingVersion = storage.getLatestNodeData("web-rendering", target.pageId)?.version
+      const sectioningVersion = storage.getLatestNodeData("page-sectioning", target.pageId)?.version
       const targetIds = extractDataIds(targetHtml)
 
       const { object } = await model.generateObject<
@@ -179,7 +182,7 @@ export async function mirrorLayout(
         },
       })
 
-      const cleaned = stripHtmlFence(object.content)
+      let cleaned = stripHtmlFence(object.content)
       if (!cleaned.includes("<section")) {
         results.push({
           ...target,
@@ -203,14 +206,6 @@ export async function mirrorLayout(
         continue
       }
 
-      const updated: WebRenderingOutput = {
-        sections: rendering.sections.map((s) =>
-          s.sectionIndex === target.sectionIndex
-            ? { ...s, html: cleaned, reasoning: object.reasoning || s.reasoning }
-            : s,
-        ),
-      }
-
       // Rebuild the sectioning tree from the rewritten HTML so it stays in sync
       // with the section's markup — updateSection in book-tools does the same.
       // Without this, a mirror that legitimately drops elements (allowed up to
@@ -221,7 +216,7 @@ export async function mirrorLayout(
         (s) => s.sectionIndex === target.sectionIndex,
       )
       const sectioning = loadSectioning(storage, target.pageId)
-      const oldSection = sectioning.sections[target.sectionIndex]
+      const oldSection = targetSection ? resolveRenderedSection(targetSection, sectioning.sections) : undefined
       // sectionIds are allocated once and never reused, so one cannot be
       // derived from an array position — a guessed id would likely name a
       // *different* section, and it names this section's HTML file in every
@@ -229,10 +224,19 @@ export async function mirrorLayout(
       // sync; say so rather than guess.
       if (!oldSection) {
         throw new Error(
-          `Cannot mirror onto section ${target.sectionIndex} of ${target.pageId}: it has a rendering entry but no sectioning row, so its sectionId is unknown. Re-run the storyboard render for this page to bring the two back in sync.`,
+          `Cannot mirror onto section ${target.sectionIndex} of ${target.pageId}: it has a rendering entry but no sectioning row, so its sectionId is unknown. Restore matching sectioning/rendering versions before editing this section.`,
         )
       }
       const sectionId = oldSection.sectionId
+      cleaned = stampRenderedOwner(cleaned, sectionId)
+      const updated: WebRenderingOutput = {
+        sections: rendering.sections.map((s) =>
+          s.sectionIndex === target.sectionIndex
+            ? { ...s, sectionId, html: cleaned, reasoning: object.reasoning || s.reasoning }
+            : s,
+        ),
+      }
+
       const sectionType =
         targetSection?.sectionType ?? oldSection.sectionType ?? "content"
       const newSectioningSection = buildSectioningSectionFromHtml({
@@ -246,16 +250,17 @@ export async function mirrorLayout(
       })
       const updatedSectioning: PageSectioningOutput = {
         ...sectioning,
-        sections: sectioning.sections.map((s, i) =>
-          i === target.sectionIndex ? newSectioningSection : s,
+        sections: sectioning.sections.map((s) =>
+          s.sectionId === sectionId ? newSectioningSection : s,
         ),
       }
-      storage.putNodeData("page-sectioning", target.pageId, updatedSectioning)
-      const version = storage.putNodeData(
-        "web-rendering",
-        target.pageId,
-        updated,
-      )
+      const version = storage.transaction(() => {
+        if (storage.getLatestNodeData("web-rendering", target.pageId)?.version !== renderingVersion || storage.getLatestNodeData("page-sectioning", target.pageId)?.version !== sectioningVersion) {
+          throw new Error("Section changed while mirroring. Refresh before trying again.")
+        }
+        storage.putNodeData("page-sectioning", target.pageId, updatedSectioning)
+        return storage.putNodeData("web-rendering", target.pageId, updated)
+      })
       results.push({
         ...target,
         ok: true,

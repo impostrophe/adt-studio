@@ -75,6 +75,10 @@ describe("retained rendered ownership", () => {
     expect(renderedSectionId(rendering('<!doctype html><html><head><title>Page</title></head><body><main><section data-section-id="A">Text</section></main></body></html>'))).toBe("A")
     expect(renderedSectionId(rendering('<div id="content">Positioned output</div>', "A"))).toBe("A")
   })
+  it("trusts a consistent stored owner covering decorative siblings", () => {
+    expect(renderedSectionId(rendering('<section data-section-id="A">Text</section><div class="decoration"></div>', "A"))).toBe("A")
+    expect(renderedSectionId(rendering('<section data-section-id="A">Text</section><div></div>', "B"))).toBeUndefined()
+  })
   it("does not let a descendant owner claim sibling content or contradictory metadata", () => {
     expect(renderedSectionId(rendering('<section><p>Unowned question</p><div data-section-id="B">Other content</div></section>'))).toBeUndefined()
     expect(renderedSectionId(rendering('<section data-section-id="A">A</section>', "B"))).toBeUndefined()

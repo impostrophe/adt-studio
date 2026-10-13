@@ -1,5 +1,5 @@
 import { catalogOutputs } from "../services/catalog-output-service.js"
-import { reconcileSpeechInputs, loadCoreTtsProfiles, scopeLegacyActivityIds, retainedEasyRead, buildEasyReadSourceBlocks } from "@adt/pipeline"
+import { reconcileSpeechInputs, loadCoreTtsProfiles, scopeLegacyActivityIds, activeEasyRead, buildEasyReadSourceBlocks } from "@adt/pipeline"
 import fs from "node:fs"
 import path from "node:path"
 import { createHash } from "node:crypto"
@@ -234,7 +234,7 @@ function buildTextsMap(
     if (catalog?.entries) {
       for (const e of catalog.entries) textsMap[e.id] = e.text
     }
-    const easyReadEntries = easyReadEnabled ? flattenEasyReadEntries(retainedEasyRead(storage, buildEasyReadSourceBlocks(storage, storage.getPages()))) : []
+    const easyReadEntries = easyReadEnabled ? flattenEasyReadEntries(activeEasyRead(storage, buildEasyReadSourceBlocks(storage, storage.getPages()))) : []
     for (const e of easyReadEntries) textsMap[e.id] = e.text
   } else {
     const legacyLang = normalizedLang.replace("-", "_")
@@ -244,9 +244,9 @@ function buildTextsMap(
     if (transRow) {
       const translated = transRow.data as TextCatalogOutput
       const active = new Set((catalog?.entries ?? []).map((entry) => entry.id))
-      const easy = retainedEasyRead(storage, buildEasyReadSourceBlocks(storage, storage.getPages()))
+      const easy = activeEasyRead(storage, buildEasyReadSourceBlocks(storage, storage.getPages()))
       if (easyReadEnabled) for (const entry of flattenEasyReadEntries(easy)) active.add(entry.id)
-      for (const e of translated.entries) if (active.has(e.id)) textsMap[e.id] = e.text
+      for (const e of translated.entries) if (active.has(e.id) && !Object.hasOwn(textsMap, e.id)) textsMap[e.id] = e.text
     }
   }
 
@@ -427,7 +427,7 @@ function buildPreviewConfig(
   }
 
   const hasSignLanguageVideos = storage.getSignLanguageVideos().some((v) => v.sectionId !== null)
-  const hasEasyRead = easyReadEnabled && flattenEasyReadEntries(retainedEasyRead(storage, buildEasyReadSourceBlocks(storage, storage.getPages()))).length > 0
+  const hasEasyRead = easyReadEnabled && flattenEasyReadEntries(activeEasyRead(storage, buildEasyReadSourceBlocks(storage, storage.getPages()))).length > 0
 
   // Available languages = the source language + every translation actually
   // present in the DB. We restrict against the book's configured
@@ -1104,45 +1104,24 @@ export function createAdtPreviewRoutes(
       }
       const ownerPageId = parsedSectionId.pageId
 
-      const renderRow = storage.getLatestNodeData("web-rendering", ownerPageId)
-      if (!renderRow) {
-        throw new HTTPException(404, { message: `No rendering data for page: ${ownerPageId}` })
-      }
-
-      const parsed = WebRenderingOutput.safeParse(renderRow.data)
-      if (!parsed.success) {
-        throw new HTTPException(500, { message: "Invalid rendering data" })
-      }
-
-      // Get sectioning to look up sectionId → sectionIndex mapping. The id's
-      // sequence number is NOT its array position (ids are allocated once and
-      // never reused), so there is no positional fallback — an unresolvable id
-      // is a 404 rather than a guess that would serve a different section.
-      const sectioning = getRenderSectioning(storage, ownerPageId)
-      const targetSectionIndex = sectioning
-        ? sectioning.sections.findIndex((s) => s.sectionId === pageId)
-        : -1
-      const storedSection = parsed.data.sections.find((s) => s.sectionIndex === targetSectionIndex)
-      const renderedSection = storedSection ? scopeLegacyActivityIds(storedSection, pageId) : undefined
-
-      if (!renderedSection || targetSectionIndex < 0) {
+      const item = resolveReadingOrder(storage).items.find((entry) => entry.kind === "section" && entry.id === pageId && entry.pageId === ownerPageId)
+      if (!item || item.kind !== "section") {
         throw new HTTPException(404, { message: `Section not found: ${pageId}` })
       }
+      const renderedSection = scopeLegacyActivityIds(item.rendering, pageId)
 
       // Determine page index from manifest (includes quiz pages)
       const manifest = buildPagesManifest(storage)
       const manifestIndex = manifest.findIndex((e) => e.section_id === pageId)
       const previewBundleVersion = getPreviewContentVersion(storage, webAssetsDir)
 
-      const sectionMeta = sectioning
-        ? sectioning.sections[targetSectionIndex]
-        : undefined
+      const sectionMeta = item.section
 
       // Step-by-step override: an enabled editable activity replaces the
       // stored LLM HTML with the stepper shell, matching packaged output.
       const stepperActivity = enabledEditableActivity(
         readEditableActivities(storage, ownerPageId),
-        targetSectionIndex,
+        item.sectionIndex,
         renderedSection.sectionType,
       )
 

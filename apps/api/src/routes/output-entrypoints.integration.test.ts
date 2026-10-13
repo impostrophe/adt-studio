@@ -7,6 +7,7 @@ import { loadBookConfig, readOutputCatalog, buildEasyReadSourceBlocks, outputEvi
 import { createTTSRoutes } from "./tts.js"
 import { createEasyReadRoutes } from "./easy-read.js"
 import type { TTSOutput } from "@adt/types"
+import { errorHandler } from "../middleware/error-handler.js"
 
 let root: string
 const label = "entrypoints"
@@ -108,8 +109,11 @@ it.each(["abort", "prompt", "model"])("AC-9/16 direct Easy Read rejects obsolete
     if (change === "model") fs.writeFileSync(configPath, "easy_read:\n  enabled: true\n  model: ollama:other-model\n")
     return Response.json({ id: "test", object: "chat.completion", created: 0, model: "test", choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify({ texts: ["Obsolete result"] }) }, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })
   })
-  const response = await createEasyReadRoutes(root, prompts).request(`/books/${label}/easy-read/regenerate`, { method: "POST", signal: controller.signal })
-  expect(response.ok).toBe(false)
+  const app = createEasyReadRoutes(root, prompts)
+  app.onError(errorHandler)
+  const response = await app.request(`/books/${label}/easy-read/regenerate`, { method: "POST", signal: controller.signal })
+  if (change === "abort") expect(response.ok).toBe(false)
+  else expect(response.status).toBe(409)
   const reopened = storage()
   expect(reopened.getLatestNodeData("easy-read", "book")).toBeNull()
   reopened.close()

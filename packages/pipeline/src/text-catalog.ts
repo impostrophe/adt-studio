@@ -19,7 +19,7 @@ import {
 } from "@adt/types"
 import type { Storage, PageData } from "@adt/storage"
 import { getGlossaryItemTextId } from "./glossary.js"
-import { getRenderSectioning, renderedSectionId, resolveRenderedSection } from "./render-sectioning.js"
+import { withLegacyFixedLayoutOwnership, getRenderSectioning, renderedSectionId, resolveRenderedSection } from "./render-sectioning.js"
 
 /**
  * Like DomUtils.textContent but skips the children of any <script>/<style>
@@ -252,7 +252,7 @@ export function buildTextCatalogSnapshot(storage: Storage, pages: PageData[]): T
     const captionMap = loadCaptionMap(storage, page.pageId, extractImageIds(parsed.data.sections.map((section) => section.html)))
     entries.push(...extractPageEntries(
       page.pageId,
-      parsed.data,
+      withLegacyFixedLayoutOwnership(storage, page.pageId, parsed.data),
       captionMap,
       sectioning
     ))

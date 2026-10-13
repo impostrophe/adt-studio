@@ -9,8 +9,8 @@ describe("catalog output freshness", () => {
     const protectedOutput = deriveOutputStatus({ identity: { ...identity, id: "manual" }, signature: "new", content: "manuel", usable: true, metadata: { source: "manual" } })
     const preparation = deriveOutputStatus({ identity: { kind: "preparation", id: "optional", language: "en" }, signature: "a", content: "fallback", usable: true, fallback: "failed", metadata: { source: "ai", input: outputEvidence("a", "fallback") } })
     const result = summarizeOutputScopes([missing, missing, stale, protectedOutput, preparation, { ...missing, excluded: true, identity: { ...identity, id: "pruned" } }])
-    expect(result.stages.translate).toEqual({ applicable: 3, current: false, updates: 1, warnings: 1, missing: 1 })
-    expect(result.pages.p1).toEqual({ applicable: 1, current: false, updates: 0, warnings: 0, missing: 1 })
+    expect(result.stages.translate).toEqual({ applicable: 3, current: false, updates: 1, reviews: 1, warnings: 0, missing: 1 })
+    expect(result.pages.p1).toEqual({ applicable: 1, current: false, updates: 0, reviews: 0, warnings: 0, missing: 1 })
     expect(result.sections.s2).toEqual(result.pages.p1)
     expect(result.groups.glossary).toEqual(result.pages.p1)
   })
@@ -48,7 +48,7 @@ describe("catalog output freshness", () => {
 
   it("counts each output once in each applicable category and excludes pruned work", () => {
     const status = deriveOutputStatus({ identity, signature: "new", content: null, usable: false, fallback: "missing" })
-    expect(summarizeOutputs([status, status, { ...status, identity: { ...identity, id: "excluded" }, excluded: true }])).toEqual({ updates: 0, warnings: 1, missing: 1 })
+    expect(summarizeOutputs([status, status, { ...status, identity: { ...identity, id: "excluded" }, excluded: true }])).toEqual({ updates: 0, reviews: 0, warnings: 0, missing: 1 })
     expect(selectedOutput({ ...status, pageIds: ["pg001"] }, { pageIds: ["pg002"] })).toBe(false)
     expect(selectedOutput({ ...status, sectionIds: ["stable-section"] }, { sectionIds: ["stable-section"] })).toBe(true)
   })

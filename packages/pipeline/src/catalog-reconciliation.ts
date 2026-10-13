@@ -1,11 +1,12 @@
 import { TTSOutput, WordTimestampOutput, voiceSlotEntryId } from "@adt/types"
 import { parseDocument, DomUtils } from "htmlparser2"
-import { publishSpeechOutput, readBookAsset, type Storage } from "@adt/storage"
+import { publishSpeechOutput, bookAssetExists, type Storage } from "@adt/storage"
 import { WebRenderingOutput, type TextCatalogOutput, type GlossaryOutput, type SectionRendering, type OutputLocation } from "@adt/types"
 import { buildTextCatalogSnapshot } from "./text-catalog.js"
 import { inputSignature } from "./output-freshness.js"
+import { rewriteRenderedIdentityReferences } from "./rendered-identity.js"
 import { extractImageIds } from "./image-captioning.js"
-import { getRenderSectioning, renderedSectionId, resolveRenderedSection } from "./render-sectioning.js"
+import { withLegacyFixedLayoutOwnership, getRenderSectioning, renderedSectionId, resolveRenderedSection } from "./render-sectioning.js"
 
 /** Assign newly generated activity leaves real stored identities once. Reading
  * order is never used as identity. Existing authored data IDs are untouched. */
@@ -13,37 +14,36 @@ export function assignActivityIds(html: string, allocate: (oldId: string) => str
   const doc = parseDocument(html)
   const elements = DomUtils.findAll((element) => element.type === "tag" && element.attribs?.["data-id"]?.startsWith("activity_gen_"), doc.children)
   if (elements.length === 0) return html
-  const seen = new Set<string>()
+  const assigned = new Map<string, string>()
   for (const element of elements) {
     const id = element.attribs["data-id"]
-    if (seen.has(id)) throw new Error(`Conflicting activity data ID: ${id}`)
-    seen.add(id)
-    element.attribs["data-id"] = allocate(id)
+    // Repeated legacy references keep one scoped identity. Divergent text is
+    // reported by the ordinary catalog conflict projection, never a book-wide
+    // migration error or a positional reassignment of retained corrections.
+    if (!assigned.has(id)) assigned.set(id, allocate(id))
+    element.attribs["data-id"] = assigned.get(id)!
   }
   return DomUtils.getOuterHTML(doc)
 }
 
-export function reconcileActivityIds(storage: Storage): void {
-  for (const page of storage.getPages()) {
-    const row = storage.getLatestNodeData("web-rendering", page.pageId)
-    const parsed = WebRenderingOutput.safeParse(row?.data)
-    if (!parsed.success) continue
-    let changed = false
-    const sections = parsed.data.sections.map((section) => {
-      const owner = renderedSectionId(section)
-      if (!owner) return section
-      const next = scopeLegacyActivityIds(section, owner)
-      if (next !== section) changed = true
-      return next
-    })
-    if (changed) storage.putNodeData("web-rendering", page.pageId, { ...parsed.data, sections })
-  }
+export function reconcileActivityIds(storage: Storage, pageId: string): void {
+  const row = storage.getLatestNodeData("web-rendering", pageId)
+  const parsed = WebRenderingOutput.safeParse(row?.data)
+  if (!parsed.success) return
+  let changed = false
+  const sections = parsed.data.sections.map((section) => {
+    const owner = renderedSectionId(section)
+    if (!owner) return section
+    const next = scopeLegacyActivityIds(section, owner)
+    if (next !== section) changed = true
+    return next
+  })
+  if (changed) storage.putNodeData("web-rendering", pageId, { ...parsed.data, sections })
 }
 
 /** Complete snapshot only: a partial page response cannot retire unseen IDs.
  * This is metadata reconciliation; no provider, deletion or output replacement. */
 export function reconcileTextCatalog(storage: Storage): TextCatalogOutput {
-  reconcileActivityIds(storage)
   const catalog = buildTextCatalogSnapshot(storage, storage.getPages())
   const previous = storage.getLatestNodeData("text-catalog", "book")?.data as TextCatalogOutput | undefined
   if (inputSignature(previous?.entries) !== inputSignature(catalog.entries)) {
@@ -72,7 +72,7 @@ export function buildImageInventory(storage: Storage) {
     const rendering = WebRenderingOutput.safeParse(storage.getLatestNodeData("web-rendering", page.pageId)?.data)
     if (!rendering.success) continue
     const sectioning = getRenderSectioning(storage, page.pageId)
-    for (const section of rendering.data.sections) {
+    for (const section of withLegacyFixedLayoutOwnership(storage, page.pageId, rendering.data).sections) {
       const source = resolveRenderedSection(section, sectioning?.sections)
       if (source?.isPruned || (renderedSectionId(section) && sectioning && !source)) continue
       for (const id of extractImageIds([section.html])) add(id, page.pageId, source?.sectionId)
@@ -84,9 +84,8 @@ export function buildImageInventory(storage: Storage) {
   }
   return [...references].map(([id, refs]) => {
     const meta = storage.getImageMeta(id)
-    let assetHash: string | null = null
-    try { if (meta) assetHash = inputSignature(storage.getImageBase64(id)) } catch { /* Missing input affects this image only. */ }
-    return { id, pageId: meta?.pageId, assetHash, pageIds: [...refs.pageIds], sectionIds: [...refs.sectionIds], glossary: refs.glossary, locations: refs.locations, catalogLocations: refs.catalogLocations }
+    const available = !!meta && !!storage.bookDir && bookAssetExists(storage.bookDir, meta.relativePath)
+    return { id, pageId: meta?.pageId, available, pageIds: [...refs.pageIds], sectionIds: [...refs.sectionIds], glossary: refs.glossary, locations: refs.locations, catalogLocations: refs.catalogLocations }
   })
 }
 
@@ -103,17 +102,11 @@ export function assignActivitySectionIds(section: SectionRendering, allocate: (o
     return scoped
   })
   if (!mapping.size) return section
-  const doc = parseDocument(html)
-  for (const element of DomUtils.findAll((element) => element.type === "tag", doc.children)) {
-    for (const [attribute, value] of Object.entries(element.attribs)) {
-      if (attribute !== "data-id" && mapping.has(value)) element.attribs[attribute] = mapping.get(value)!
-    }
-  }
-  html = DomUtils.getOuterHTML(doc)
-  return { ...section, html, ...(section.activityAnswers ? { activityAnswers: Object.fromEntries(Object.entries(section.activityAnswers).map(([key, value]) => [mapping.get(key) ?? key, value])) } : {}) }
+  html = rewriteRenderedIdentityReferences(html, mapping)
+  return { ...section, html }
 }
 
-export function authoredImageAlts(rendering: WebRenderingOutput, onConflict?: (id: string) => void): Map<string, string> {
+export function authoredImageAlts(rendering: WebRenderingOutput, onConflict?: (id: string, alt: string) => void): Map<string, string> {
   const values = new Map<string, string>()
   for (const section of rendering.sections) {
     const doc = parseDocument(section.html)
@@ -121,7 +114,7 @@ export function authoredImageAlts(rendering: WebRenderingOutput, onConflict?: (i
       const id = element.attribs["data-id"]
       const alt = element.attribs.alt
       if (alt === undefined) continue
-      if (values.has(id) && values.get(id) !== alt) { onConflict?.(id); continue }
+      if (values.has(id) && values.get(id) !== alt) { onConflict?.(id, alt); continue }
       values.set(id, alt)
     }
   }
@@ -144,7 +137,7 @@ function restoreReactivatedSpeech(storage: Storage, active: Set<string>): void {
       for (const entry of historical.data.entries) {
         const key = voiceSlotEntryId(entry.textId, entry.voiceSlot)
         if (!active.has(entry.textId) || entries.has(key)) continue
-        try { readBookAsset(storage.bookDir, `audio/${language}/${entry.fileName}`) } catch { continue }
+        if (!bookAssetExists(storage.bookDir, `audio/${language}/${entry.fileName}`)) continue
         entries.set(key, entry)
         changed = true
         const pair = historical.data.timingVersion == null ? undefined : storage.getAllNodeVersions("tts-timestamps", language).find((version) => version.version === historical.data.timingVersion)

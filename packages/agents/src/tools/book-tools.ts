@@ -1,3 +1,4 @@
+import { stampRenderedOwner } from "@adt/pipeline"
 import { z } from "zod"
 import type { AgentToolSet } from "@adt/llm"
 import type { Storage } from "@adt/storage"
@@ -8,7 +9,7 @@ import {
   type PageSectioningSection,
   type SectionRendering,
 } from "@adt/types"
-import { createSectionIdFactory } from "@adt/pipeline"
+import { createSectionIdFactory, renderedSectionId, resolveRenderedSection } from "@adt/pipeline"
 import { buildSectioningSectionFromHtml } from "./build-sectioning.js"
 import {
   TEMPLATED_ACTIVITY_TYPES,
@@ -217,9 +218,7 @@ export function createBookTools(ctx: BookToolsContext): BookToolsResult {
         const rendering = loadRendering(ctx.storage, pageId)
         const sectioning = loadSectioning(ctx.storage, pageId)
         const sections = rendering.sections.map((r): SectionSummary => {
-          const s = sectioning.sections[r.sectionIndex] as
-            | PageSectioningSection
-            | undefined
+          const s = resolveRenderedSection(r, sectioning.sections)
           return {
             sectionIndex: r.sectionIndex,
             sectionId: s?.sectionId ?? `unknown_${r.sectionIndex}`,
@@ -256,7 +255,7 @@ export function createBookTools(ctx: BookToolsContext): BookToolsResult {
           )
         }
         const sectioning = loadSectioning(ctx.storage, pageId)
-        const s = sectioning.sections[sectionIndex]
+        const s = resolveRenderedSection(r, sectioning.sections)
         return {
           sectionIndex: r.sectionIndex,
           sectionId: s?.sectionId ?? `unknown_${sectionIndex}`,
@@ -340,22 +339,9 @@ export function createBookTools(ctx: BookToolsContext): BookToolsResult {
               : undefined
           const effectiveAnswers = activityAnswers ?? derivedAnswers ?? null
 
-          const updatedRendering: WebRenderingOutput = {
-            sections: rendering.sections.map((s) =>
-              s.sectionIndex === sectionIndex
-                ? {
-                    ...s,
-                    html,
-                    reasoning: reasoning || s.reasoning,
-                    ...(effectiveAnswers ? { activityAnswers: effectiveAnswers } : {}),
-                  }
-                : s,
-            ),
-          }
-
           // Refresh the sectioning tree so the edit panel and downstream
           // steps stay in sync with the rewritten HTML.
-          const oldSection = sectioning.sections[sectionIndex]
+          const oldSection = resolveRenderedSection(found, sectioning.sections)
           // sectionIds are allocated once and never reused, so one cannot be
           // derived from an array position — a guessed id would likely name a
           // *different* section, and it names this section's HTML file in every
@@ -363,10 +349,25 @@ export function createBookTools(ctx: BookToolsContext): BookToolsResult {
           // and sectioning are out of sync; say so rather than guess.
           if (!oldSection) {
             throw new Error(
-              `Cannot update section ${sectionIndex} of ${pageId}: it has a rendering entry but no sectioning row, so its sectionId is unknown. Re-run the storyboard render for this page to bring the two back in sync.`,
+              `Cannot update section ${sectionIndex} of ${pageId}: it has a rendering entry but no sectioning row, so its sectionId is unknown. Restore matching sectioning/rendering versions before editing this section.`,
             )
           }
           const sectionId = oldSection.sectionId
+          html = stampRenderedOwner(html, sectionId)
+          const updatedRendering: WebRenderingOutput = {
+            sections: rendering.sections.map((s) =>
+              s.sectionIndex === sectionIndex
+                ? {
+                    ...s,
+                    html,
+                    sectionId,
+                    reasoning: reasoning || s.reasoning,
+                    ...(effectiveAnswers ? { activityAnswers: effectiveAnswers } : {}),
+                  }
+                : s,
+            ),
+          }
+
           const sectionType = found.sectionType
           const newSectioningSection = buildSectioningSectionFromHtml({
             html,
@@ -378,20 +379,14 @@ export function createBookTools(ctx: BookToolsContext): BookToolsResult {
           })
           const updatedSectioning: PageSectioningOutput = {
             ...sectioning,
-            sections: sectioning.sections.map((s, i) =>
-              i === sectionIndex ? newSectioningSection : s,
+            sections: sectioning.sections.map((s) =>
+              s.sectionId === sectionId ? newSectioningSection : s,
             ),
           }
-          ctx.storage.putNodeData(
-            "page-sectioning",
-            pageId,
-            updatedSectioning,
-          )
-          const version = ctx.storage.putNodeData(
-            "web-rendering",
-            pageId,
-            updatedRendering,
-          )
+          const version = ctx.storage.transaction(() => {
+            ctx.storage.putNodeData("page-sectioning", pageId, updatedSectioning)
+            return ctx.storage.putNodeData("web-rendering", pageId, updatedRendering)
+          })
           touchedPageIds.add(pageId)
           return { ok: true, version, sectionIndex }
         },
@@ -622,6 +617,7 @@ export function createBookTools(ctx: BookToolsContext): BookToolsResult {
 
           const newRendering: SectionRendering = {
             sectionIndex: nextIndex,
+            sectionId,
             sectionType,
             reasoning,
             html,

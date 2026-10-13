@@ -1,11 +1,9 @@
-import { buildImageInventory } from "./catalog-reconciliation.js"
-import { retainedCoreTts, retainedEasyRead } from "./retained-catalog.js"
+import { buildOutputSources, translatedDisplayEntries } from "./output-sources.js"
+import { retainedCoreTts } from "./retained-catalog.js"
 import { createPromptEngine } from "@adt/llm"
 import path from "node:path"
 import type { Storage } from "@adt/storage"
-import type { AppConfig, EasyReadOutput, ImageCaptioningOutput, TextCatalogOutput } from "@adt/types"
-import { buildTextCatalogSnapshot } from "./text-catalog.js"
-import { flattenEasyReadEntries, buildEasyReadSourceBlocks } from "./easy-read.js"
+import type { AppConfig } from "@adt/types"
 import { getBaseLanguage, normalizeLocale } from "./language-context.js"
 import { inputSignature } from "./output-freshness.js"
 import {
@@ -28,22 +26,7 @@ export function reconcileSpeechInputs(options: {
 }) {
   const { storage } = options
   const sourceLanguage = normalizeLocale(options.sourceLanguage)
-  const catalog = buildTextCatalogSnapshot(storage, storage.getPages())
-  // A stored source catalog is accepted only for older books without authored
-  // source records; a present but empty authored snapshot means retired text.
-  const hasAuthored = storage.getPages().some((page) => storage.getLatestNodeData("web-rendering", page.pageId)) ||
-    storage.getLatestNodeData("glossary", "book") || storage.getLatestNodeData("quiz-generation", "book")
-  const source = !hasAuthored ? (storage.getLatestNodeData("text-catalog", "book")?.data as TextCatalogOutput | undefined) ?? catalog : catalog
-  const easyRead = retainedEasyRead(storage, buildEasyReadSourceBlocks(storage, storage.getPages()))
-  const sourceEntries = [...source.entries]
-  for (const image of buildImageInventory(storage)) {
-    const caption = image.pageId ? (storage.getLatestNodeData("image-captioning", image.pageId)?.data as ImageCaptioningOutput | undefined)?.captions.find((entry) => entry.imageId === image.id) : undefined
-    if (!caption?.decorative && image.catalogLocations.length && !sourceEntries.some((entry) => entry.id === image.id)) sourceEntries.push({ id: image.id, text: "", locations: image.catalogLocations })
-  }
-  if (options.config.easy_read?.enabled) {
-    const existing = new Map(flattenEasyReadEntries(easyRead).map((entry) => [entry.id, entry]))
-    for (const entry of flattenEasyReadEntries({ blocks: buildEasyReadSourceBlocks(storage, storage.getPages()), generatedAt: "" })) sourceEntries.push({ ...entry, text: existing.get(entry.id)?.text ?? "" })
-  }
+  const sourceEntries = buildOutputSources(storage, options.config).entries
   const config = { ...buildCoreTtsPreparationConfig(options.config), promptSignature: options.promptSignature }
   if (options.promptsDir && options.bookDir) {
     const engine = createPromptEngine([path.join(options.bookDir, "prompts"), options.promptsDir], { basePromptModelId: options.config.base_prompt_model })
@@ -57,11 +40,7 @@ export function reconcileSpeechInputs(options: {
   const sourceContext = buildCoreTtsSourceContext(sourceEntries, sourceCatalog)
   return options.languages.map((requested) => {
     const language = normalizeLocale(requested)
-    const translated = storage.getLatestNodeData("text-catalog-translation", language) ??
-      storage.getLatestNodeData("text-catalog-translation", language.replace("-", "_"))
-    const translatedById = new Map(((translated?.data as TextCatalogOutput | undefined)?.entries ?? []).map((entry) => [entry.id, entry]))
-    const display = getBaseLanguage(language) === getBaseLanguage(sourceLanguage) ? sourceEntries :
-      sourceEntries.map((entry) => ({ ...entry, text: translatedById.get(entry.id)?.text ?? "" }))
+    const display = getBaseLanguage(language) === getBaseLanguage(sourceLanguage) ? sourceEntries : translatedDisplayEntries(storage, language, sourceEntries)
     const previous = retainedCoreTts(storage, language, display.map((entry) => entry.id))
     const resolved = language === sourceLanguage ? sourceCatalog : resolveCoreTtsSpeechCatalog({
       entries: display, language, config, profile: resolveCoreTtsProfile(language, options.profiles), previous, sourceContext,

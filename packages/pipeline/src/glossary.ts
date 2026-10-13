@@ -9,7 +9,7 @@ import {
 import type { LLMModel } from "@adt/llm"
 import type { Storage, PageData } from "@adt/storage"
 import { processWithConcurrency } from "./concurrency.js"
-import { getRenderSectioning, resolveRenderedSection } from "./render-sectioning.js"
+import { withLegacyFixedLayoutOwnership, getRenderSectioning, resolveRenderedSection } from "./render-sectioning.js"
 import { buildLanguageContext } from "./language-context.js"
 
 export interface GlossaryConfig {
@@ -58,6 +58,74 @@ function normalizeGlossaryWord(word: string): string {
 
 export function getGlossaryItemTextId(item: Pick<GlossaryItem, "id">, index: number): string {
   return item.id?.trim() || `gl${String(index + 1).padStart(3, "0")}`
+}
+
+function glossaryIdentityAllocator(storage: Storage, extraIds: string[] = []) {
+  const reserved = new Set(extraIds)
+  for (const row of storage.getAllNodeVersions("glossary", "book")) {
+    const parsed = GlossaryOutputSchema.safeParse(row.data)
+    if (parsed.success) parsed.data.items.forEach((item, index) => reserved.add(getGlossaryItemTextId(item, index)))
+  }
+  let next = 1
+  return () => {
+    let id: string
+    do { id = `gl${String(next++).padStart(3, "0")}` } while (reserved.has(id))
+    reserved.add(id)
+    return id
+  }
+}
+
+/** Call under the existing book writer before exposing legacy terms for edit.
+ * Preserve the IDs already used by their catalog consumers exactly once. */
+export function materializeGlossaryIds(storage: Storage) {
+  const row = storage.getLatestNodeData("glossary", "book")
+  const parsed = GlossaryOutputSchema.safeParse(row?.data)
+  if (!parsed.success) return row
+  const ids = parsed.data.items.map(getGlossaryItemTextId)
+  if (parsed.data.items.every((item) => item.id?.trim()) && new Set(ids).size === ids.length) return row
+  const allocate = glossaryIdentityAllocator(storage, ids)
+  const seen = new Set<string>()
+  const data = { ...parsed.data, items: parsed.data.items.map((item, index) => {
+    // Catalog readers have always used the first copy of an identity. A later
+    // legacy collision must never acquire that first term's manual outputs.
+    const id = seen.has(ids[index]) ? allocate() : ids[index]
+    seen.add(id)
+    return { ...item, id }
+  }) }
+  storage.putNodeData("glossary", "book", data)
+  return storage.getLatestNodeData("glossary", "book")
+}
+
+/** Older clients may submit an idless subset. Match only a unique retained
+ * word; new/renamed ambiguous terms get fresh IDs, never another term's slot. */
+export function reconcileGlossaryEditIds(storage: Storage, edited: GlossaryOutput): GlossaryOutput {
+  const current = GlossaryOutputSchema.safeParse(materializeGlossaryIds(storage)?.data)
+  const previous = current.success ? current.data.items : []
+  const reserved = new Set<string>()
+  for (const row of storage.getAllNodeVersions("glossary", "book")) {
+    const data = GlossaryOutputSchema.safeParse(row.data)
+    if (data.success) data.data.items.forEach((item, index) => reserved.add(getGlossaryItemTextId(item, index)))
+  }
+  const currentIds = new Set(previous.map((item) => item.id))
+  const historical = new Set(reserved)
+  for (const item of edited.items) if (item.id) reserved.add(item.id)
+  const previousWords = uniqueGlossaryWordIndexes(previous)
+  const editedWords = uniqueGlossaryWordIndexes(edited.items)
+  const assigned = new Set<string>()
+  let next = 1
+  return { ...edited, items: edited.items.map((item, index) => {
+    const word = normalizeGlossaryWord(item.word)
+    const previousIndex = editedWords.get(word) === index ? previousWords.get(word) : undefined
+    // An older editor can submit an explicit duplicate ID captured before
+    // migration. A unique retained word identifies its migrated slot safely.
+    let id = previousIndex === undefined ? item.id?.trim() : previous[previousIndex].id
+    if (!id || assigned.has(id) || (historical.has(id) && !currentIds.has(id))) {
+      do { id = `gl${String(next++).padStart(3, "0")}` } while (reserved.has(id))
+      reserved.add(id)
+    }
+    assigned.add(id)
+    return { ...item, id }
+  }) }
 }
 
 export function isManualGlossaryItem(item: Pick<GlossaryItem, "source">): boolean {
@@ -220,7 +288,7 @@ export function collectPageTexts(
         `Invalid web-rendering output for page: ${page.pageId}: ${parsed.error.message}`
       )
     }
-    const rendering = parsed.data
+    const rendering = withLegacyFixedLayoutOwnership(storage, page.pageId, parsed.data)
     // Filter out pruned sections (resolver: positioned tree for fixed-layout)
     const sectioning = getRenderSectioning(storage, page.pageId)
     const htmlParts = rendering.sections

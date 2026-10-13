@@ -47,8 +47,9 @@ export const OutputIdentity = z.object({
 export type OutputIdentity = z.infer<typeof OutputIdentity>
 
 export const OutputWarning = z.object({
-  reason: z.enum(["source-changed", "legacy", "preparation-failed", "preparation-missing", "preparation-outdated", "upstream"]),
+  reason: z.enum(["source-changed", "source-conflict", "output-conflict", "legacy", "preparation-failed", "preparation-missing", "preparation-outdated", "upstream"]),
   source: OutputIdentity.optional(),
+  conflictId: z.string().optional(),
 })
 export type OutputWarning = z.infer<typeof OutputWarning>
 
@@ -104,6 +105,7 @@ export const OutputReviewRequest = z.object({
 export type OutputReviewRequest = z.infer<typeof OutputReviewRequest>
 
 export const OutputSummary = z.object({
+  reviews: z.number().int().nonnegative().optional(),
   updates: z.number().int().nonnegative(),
   warnings: z.number().int().nonnegative(),
   missing: z.number().int().nonnegative(),
@@ -123,6 +125,14 @@ export const OutputSummaries = z.object({
   groups: z.record(OutputScopeSummary),
 })
 export type OutputSummaries = z.infer<typeof OutputSummaries>
+
+/** Compact sidebar projection, with optional speech visibility applied by UI. */
+export const OutputStageSummaryResponse = z.object({
+  stages: z.record(OutputScopeSummary),
+  stagesWithoutMissingSpeech: z.record(OutputScopeSummary),
+  showMissingSpeech: z.boolean(),
+})
+export type OutputStageSummaryResponse = z.infer<typeof OutputStageSummaryResponse>
 
 export const BookWriterOwner = z.object({
   token: z.string().uuid(),

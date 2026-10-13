@@ -63,6 +63,7 @@ function createMockStorage(
     appendLlmLog: () => {},
     getSignLanguageVideos: () => [],
     getSignLanguageVideoPath: () => null,
+    getNodeItemIds: () => [],
     getNodeVersionFingerprint: (excludeNodes: string[] = []) =>
       Object.entries(nodeData)
         .filter(([node]) => !excludeNodes.includes(node))

@@ -1,3 +1,4 @@
+import { materializeGlossaryIds, reconcileGlossaryEditIds } from "@adt/pipeline"
 import fs from "node:fs"
 import path from "node:path"
 import { Hono } from "hono"
@@ -9,10 +10,10 @@ import {
   parseBookLabel,
 } from "@adt/types"
 import type { ImageCaptioningOutput } from "@adt/types"
-import { openBookDb, createBookStorage, readCurrentNodeRow } from "@adt/storage"
+import { createBookStorage, withBookWriter } from "@adt/storage"
 import type { Storage } from "@adt/storage"
 import {
-  buildTextCatalog,
+  buildTextCatalogSnapshot,
   buildGlossaryConfig,
   generateGlossaryItem,
   loadBookConfig,
@@ -97,34 +98,22 @@ export function createGlossaryRoutes(
       })
     }
 
-    const db = openBookDb(dbPath)
+    const storage = createBookStorage(safeLabel, booksDir)
     try {
-      const row = readCurrentNodeRow(db, "glossary", "book")
-
-      if (!row) {
-        return c.json(null)
+      let row
+      try { row = storage.getLatestNodeData("glossary", "book") } catch (error) {
+        if (error instanceof SyntaxError) throw new HTTPException(500, { message: `Stored glossary data is corrupted for book: ${safeLabel}` })
+        throw error
       }
-
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(row.data)
-      } catch {
-        throw new HTTPException(500, {
-          message: `Stored glossary data is corrupted for book: ${safeLabel}`,
-        })
+      if (!row) return c.json(null)
+      const validated = GlossaryOutput.safeParse(row.data)
+      if (!validated.success) throw new HTTPException(500, { message: `Stored glossary data is invalid for book: ${safeLabel}` })
+      const ids = validated.data.items.map((item) => item.id?.trim())
+      if (ids.some((id) => !id) || new Set(ids).size !== ids.length) {
+        row = withBookWriter(storage.bookDir!, () => storage.transaction(() => materializeGlossaryIds(storage)))!
       }
-
-      const validated = GlossaryOutput.safeParse(parsed)
-      if (!validated.success) {
-        throw new HTTPException(500, {
-          message: `Stored glossary data is invalid for book: ${safeLabel}`,
-        })
-      }
-
-      return c.json({ ...validated.data, version: row.version })
-    } finally {
-      db.close()
-    }
+      return c.json({ ...GlossaryOutput.parse(row.data), version: row.version })
+    } finally { storage.close() }
   })
 
   // PUT /books/:label/glossary — Update glossary
@@ -142,15 +131,17 @@ export function createGlossaryRoutes(
 
     const storage = createBookStorage(safeLabel, booksDir)
     try {
+      return withBookWriter(storage.bookDir!, () => storage.transaction(() => {
+      const next = reconcileGlossaryEditIds(storage, parsed.data)
       const previousRow = storage.getLatestNodeData("glossary", "book")
       const previous = GlossaryOutput.safeParse(previousRow?.data)
       const imageRequirementsChanged = needsCaptionRerun(
         storage,
         previous.success ? previous.data : undefined,
-        parsed.data,
+        next,
       )
 
-      const version = storage.putNodeData("glossary", "book", parsed.data)
+      const version = storage.putNodeData("glossary", "book", next)
       if (imageRequirementsChanged) {
         // A glossary picture that has never been captioned changes the captions
         // output, which invalidates every derived translation/audio/package
@@ -158,9 +149,10 @@ export function createGlossaryRoutes(
         storage.clearNodesByType([...IMAGE_SET_CHANGE_CLEAR_NODE_TYPES])
       }
       const pages = storage.getPages()
-      const catalog = await buildTextCatalog(storage, pages)
+      const catalog = buildTextCatalogSnapshot(storage, pages)
       storage.putNodeData("text-catalog", "book", catalog)
       return c.json({ version, imageRequirementsChanged })
+      }))
     } finally {
       storage.close()
     }

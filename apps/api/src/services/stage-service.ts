@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto"
+import { requireExistingBook } from "../utils/book-exists.js"
 import { STAGE_ORDER, type OutputRunScope, type OutputIdentity, type ProgressEvent } from "@adt/types"
 import type { StageName, StepName, PageErrorPolicy, PageErrorAction } from "@adt/types"
 import { createBookStorage, resolveBookPaths, withBookWriter } from "@adt/storage"
@@ -14,6 +16,7 @@ export type StageRunStatus =
   | "failed"
 
 export interface StageRunJob {
+  id: string
   label: string
   status: StageRunStatus
   fromStage: string
@@ -99,7 +102,6 @@ export interface StageService {
   skipStageOutputs(label: string, identities: OutputIdentity[]): boolean
 }
 
-let nextId = 1
 
 export function createStageService(
   runner: StageRunner,
@@ -141,7 +143,7 @@ export function createStageService(
     }
 
     try {
-      await withBookWriter(resolveBookPaths(label, options.booksDir).bookDir, async () => {
+      await withBookWriter(requireExistingBook(label, options.booksDir), async () => {
         job.controller.signal.throwIfAborted()
         options.beforeRun?.()
         await runner.run(label, effectiveOptions, progress)
@@ -158,6 +160,7 @@ export function createStageService(
         // runner is no longer touching step_runs. Return in-flight steps to idle
         // (deliberate action, not a failure) and announce completion of the cancel.
         try {
+          requireExistingBook(label, options.booksDir)
           const storage = createBookStorage(label, options.booksDir)
           try {
             storage.clearRunningStepRuns()
@@ -203,6 +206,7 @@ export function createStageService(
 
     const next = state.queue.shift()!
     const job: StageRunJob = {
+      id: next.id,
       label,
       status: "running",
       fromStage: next.fromStage,
@@ -259,8 +263,9 @@ export function createStageService(
       label: string,
       options: StageRunOptions
     ): { status: "started" | "queued"; id: string } {
+      requireExistingBook(label, options.booksDir)
       const state = getOrCreateState(label)
-      const id = String(nextId++)
+      const id = randomUUID()
 
       // Queue behind a run that is active OR still unwinding a cancel. Without
       // the "cancelling" case a start during the cancel window would begin
@@ -282,6 +287,7 @@ export function createStageService(
 
       // Start immediately
       const job: StageRunJob = {
+        id,
         label,
         status: "running",
         fromStage: options.fromStage,
@@ -293,7 +299,7 @@ export function createStageService(
       // Admission and preparation precede the success response. Retain that
       // same lease across deferred execution; no competing writer can enter
       // between preparation and the runner's first instruction.
-      const work = withBookWriter(resolveBookPaths(label, options.booksDir).bookDir, () => {
+      const work = withBookWriter(requireExistingBook(label, options.booksDir), () => {
         options.beforeRun?.()
         state.active = job
         return new Promise<void>((resolve) => setImmediate(() => {

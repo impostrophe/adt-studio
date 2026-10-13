@@ -93,7 +93,7 @@ it.each([false, true])("rejects outside immutable upload destination links (targ
   const immutableName = `${textId}--${createHash("sha256").update("UPLOAD CANARY").digest("hex")}.wav`
   fs.symlinkSync(target, path.join(audioDir, immutableName))
   const before = readTts()
-  expect((await upload()).status).toBe(500)
+  expect((await upload()).status).toBe(400)
   expect(fs.existsSync(target)).toBe(exists)
   if (exists) expect(fs.readFileSync(target, "utf8")).toBe("PRESERVE")
   expect(readTts()).toEqual(before)

@@ -227,6 +227,10 @@ describe("ADT preview routes", () => {
           },
         ],
       })
+      const rendering = storage.getLatestNodeData("web-rendering", `${label}_p1`)!.data as { sections: Array<{ sectionIndex: number; sectionId?: string; html: string }> }
+      rendering.sections[1].sectionId = `${label}_p1_s2`
+      rendering.sections[1].html = rendering.sections[1].html.replace(`${label}_p1_sec002`, `${label}_p1_s2`)
+      storage.putNodeData("web-rendering", `${label}_p1`, rendering)
     } finally {
       storage.close()
     }

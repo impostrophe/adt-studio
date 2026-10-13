@@ -1,3 +1,4 @@
+import { requireExistingBook } from "../utils/book-exists.js"
 import type { TaskKind, TaskInfo, TaskStatus } from "@adt/types"
 import type { BookEventBus } from "./book-event-bus.js"
 import { resolveBookPaths, withBookWriter } from "@adt/storage"
@@ -69,6 +70,7 @@ export function createTaskService(eventBus: BookEventBus, booksDir?: string): Ta
       }
 
       const execute = () => {
+        if (booksDir) requireExistingBook(label, booksDir)
         const state = getOrCreate(label)
         state.tasks.set(taskId, info)
 
@@ -85,7 +87,7 @@ export function createTaskService(eventBus: BookEventBus, booksDir?: string): Ta
           })
         }))
       }
-      const work = booksDir ? withBookWriter(resolveBookPaths(label, booksDir).bookDir, execute) : execute()
+      const work = booksDir ? withBookWriter(requireExistingBook(label, booksDir), execute) : execute()
       work
         .then((result) => {
           info.status = "completed"

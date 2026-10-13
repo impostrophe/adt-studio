@@ -16,7 +16,7 @@ import type { LLMModel } from "@adt/llm"
 import type { Storage, PageData } from "@adt/storage"
 import { buildLanguageContext } from "./language-context.js"
 import { stripHtml } from "./glossary.js"
-import { getRenderSectioning, getSemanticSectioning, resolveRenderedSection } from "./render-sectioning.js"
+import { withLegacyFixedLayoutOwnership, getRenderSectioning, getSemanticSectioning, resolveRenderedSection } from "./render-sectioning.js"
 import { resolveReadingOrder } from "./reading-order.js"
 
 export interface TocGenerationConfig {
@@ -88,7 +88,7 @@ function collectHeadingsAndToc(
       if (renderRow) {
         const renderParsed = WebRenderingOutput.safeParse(renderRow.data)
         if (renderParsed.success) {
-          const tocHtml = renderParsed.data.sections
+          const tocHtml = withLegacyFixedLayoutOwnership(storage, page.pageId, renderParsed.data).sections
             .filter((s) => {
               const meta = resolveRenderedSection(s, sectioning.sections)
               return meta?.sectionType === "table_of_contents" && !meta.isPruned

@@ -58,7 +58,7 @@ describe("catalog freshness through real API/storage boundaries", () => {
     }
     expect(pairs(projection.conflicts[0])).toEqual(expected)
   })
-  it("AC-11 invalidates packaging reuse when image bytes change with identical size and mtime", () => {
+  it("AC-11 accepts unchanged image identity after an external same-name edit", () => {
     const db = storage()
     try {
       const image = path.join(db.bookDir!, db.getImageMeta("pg001_im001")!.relativePath)
@@ -68,7 +68,7 @@ describe("catalog freshness through real API/storage boundaries", () => {
       const before = hash()
       fs.writeFileSync(image, "other")
       fs.utimesSync(image, timestamp, timestamp)
-      expect(hash()).not.toBe(before)
+      expect(hash()).toBe(before)
     } finally { db.close() }
   })
   it.each(["ai", "manual"] as const)("AC-2/15 persists only the affected %s translation's attention through Save, review and reopening", async (source) => {
@@ -87,7 +87,7 @@ describe("catalog freshness through real API/storage boundaries", () => {
     expect(changed.outputs.filter((item: OutputStatus) => item.identity.kind === "translation" && item.identity.id !== target.identity.id)).toEqual(other)
     const output = changed.outputs.find((item: OutputStatus) => item.identity.kind === "translation" && item.identity.id === target.identity.id && item.identity.language === "fr")
     expect(output).toMatchObject({ text: "Bonjour", current: false, protected: source === "manual", updateNeeded: source === "ai" })
-    const category = source === "manual" ? "warnings" : "updates"
+    const category = source === "manual" ? "reviews" : "updates"
     expect(changed.summaries.stages.translate[category]).toBe(before.summaries.stages.translate[category] + 1)
     expect(changed.summaries.stages.translate.missing).toBe(before.summaries.stages.translate.missing)
     const reopened = storage()
@@ -115,7 +115,7 @@ describe("catalog freshness through real API/storage boundaries", () => {
     expect(await outputs()).toEqual(before)
     expect(provider).not.toHaveBeenCalled()
   })
-  it("reads each shared page/audio asset once per projection and detects changed bytes on the next read", async () => {
+  it("uses recorded media identity without reading bytes and notices missing files", async () => {
     const db = storage()
     db.putExtractedPage({ pageId: "pg001", pageNumber: 1, text: "Hello", pageImage: { imageId: "pg001_page", buffer: Buffer.from("page"), format: "png", hash: "page", width: 100, height: 100 }, images: [1, 2, 3].map((i) => ({ imageId: `pg001_im00${i}`, buffer: Buffer.from(`image ${i}`), format: "png", hash: `image-${i}`, width: 20, height: 20 })) })
     const next = rendering()
@@ -130,13 +130,16 @@ describe("catalog freshness through real API/storage boundaries", () => {
     try {
       const before = await outputs()
       const count = (file: string) => reads.mock.calls.filter(([input]) => String(input) === file || String(input) === fs.realpathSync(file)).length
-      expect(count(pageFile)).toBe(1)
-      expect(count(audioFile)).toBe(1)
+      expect(count(pageFile)).toBe(0)
+      expect(count(audioFile)).toBe(0)
       fs.writeFileSync(pageFile, "changed page")
       fs.writeFileSync(audioFile, "corrupt recording")
       const after = await outputs()
-      expect(after.find((item) => item.identity.kind === "caption")?.signature).not.toBe(before.find((item) => item.identity.kind === "caption")?.signature)
-      expect(after.filter((item) => item.identity.kind === "audio" && item.identity.language === "fr").every((item) => !item.usable)).toBe(true)
+      expect(after.find((item) => item.identity.kind === "caption")?.signature).toBe(before.find((item) => item.identity.kind === "caption")?.signature)
+      expect(after.filter((item) => item.identity.kind === "audio" && item.identity.language === "fr" && ["pg001_t001", "pg001_t002"].includes(item.identity.id)).every((item) => item.usable)).toBe(true)
+      fs.unlinkSync(audioFile)
+      const missing = await outputs()
+      expect(missing.filter((item) => item.identity.kind === "audio" && item.identity.language === "fr" && ["pg001_t001", "pg001_t002"].includes(item.identity.id)).every((item) => !item.usable)).toBe(true)
     } finally { reads.mockRestore() }
   })
 

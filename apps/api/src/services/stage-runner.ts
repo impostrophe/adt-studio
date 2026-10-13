@@ -1,3 +1,7 @@
+import { bookAssetExists, readBookAsset } from "@adt/storage"
+import { reconcileSectioningIdentities } from "@adt/pipeline"
+import { requireExistingBook } from "../utils/book-exists.js"
+import { buildOutputSources, translatedDisplayEntries } from "@adt/pipeline"
 import { captureOutputReferences } from "@adt/pipeline"
 import { outputSkipped } from "@adt/pipeline"
 import { retainedCoreTts, retainedEasyRead } from "@adt/pipeline"
@@ -582,7 +586,7 @@ function resolveSpeechAudioPath(
   for (const dir of candidateDirs) {
     const resolved = path.resolve(dir, fileName)
     if (!resolved.startsWith(dir + path.sep)) continue
-    if (fs.existsSync(resolved)) return resolved
+    if (bookAssetExists(bookDir, path.relative(bookDir, resolved))) return resolved
   }
 
   return null
@@ -702,7 +706,6 @@ function canReuseSpeechEntry(
   })
   const outputPath = resolveSpeechAudioPath(options.bookDir, options.language, entry.fileName)
   if (!outputPath) return false
-  if (entry.audioHash && createHash("sha256").update(fs.readFileSync(outputPath)).digest("hex") !== entry.audioHash) return false
   if (entry.speechInputSignature) return entry.speechInputSignature === cacheKey
   // Legacy output has no trustworthy input evidence. Preserve it without
   // copying a cache result over files referenced by retained manifests.
@@ -792,6 +795,14 @@ async function generateSpeechWordTimestamps(
       const status = options.statuses?.find((output) => output.identity.kind === "timestamps" && output.identity.id === entry.textId && output.identity.language === language && output.identity.voiceSlot === (entry.voiceSlot ?? "primary"))
       const prior = entriesByLanguage.get(language)?.[voiceSlotEntryId(entry.textId, entry.voiceSlot)]
       if (!status) return true
+      const previousAudio = (options.storage.getLatestNodeData("tts", language)?.data as TTSOutput | undefined)?.entries.find((prior) => prior.textId === entry.textId && (prior.voiceSlot ?? "primary") === (entry.voiceSlot ?? "primary"))
+      // Timings belong to their physical recording. New audio requires a new
+      // pair even when the selected action only names audio, or old timings
+      // were manually adjusted. Their historical pair remains restorable.
+      if (entry.audioHash && entry.audioHash !== previousAudio?.audioHash) {
+        return !status.excluded && !outputSkipped(options.scope, status.identity) &&
+          !outputSkipped(options.scope, { ...status.identity, kind: "audio" })
+      }
       // Synthesis may have changed the audio since the initial projection.
       // Re-derive eligibility as well as the signature against the proposed pair.
       const effective = { ...status, ...deriveOutputStatus({
@@ -864,14 +875,15 @@ async function generateSpeechWordTimestamps(
 
         const slot = resolveEntryVoiceSlot(entry)
         if (outputSkipped(options.scope, { kind: "timestamps", id: entry.textId, language, voiceSlot: slot })) return
+        const audioHash = entry.audioHash ?? createHash("sha256").update(readBookAsset(bookDir, path.join("audio", language, entry.fileName))).digest("hex") ?? crypto.createHash("sha256").update(audioBuffer).digest("hex")
         entriesByLanguage.get(language)![voiceSlotEntryId(entry.textId, slot)] = {
           textId: entry.textId,
           language,
           words: result.words,
           duration: result.duration,
-          audioHash: crypto.createHash("sha256").update(audioBuffer).digest("hex"),
+          audioHash,
           source: "ai",
-          input: outputEvidence(timestampInputSignature(crypto.createHash("sha256").update(audioBuffer).digest("hex"), language, prompt ?? ""), { words: result.words, duration: result.duration }, captureOutputReferences(options.storage, "timestamps", language)),
+          input: outputEvidence(timestampInputSignature(audioHash, language, prompt ?? ""), { words: result.words, duration: result.duration }, captureOutputReferences(options.storage, "timestamps", language)),
           voiceSlot: slot,
         }
       } catch (err) {
@@ -925,7 +937,7 @@ export function createStageRunner(): StageRunner {
       options: StageRunOptions,
       progress: StageRunProgress
     ): Promise<void> {
-      const bookDir = resolveBookPaths(label, options.booksDir).bookDir
+      const bookDir = requireExistingBook(label, options.booksDir)
       if (!ownsBookWriter(bookDir)) return withBookWriter(bookDir, () => createStageRunner().run(label, options, progress))
       const { fromStage, toStage, booksDir } = options
       console.log(`[stage-run] ${label}: starting ${fromStage}→${toStage}`)
@@ -1489,7 +1501,7 @@ async function runSectioningStep(
             imageBase64: storage.getImageBase64(imageId),
           }))
 
-          const structuringResult = await sectionPage(
+          const generatedSectioning = await sectionPage(
             {
               pageId: page.pageId,
               pageNumber: page.pageNumber,
@@ -1501,6 +1513,7 @@ async function runSectioningStep(
             pageSectioningConfig,
             structuringModel,
           )
+          const structuringResult = reconcileSectioningIdentities(storage, page.pageId, generatedSectioning)
           storage.putNodeData("page-sectioning", page.pageId, structuringResult)
           completedStructuring++
           progress.emit({
@@ -2072,7 +2085,7 @@ async function runCaptionsStep(
           const previousRow = storage.getLatestNodeData("image-captioning", page.pageId)
           const previous = previousRow?.data as ImageCaptioningOutput | undefined
           const previousById = new Map((previous?.captions ?? []).map((entry) => [entry.imageId, entry]))
-          const imageIds = inventory.filter((image) => image.pageId === page.pageId && image.assetHash !== null).filter((image) => {
+          const imageIds = inventory.filter((image) => image.pageId === page.pageId && image.available).filter((image) => {
             const status = captured.find((output) => output.identity.kind === "caption" && output.identity.id === image.id)
             return status && selectedForGeneration(status, previousById.get(image.id), options.outputScope)
           }).map((image) => image.id)
@@ -2547,14 +2560,11 @@ async function runTranslateStep(
         `[stage-run] ${label}: rebuilt text catalog (${catalog.entries.length} entries)`
       )
     }
-    const easyReadRow = storage.getLatestNodeData("easy-read", "book")
-    const easyRead = retainedEasyRead(storage, buildEasyReadSourceBlocks(storage, storage.getPages()))
-    const easyReadEntries = config.easy_read?.enabled && easyRead ? flattenEasyReadEntries(easyRead) : []
-    const translationEntries = [...catalog.entries, ...easyReadEntries]
+    const translationEntries = buildOutputSources(storage, config).entries
 
     // ── Step 2: Translate catalog to target languages ────────────────
     const targetLanguages = getTargetLanguages(outputLanguages, language)
-    if (targetLanguages.length === 0 || translationEntries.length === 0) {
+    if (targetLanguages.length === 0 || !translationEntries.some((entry) => entry.text.trim())) {
       progress.emit({ type: "step-skip", step: "catalog-translation" })
       console.log(`[stage-run] ${label}: catalog translation skipped`)
     } else {
@@ -2611,7 +2621,7 @@ async function runTranslateStep(
       ? path.join(path.dirname(configPath), "config")
       : path.resolve(process.cwd(), "config")
     const profiles = loadCoreTtsProfiles(coreTtsConfigDir)
-    const sourceDisplayEntries = [...catalog.entries, ...easyReadEntries]
+    const sourceDisplayEntries = translationEntries
     const sourcePrepBefore = readRunOutputs(label, options, storage)
     const sourcePrepVersion = storage.getLatestNodeData("core-tts-catalog", language)?.version
     const sourceCoreTts = await prepareCoreTtsCatalog({
@@ -2646,15 +2656,7 @@ async function runTranslateStep(
       const lang = locale.language
       let targetDisplayEntries = sourceDisplayEntries
       if (!locale.usesSourceDisplayText) {
-        const legacyLang = lang.replace("-", "_")
-        const translatedRow =
-          storage.getLatestNodeData("text-catalog-translation", lang) ??
-          storage.getLatestNodeData("text-catalog-translation", legacyLang)
-        if (!translatedRow) continue
-        // Retained collections may contain retired IDs or an earlier reading
-        // order. Context follows current sources, including missing neighbors.
-        const translatedById = new Map((translatedRow.data as TextCatalogOutput).entries.map((entry) => [entry.id, entry]))
-        targetDisplayEntries = sourceDisplayEntries.map((source) => ({ ...source, text: translatedById.get(source.id)?.text ?? "" }))
+        targetDisplayEntries = translatedDisplayEntries(storage, lang, sourceDisplayEntries)
       }
       const targetPrepBefore = readRunOutputs(label, options, storage)
       const targetPrepVersion = storage.getLatestNodeData("core-tts-catalog", lang)?.version
@@ -2993,9 +2995,8 @@ async function runSpeechStep(
     }
     const storeGenerated = (language: string, entry: SpeechFileEntry) => {
       if (outputSkipped(options.outputScope, { kind: "audio", id: entry.textId, language, voiceSlot: entry.voiceSlot ?? "primary" })) return
-      const file = resolveSpeechAudioPath(bookDir, language, entry.fileName)
       const status = capturedOutputs.find((output) => output.identity.kind === "audio" && output.identity.id === entry.textId && output.identity.language === language && output.identity.voiceSlot === (entry.voiceSlot ?? "primary"))
-      const audioHash = file ? crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex") : entry.audioHash
+      const audioHash = entry.audioHash ?? createHash("sha256").update(readBookAsset(bookDir, path.join("audio", language, entry.fileName))).digest("hex")
       const signature = entry.speechInputSignature ?? status?.signature
       storeResult(language, { ...entry, source: "ai", audioHash, speechInputSignature: signature,
         ...(signature && audioHash ? { input: outputEvidence(signature, audioHash, captureOutputReferences(storage, "audio", language)) } : {}) })

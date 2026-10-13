@@ -233,7 +233,9 @@ export function getStageRerunClearNodes(
   const fromIndex = STAGE_ORDER.indexOf(fromStage)
   const toIndex = STAGE_ORDER.indexOf(toStage)
 
-  const preservedNodes = new Set<PipelineNodeName>()
+  // Preserve the selected source snapshot, including a restored older version.
+  // Generated sectioning reconciles identities against it before publication.
+  const preservedNodes = new Set<PipelineNodeName>(["page-sectioning"])
   for (const stage of STAGES_PRESERVING_OWN_OUTPUT) {
     const index = STAGE_ORDER.indexOf(stage)
     if (index >= fromIndex && index <= toIndex) {

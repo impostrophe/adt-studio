@@ -36,6 +36,11 @@ export function renderedSectionId(rendering: SectionRendering): string | undefin
   const doc = parseDocument(rendering.html)
   const owners = DomUtils.findAll((element) => element.type === "tag" && element.attribs["data-section-id"] !== undefined, doc.children)
   if (owners.length > 1) return undefined
+  const htmlId = owners[0]?.attribs["data-section-id"]
+  if (htmlId === "" || (htmlId && rendering.sectionId && htmlId !== rendering.sectionId)) return undefined
+  // A persisted owner covers the complete rendering, including decorative
+  // siblings. Only unstamped legacy HTML needs the exclusive-root check below.
+  if (rendering.sectionId) return rendering.sectionId
   // A layout wrapper is fine; an owner on only one descendant must not claim
   // sibling text or another activity outside that section.
   let child: (typeof doc.children)[number] | typeof doc | undefined = owners[0]
@@ -46,9 +51,27 @@ export function renderedSectionId(rendering: SectionRendering): string | undefin
     ))) return undefined
     child = ancestor
   }
-  const htmlId = owners[0]?.attribs["data-section-id"]
-  if (htmlId === "" || (htmlId && rendering.sectionId && htmlId !== rendering.sectionId)) return undefined
-  return rendering.sectionId ?? htmlId
+  return htmlId
+}
+
+/** Read-only compatibility for develop's fixed-layout output. A positioned page
+ * has exactly one fixed section and one rendering; unlike a reflowable page it
+ * cannot have reordered section owners. Never infer ownership for other shapes
+ * or override explicit (possibly contradictory) ownership evidence. */
+export function withLegacyFixedLayoutOwnership(
+  storage: Storage, pageId: string, rendering: WebRenderingOutput,
+): WebRenderingOutput {
+  if (rendering.sections.length !== 1) return rendering
+  const entry = rendering.sections[0]
+  if (entry.sectionId || entry.html.includes("data-section-id")) return rendering
+  const fixed = PageSectioningOutputSchema.safeParse(storage.getLatestNodeData(FIXED_LAYOUT_SECTIONING_NODE, pageId)?.data)
+  if (!fixed.success || fixed.data.sections.length !== 1) return rendering
+  const doc = parseDocument(entry.html)
+  const roots = DomUtils.findAll((element) => element.type === "tag" && element.attribs.id === "content", doc.children)
+  if (roots.length !== 1) return rendering
+  const sectionId = fixed.data.sections[0].sectionId
+  roots[0].attribs["data-section-id"] = sectionId
+  return { ...rendering, sections: [{ ...entry, sectionId, html: DomUtils.getOuterHTML(doc) }] }
 }
 
 export function resolveRenderedSection(
@@ -67,7 +90,7 @@ export function renderingOwnershipWarnings(storage: Storage): PackagingWarning[]
     const rendering = WebRenderingOutput.safeParse(storage.getLatestNodeData("web-rendering", page.pageId)?.data)
     if (!rendering.success) return []
     const sections = getRenderSectioning(storage, page.pageId)?.sections
-    return rendering.data.sections.filter((entry) => !resolveRenderedSection(entry, sections))
+    return withLegacyFixedLayoutOwnership(storage, page.pageId, rendering.data).sections.filter((entry) => !resolveRenderedSection(entry, sections))
       .map((entry) => ({ kind: "orphaned-rendering" as const, pageId: page.pageId, sectionIndex: entry.sectionIndex }))
   })
 }

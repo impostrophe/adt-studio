@@ -7,7 +7,7 @@ import { DEFAULT_LLM_MAX_RETRIES, EasyReadOutput as EasyReadOutputSchema, WebRen
 import type { LLMModel, ValidationResult } from "@adt/llm"
 import type { Storage, PageData } from "@adt/storage"
 import { buildLanguageContext, normalizeLocale } from "./language-context.js"
-import { getRenderSectioning, resolveRenderedSection } from "./render-sectioning.js"
+import { withLegacyFixedLayoutOwnership, getRenderSectioning, resolveRenderedSection } from "./render-sectioning.js"
 import { processWithConcurrency } from "./concurrency.js"
 
 import { inputSignature, outputEvidence, deriveOutputStatus, withOutputLocations, selectedForGeneration } from "./output-freshness.js"
@@ -144,7 +144,7 @@ export function buildEasyReadSourceBlocks(
     const rendering = WebRenderingOutputSchema.safeParse(renderingRow.data)
     if (!rendering.success) continue
 
-    blocks.push(...buildPageEasyReadBlocks(page, rendering.data, sectioning))
+    blocks.push(...buildPageEasyReadBlocks(page, withLegacyFixedLayoutOwnership(storage, page.pageId, rendering.data), sectioning))
   }
 
   return blocks
@@ -289,6 +289,7 @@ export async function generateEasyRead(
   }
 
   const previous = new Map([...indexEasyReadEntries(options?.previous).values()].map((entry) => [entry.sourceId, entry]))
+  const conflicts = conflictingEasyReadHashes(options?.previous)
   const owner = new Map<string, EasyReadOutput["blocks"][number]>()
   for (const block of blocks) for (const entry of block.entries) if (!owner.has(entry.sourceId)) owner.set(entry.sourceId, block)
   const generated = new Map<string, EasyReadOutput["blocks"][number]["entries"][number]>()
@@ -305,6 +306,10 @@ export async function generateEasyRead(
         signature, content: prior?.text, metadata: prior, usable: !!prior?.text.trim(),
         excluded: options?.excluded?.has(entry.easyReadId),
       }), { id: entry.easyReadId, text: entry.text, locations: easyReadContexts(blocks, entry.sourceId).map((context) => ({ pageId: context.pageId, sectionId: context.sectionId })) })
+      if (conflicts.has(entry.easyReadId)) {
+        status.protected = true
+        status.contentHash = conflicts.get(entry.easyReadId)!
+      }
       return selectedForGeneration(status, prior, options?.scope)
     }).map((entry) => entry.sourceId))
     // Ordinary entries still batch together. Shared entries with different
@@ -336,11 +341,20 @@ export async function generateEasyRead(
   options?.signal?.throwIfAborted()
   if (!generated.size && options?.previous) return options.previous
   const merged = blocks.map((block) => ({ ...block, entries: block.entries.flatMap((entry) => {
-    const local = options?.previous?.blocks.find((prior) => prior.sectionId === block.sectionId && prior.pageId === block.pageId)?.entries.find((prior) => prior.easyReadId === entry.easyReadId)
-    const result = generated.get(entry.sourceId) ?? local ?? previous.get(entry.sourceId)
+    const local = options?.previous?.blocks.find((prior) => prior.sectionId === block.sectionId && prior.pageId === block.pageId)?.entries.filter((prior) => prior.easyReadId === entry.easyReadId)
+    if (!generated.has(entry.sourceId) && local?.length) return local
+    const result = generated.get(entry.sourceId) ?? previous.get(entry.sourceId)
     return result ? [{ ...result, pageId: entry.pageId, sectionId: entry.sectionId, sectionIndex: entry.sectionIndex, originalText: entry.originalText }] : []
   }) }))
-  // Retired entries remain in retained versions; unselected active work survives.
+  // Retain inactive references too. They carry the shared correction's
+  // provenance; explicit replacement of that ID resolves every retained copy.
+  for (const prior of options?.previous?.blocks ?? []) {
+    const active = merged.find((block) => block.pageId === prior.pageId && block.sectionId === prior.sectionId)
+    const extra = prior.entries.filter((entry) => !active?.entries.some((item) => item.easyReadId === entry.easyReadId))
+      .map((entry) => generated.has(entry.sourceId) ? { ...entry, ...generated.get(entry.sourceId)!, pageId: entry.pageId, sectionId: entry.sectionId, sectionIndex: entry.sectionIndex } : entry)
+    if (active) active.entries.push(...extra)
+    else merged.push({ ...prior, entries: extra })
+  }
   return EasyReadOutputSchema.parse({ blocks: merged, generatedAt: new Date().toISOString() })
 }
 
@@ -355,6 +369,19 @@ export function easyReadInputSignature(block: EasyReadOutput["blocks"][number] |
   // Preserve the established single-context basis for unaffected outputs.
   return inputSignature({ id: sourceId, ...(contexts.length === 1 ? contexts[0] : { contexts }), language: config.language, model: config.modelId,
     prompt: config.promptSignature ?? config.promptName })
+}
+
+/** Divergent retained copies require explicit resolution, even if one has AI
+ * provenance. Ordinary scoped generation must not silently choose a winner. */
+export function conflictingEasyReadHashes(output: EasyReadOutput | null | undefined): Map<string, string> {
+  const groups = new Map<string, EasyReadOutput["blocks"][number]["entries"]>()
+  for (const block of output?.blocks ?? []) for (const entry of block.entries) {
+    const group = groups.get(entry.easyReadId) ?? []
+    group.push(entry)
+    groups.set(entry.easyReadId, group)
+  }
+  return new Map([...groups].filter(([, group]) => group.some((entry) => entry.text !== group[0].text))
+    .map(([id, group]) => [id, inputSignature(group)]))
 }
 
 /** Legacy per-section duplicates must never let a generated copy hide protected

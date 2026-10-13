@@ -413,6 +413,7 @@ export {
   getRenderSectioningRow,
   getSemanticSectioning,
   renderedSectionId,
+  withLegacyFixedLayoutOwnership,
   resolveRenderedSection,
   renderingOwnershipWarnings,
   FIXED_LAYOUT_SECTIONING_NODE,
@@ -487,10 +488,21 @@ export { timestampInputSignature } from "./output-catalog.js"
 
 export { scopeLegacyActivityIds } from "./catalog-reconciliation.js"
 
-export { retainedCoreTts, retainedEasyRead } from "./retained-catalog.js"
+export { retainedCoreTts, retainedEasyRead, activeEasyRead } from "./retained-catalog.js"
 
 export { authoredImageAlts } from "./catalog-reconciliation.js"
 
 export { outputSkipped } from "./output-freshness.js"
 
 export { captureOutputReferences } from "./output-references.js"
+
+export { buildOutputSources, firstCatalogEntries, translatedDisplayEntries } from "./output-sources.js"
+
+export { OutputPublicationConflict } from "./output-freshness.js"
+
+export { materializeGlossaryIds, reconcileGlossaryEditIds } from "./glossary.js"
+
+export { reconcileSectioningIdentities } from "./sectioning-identity.js"
+export { cloneRenderedIdentities, stampRenderedOwner } from "./rendered-identity.js"
+
+export { indexEasyReadEntries } from "./easy-read.js"

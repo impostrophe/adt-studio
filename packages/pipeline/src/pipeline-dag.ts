@@ -1,3 +1,5 @@
+import { reconcileSectioningIdentities } from "./sectioning-identity.js"
+import { buildOutputSources, translatedDisplayEntries } from "./output-sources.js"
 import { captureOutputReferences } from "./output-references.js"
 import { publishSpeechOutput } from "@adt/storage"
 import { readOutputCatalog } from "./output-catalog.js"
@@ -586,7 +588,7 @@ export async function runFullPipeline(
           pageSectioningConfig,
           model,
         )
-        storage.putNodeData("page-sectioning", page.pageId, result)
+        storage.putNodeData("page-sectioning", page.pageId, reconcileSectioningIdentities(storage, page.pageId, result))
         p.emit({
           type: "step-progress",
           step: "page-sectioning",
@@ -774,7 +776,7 @@ export async function runFullPipeline(
       const totalPages = pages.length
       let completed = 0
       await processWithConcurrency(pages, effectiveConcurrency, async (page) => {
-        const imageIds = inventory.filter((image) => image.pageId === page.pageId && image.assetHash).map((image) => image.id)
+        const imageIds = inventory.filter((image) => image.pageId === page.pageId && image.available).map((image) => image.id)
         if (imageIds.length === 0) {
           storage.putNodeData("image-captioning", page.pageId, { captions: [] })
         } else {
@@ -906,12 +908,7 @@ export async function runFullPipeline(
       const outputLanguages = getOutputLanguages(config, language)
       const targetLanguages = getTargetLanguages(outputLanguages, language)
       if (targetLanguages.length === 0) return
-      const catalogRow = storage.getLatestNodeData("text-catalog", "book")
-      if (!catalogRow) return
-      const catalog = catalogRow.data as TextCatalogOutput
-      const easyReadRow = storage.getLatestNodeData("easy-read", "book")
-      const easyReadEntries = flattenEasyReadEntries(easyReadRow?.data as EasyReadOutput | undefined)
-      const translationEntries = [...catalog.entries, ...easyReadEntries]
+      const translationEntries = buildOutputSources(storage, config).entries
       if (translationEntries.length === 0) return
       const translationConfig = buildCatalogTranslationConfig(config, language)
       const model = getModel(translationConfig.modelId)
@@ -926,14 +923,7 @@ export async function runFullPipeline(
     executors.set("core-tts-catalog", async (p) => {
       const language = getLanguage(storage, config)
       const outputLanguages = getOutputLanguages(config, language)
-      const catalogRow = storage.getLatestNodeData("text-catalog", "book")
-      if (!catalogRow) return
-      const catalog = catalogRow.data as TextCatalogOutput
-      const easyReadRow = storage.getLatestNodeData("easy-read", "book")
-      const easyReadEntries = flattenEasyReadEntries(
-        easyReadRow?.data as EasyReadOutput | undefined,
-      )
-      const sourceDisplayEntries = [...catalog.entries, ...easyReadEntries]
+      const sourceDisplayEntries = buildOutputSources(storage, config).entries
       if (sourceDisplayEntries.length === 0) return
 
       const preparationConfig = buildCoreTtsPreparationConfig(config)
@@ -951,7 +941,7 @@ export async function runFullPipeline(
         llmModel: model,
         previous: getCoreTtsCatalog(storage, language),
       })
-      storage.putNodeData("core-tts-catalog", language, sourceCatalog)
+      if (inputSignature(getCoreTtsCatalog(storage, language)?.entries) !== inputSignature(sourceCatalog.entries)) storage.putNodeData("core-tts-catalog", language, sourceCatalog)
       const sourceContext = buildCoreTtsSourceContext(
         sourceDisplayEntries,
         sourceCatalog,
@@ -966,12 +956,7 @@ export async function runFullPipeline(
         const lang = locale.language
         let displayEntries = sourceDisplayEntries
         if (!locale.usesSourceDisplayText) {
-          const legacy = lang.replace("-", "_")
-          const row =
-            storage.getLatestNodeData("text-catalog-translation", lang) ??
-            storage.getLatestNodeData("text-catalog-translation", legacy)
-          if (!row) continue
-          displayEntries = (row.data as TextCatalogOutput).entries
+          displayEntries = translatedDisplayEntries(storage, lang, sourceDisplayEntries)
         }
         const targetCatalog = await prepareCoreTtsCatalog({
           entries: displayEntries,
@@ -983,7 +968,7 @@ export async function runFullPipeline(
           previous: getCoreTtsCatalog(storage, lang),
           sourceContext,
         })
-        storage.putNodeData("core-tts-catalog", lang, targetCatalog)
+        if (inputSignature(getCoreTtsCatalog(storage, lang)?.entries) !== inputSignature(targetCatalog.entries)) storage.putNodeData("core-tts-catalog", lang, targetCatalog)
         completed++
         p.emit({
           type: "step-progress",

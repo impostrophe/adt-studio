@@ -1,3 +1,4 @@
+import { firstCatalogEntries } from "@adt/pipeline"
 import { captureOutputReferences } from "@adt/pipeline"
 import { catalogOutputs, editSourceSignature, assertEditSource } from "../services/catalog-output-service.js"
 import fs from "node:fs"
@@ -160,7 +161,8 @@ export function createTextCatalogRoutes(booksDir: string, promptsDir = path.reso
       }
       const outputs = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath)
       assertEditSource(editSourceSignature(outputs, "translation", language), parsed.data.sourceSignature)
-      const previousEntries = new Map(((previous?.data as { entries?: Array<{ id: string; text: string }> })?.entries ?? []).map((entry) => [entry.id, entry]))
+      const retainedEntries = TextCatalogOutput.safeParse(previous?.data).data?.entries ?? []
+      const previousEntries = firstCatalogEntries(retainedEntries)
       const previousData = previous?.data && typeof previous.data === "object"
         ? previous.data as { generatedAt?: unknown }
         : null
@@ -172,14 +174,26 @@ export function createTextCatalogRoutes(booksDir: string, promptsDir = path.reso
         }
         changes.set(entry.id, entry)
       }
+      const replacements = new Map<string, TextCatalogOutput["entries"][number]>()
+      for (const entry of changes.values()) {
+        const old = previousEntries.get(entry.id)
+        // A full-form save of the visible first copy must not discard an
+        // unseen legacy correction. Only an actual edit resolves this ID.
+        if (old?.text === entry.text) continue
+        const status = outputs.find((item) => item.identity.kind === "translation" && item.identity.id === entry.id && item.identity.language === normalizedLanguage)
+        replacements.set(entry.id, { ...old, ...entry, source: "manual", review: undefined, input: status ? outputEvidence(status.signature, entry.text, captureOutputReferences(storage, status.identity.kind, status.identity.language)) : undefined })
+      }
+      const consumed = new Set<string>()
+      const entries = retainedEntries.flatMap((entry) => {
+        const replacement = replacements.get(entry.id)
+        if (!replacement) return [entry]
+        if (consumed.has(entry.id)) return []
+        consumed.add(entry.id)
+        return [replacement]
+      })
+      for (const [id, entry] of replacements) if (!consumed.has(id)) entries.push(entry)
       const data = TextCatalogOutput.parse({
-        entries: [...new Set([...previousEntries.keys(), ...changes.keys()])].map((id) => {
-          const entry = changes.get(id)
-          if (!entry) return previousEntries.get(id)
-          const old = previousEntries.get(entry.id)
-          const status = outputs.find((item) => item.identity.kind === "translation" && item.identity.id === entry.id && item.identity.language === normalizedLanguage)
-          return old?.text === entry.text ? old : { ...old, ...entry, source: "manual", review: undefined, input: status ? outputEvidence(status.signature, entry.text, captureOutputReferences(storage, status.identity.kind, status.identity.language)) : undefined }
-        }),
+        entries,
         generatedAt: parsed.data.generatedAt
           ?? (typeof previousData?.generatedAt === "string" ? previousData.generatedAt : undefined)
           ?? new Date().toISOString(),

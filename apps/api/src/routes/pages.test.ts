@@ -88,6 +88,7 @@ describe("Page routes", () => {
             sectionIndex: 0,
             sectionType: "content",
             reasoning: "rendered",
+            sectionId: `${label}_p1_sec001`,
             html: "<div>Hello world</div>",
           },
         ],
@@ -1395,7 +1396,7 @@ describe("Page routes", () => {
     function seedSectionSeqs(seqs: number[], pageId = `${label}_p1`): number {
       const storage = createBookStorage(label, tmpDir)
       try {
-        return storage.putNodeData("page-sectioning", pageId, {
+        const version = storage.putNodeData("page-sectioning", pageId, {
           reasoning: "sectioned",
           sections: seqs.map((seq) => ({
             sectionId: `${pageId}_sec${String(seq).padStart(3, "0")}`,
@@ -1414,6 +1415,11 @@ describe("Page routes", () => {
             ],
           })),
         })
+        storage.putNodeData("web-rendering", pageId, { sections: seqs.map((seq, sectionIndex) => ({
+          sectionId: `${pageId}_sec${String(seq).padStart(3, "0")}`, sectionIndex, sectionType: "content", reasoning: "fixture",
+          html: `<section data-section-id="${pageId}_sec${String(seq).padStart(3, "0")}"><p>Section ${seq}</p></section>`,
+        })) })
+        return version
       } finally {
         storage.close()
       }
@@ -1569,6 +1575,13 @@ describe("Page routes", () => {
         }
       )
       expect(restore.status).toBe(200)
+      // Source-only restore deliberately leaves newer HTML active. Restore the
+      // matching rendering too before a positional structural operation.
+      const restored = createBookStorage(label, tmpDir)
+      const matching = restored.getAllNodeVersions("web-rendering", `${label}_p1`).find((row) => (row.data as { sections?: unknown[] })?.sections?.length === 3)
+      expect(matching).toBeDefined()
+      restored.setCurrentNodeVersion("web-rendering", `${label}_p1`, matching!.version)
+      restored.close()
 
       const second = await app.request(
         `/api/books/${label}/pages/${label}_p1/sections/0/clone`,
@@ -1576,11 +1589,7 @@ describe("Page routes", () => {
       )
       expect(second.status).toBe(200)
 
-      // Structural ops currently read the latest version rather than the
-      // restored pointer, so today this holds for that reason too. The
-      // assertion is on the id space regardless: whoever makes a restore
-      // authoritative for these ops must keep the factory's history-wide
-      // high-water mark, or this fails.
+      // Allocation still reserves the ID spent after the restored version.
       expect(readSectionIds()).toContain(`${label}_p1_sec005`)
     })
 

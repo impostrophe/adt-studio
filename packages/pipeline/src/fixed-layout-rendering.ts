@@ -458,7 +458,7 @@ export function renderFixedLayoutPage(
   // dimensions from the style rule, not this book-wide value.
   const refWidthAttr =
     referenceWidth !== undefined ? ` data-fl-reference-width="${Math.round(referenceWidth)}"` : ""
-  const html = `<div id="content"${refWidthAttr} style="position:relative;width:${viewport.width}px;height:${viewport.height}px;margin:0 auto;overflow:hidden">
+  const html = `<div id="content" data-section-id="${section.sectionId}"${refWidthAttr} style="position:relative;width:${viewport.width}px;height:${viewport.height}px;margin:0 auto;overflow:hidden">
 ${elements.join("\n")}${fitScript}
 </div>`
 

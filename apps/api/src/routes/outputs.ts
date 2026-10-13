@@ -3,7 +3,7 @@ import path from "node:path"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { createBookStorage, publishSpeechOutput, publishSpeechTimings } from "@adt/storage"
-import { OutputReviewRequest, OutputDisclosureOptions, parseBookLabel, type OutputStatus, type CatalogConflict } from "@adt/types"
+import { OutputReviewRequest, OutputDisclosureOptions, parseBookLabel, type OutputStatus, type CatalogConflict, type TTSOutput } from "@adt/types"
 import { loadBookConfig, readOutputCatalog, outputIdentityKey, summarizeOutputs, summarizeOutputScopes, buildTextCatalogSnapshot, reconcileSpeechInputs, loadCoreTtsProfiles, renderingOwnershipWarnings } from "@adt/pipeline"
 
 export function createOutputRoutes(booksDir: string, promptsDir: string, configPath?: string): Hono {
@@ -14,6 +14,27 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
     bookDir: path.join(path.resolve(booksDir), label), promptsDir,
     configDir: configPath ? path.join(path.dirname(configPath), "config") : path.resolve("config"),
   })
+  const showMissingSpeech = (storage: ReturnType<typeof createBookStorage>) => {
+    const runs = storage.getStepRuns().filter((run) => ["tts", "word-timestamps"].includes(run.step))
+    if (runs.some((run) => ["running", "queued"].includes(run.status))) return false
+    return runs.some((run) => ["done", "completed", "error", "failed"].includes(run.status)) || storage.getNodeItemIds("tts").some((language) => {
+      const data = storage.getLatestNodeData("tts", language)?.data as TTSOutput | undefined
+      return !!data?.entries?.length || !!data?.failed?.length
+    })
+  }
+  const withoutMissingSpeech = (outputs: OutputStatus[]) => outputs.filter((output) => !output.missing || !["audio", "timestamps"].includes(output.identity.kind))
+  app.get("/books/:label/outputs/summary", (c) => {
+    const label = parseBookLabel(c.req.param("label"))
+    if (!fs.existsSync(path.join(path.resolve(booksDir), label, `${label}.db`))) throw new HTTPException(404, { message: "Book not found" })
+    const storage = createBookStorage(label, booksDir)
+    try {
+      let conflicts: CatalogConflict[] = []
+      const outputs = read(label, storage, (items) => { conflicts = items })
+      return c.json({ stages: summarizeOutputScopes(outputs, conflicts).stages,
+        stagesWithoutMissingSpeech: summarizeOutputScopes(withoutMissingSpeech(outputs), conflicts).stages,
+        showMissingSpeech: showMissingSpeech(storage) })
+    } finally { storage.close() }
+  })
   app.get("/books/:label/outputs", (c) => {
     const label = parseBookLabel(c.req.param("label"))
     if (!fs.existsSync(path.join(path.resolve(booksDir), label, `${label}.db`))) throw new HTTPException(404, { message: "Book not found" })
@@ -21,7 +42,7 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
     try {
       let conflicts: CatalogConflict[] = []
       const outputs = read(label, storage, (items) => { conflicts = items })
-      return c.json({ outputs, summary: summarizeOutputs(outputs), summaries: summarizeOutputScopes(outputs), conflicts, ownershipWarnings: renderingOwnershipWarnings(storage) })
+      return c.json({ outputs, showMissingSpeech: showMissingSpeech(storage), summary: summarizeOutputs(outputs), summaries: summarizeOutputScopes(outputs, conflicts), conflicts, ownershipWarnings: renderingOwnershipWarnings(storage) })
     } finally { storage.close() }
   })
   app.get("/books/:label/outputs/disclosure", (c) => {
@@ -60,6 +81,7 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
           throw new HTTPException(409, { message: "Output or its inputs changed. Refresh before reviewing." })
         }
         if (!output.usable || output.excluded) throw new HTTPException(409, { message: "Only included, usable content can be reviewed." })
+        if (output.warnings.some((warning) => warning.reason === "output-conflict")) throw new HTTPException(409, { message: "Conflicting retained outputs must be edited or explicitly replaced before review can be accepted." })
         if (review.action === "keep" && !output.protected) throw new HTTPException(400, { message: "Keep is for protected or legacy content." })
         if (review.action === "checked" && !(output.identity.kind === "preparation" && output.warnings.some((warning) => warning.reason.startsWith("preparation-")))) {
           throw new HTTPException(400, { message: "Mark checked resolves only a preparation fallback warning." })
@@ -80,7 +102,7 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
         if (!matching.length) throw new HTTPException(409, { message: "Output is no longer available." })
         // Shared Easy Read references carry the same reviewed identity. Do not
         // certify a conflicting legacy copy whose content was not shown.
-        for (const entry of matching) if (field !== "blocks" || entry.text === output.text) entry.review = { signature: review.signature, contentHash: review.contentHash, action: review.action }
+        for (const entry of matching) if ((field !== "blocks" && field !== "entries") || entry.text === output.text || entry.speechText === output.text) entry.review = { signature: review.signature, contentHash: review.contentHash, action: review.action }
         const version = node === "tts" ? publishSpeechOutput(storage, itemId, data as unknown as import("@adt/types").TTSOutput)
           : node === "tts-timestamps" ? publishSpeechTimings(storage, itemId, data as unknown as import("@adt/types").WordTimestampOutput)
           : storage.putNodeData(node, itemId, data)

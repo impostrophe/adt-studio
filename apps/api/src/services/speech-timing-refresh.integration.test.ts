@@ -46,7 +46,7 @@ it.each(["model", "voice"])("refreshes timings for new audio after only the %s c
   expect(transport).toHaveBeenCalledTimes(4)
 })
 
-it("AC-6/8/10 repairs corrupt generated audio from cache without overwriting retained bytes", async () => {
+it("AC-6/8/10 ordinary reuse trusts recorded audio identity after an external same-name edit", async () => {
   await run()
   const db = storage()
   const before = db.getLatestNodeData("tts", "en")!.data as TTSOutput
@@ -56,12 +56,36 @@ it("AC-6/8/10 repairs corrupt generated audio from cache without overwriting ret
   await run()
   const reopened = storage()
   const after = reopened.getLatestNodeData("tts", "en")!.data as TTSOutput
-  expect(after.entries[0].fileName).not.toBe(before.entries[0].fileName)
+  expect(after.entries[0].fileName).toBe(before.entries[0].fileName)
   expect(fs.readFileSync(file, "utf8")).toBe("CORRUPTED")
-  expect(fs.readFileSync(path.join(reopened.bookDir!, "audio/en", after.entries[0].fileName), "utf8")).toBe("audio bytes 1")
+  expect(fs.readFileSync(path.join(reopened.bookDir!, "audio/en", after.entries[0].fileName), "utf8")).toBe("CORRUPTED")
   const outputs = readOutputCatalog({ storage: reopened, config: loadBookConfig(label, root), bookDir: reopened.bookDir!, promptsDir: path.resolve("prompts"), configDir: path.resolve("config") })
   expect(outputs.filter((output) => output.identity.kind === "audio")).toEqual([expect.objectContaining({ usable: true, current: true, missing: false })])
   reopened.close()
   await run()
   expect(transport.mock.calls.filter(([url]) => String(url).includes("/audio/speech"))).toHaveLength(1)
+})
+
+it("audio-only regeneration creates timings for the new recording and retains the manually timed historical pair", async () => {
+  await run()
+  const db = storage()
+  const oldAudio = db.getLatestNodeData("tts", "en")!
+  const oldTiming = db.getLatestNodeData("tts-timestamps", "en")!.data as WordTimestampOutput
+  db.putNodeData("tts-timestamps", "en", { ...oldTiming, entries: Object.fromEntries(Object.entries(oldTiming.entries).map(([key, entry]) => [key, { ...entry, source: "manual", words: [{ word: "Manually timed", start: 0.2, end: 0.9 }] }])) })
+  const manual = db.getLatestNodeData("tts-timestamps", "en")!
+  db.close()
+  configure("tts-1")
+  await createStageRunner().run(label, { booksDir: root, promptsDir: path.resolve("prompts"), fromStage: "speech", toStage: "speech", credentials: { openai: { apiKey: "stub-transport" } }, outputScope: { selection: { kinds: ["audio"], ids: ["stable"], languages: ["en"] } } }, { emit: () => undefined })
+  expect(transport.mock.calls.filter(([url]) => String(url).includes("/audio/speech"))).toHaveLength(2)
+  expect(transport.mock.calls.filter(([url]) => String(url).includes("/audio/transcriptions"))).toHaveLength(2)
+  const reopened = storage()
+  const audio = reopened.getLatestNodeData("tts", "en")!.data as TTSOutput
+  const timings = reopened.getLatestNodeData("tts-timestamps", "en")!.data as WordTimestampOutput
+  expect(timings.entries.stable.audioHash).toBe(audio.entries[0].audioHash)
+  expect(timings.entries.stable.source).toBe("ai")
+  expect(reopened.getAllNodeVersions("tts-timestamps", "en")).toContainEqual(manual)
+  expect(reopened.getAllNodeVersions("tts", "en")).toContainEqual(oldAudio)
+  const oldFile = (oldAudio.data as TTSOutput).entries[0].fileName
+  expect(fs.existsSync(path.join(reopened.bookDir!, "audio/en", oldFile))).toBe(true)
+  reopened.close()
 })

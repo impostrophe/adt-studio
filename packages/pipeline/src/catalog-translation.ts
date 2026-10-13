@@ -1,3 +1,4 @@
+import { firstCatalogEntries, conflictingCatalogHashes } from "./output-sources.js"
 import type { OutputReference } from "@adt/types"
 import { outputSkipped } from "./output-freshness.js"
 import { z } from "zod"
@@ -168,7 +169,8 @@ export async function translateCatalog(options: {
   references?: OutputReference[]
 }): Promise<TextCatalogOutput> {
   const { entries, config, language, llmModel } = options
-  const previous = new Map((options.previous?.entries ?? []).map((entry) => [entry.id, entry]))
+  const previous = firstCatalogEntries(options.previous?.entries ?? [])
+  const conflicts = conflictingCatalogHashes(options.previous?.entries ?? [])
   const pending = entries.filter((entry) => {
     if (!entry.text.trim()) return false
     const prior = previous.get(entry.id)
@@ -177,6 +179,10 @@ export async function translateCatalog(options: {
       signature: translationInputSignature(entry, language, config), content: prior?.text,
       metadata: prior, usable: !!prior?.text.trim(), excluded: options.excluded?.has(entry.id),
     }), entry)
+    if (conflicts.has(entry.id)) {
+      status.protected = true
+      status.contentHash = conflicts.get(entry.id)!
+    }
     return selectedForGeneration(status, prior, options.scope)
   })
   const generated = new Map<string, TextCatalogEntry>()
@@ -194,7 +200,16 @@ export async function translateCatalog(options: {
   }
   if (!generated.size) return options.previous ?? { entries: [], generatedAt: new Date().toISOString() }
   // Keep retired/unselected entries available for reactivation and history.
-  const merged = new Map(previous)
-  for (const [id, entry] of generated) merged.set(id, entry)
-  return { entries: [...merged.values()], generatedAt: new Date().toISOString() }
+  // An unrelated generation cannot discard a noncanonical legacy correction.
+  // Explicit replacement resolves all copies of its ID into one new version.
+  const replaced = new Set<string>()
+  const merged = (options.previous?.entries ?? []).flatMap((entry) => {
+    const replacement = generated.get(entry.id)
+    if (!replacement) return [entry]
+    if (replaced.has(entry.id)) return []
+    replaced.add(entry.id)
+    return [replacement]
+  })
+  for (const [id, entry] of generated) if (!replaced.has(id)) merged.push(entry)
+  return { entries: merged, generatedAt: new Date().toISOString() }
 }

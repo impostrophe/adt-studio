@@ -1,3 +1,4 @@
+import { indexEasyReadEntries } from "@adt/pipeline"
 import { captureOutputReferences, assertOutputPublication } from "@adt/pipeline"
 import { catalogOutputs, editSourceSignature, assertEditSource, assertEditVersion } from "../services/catalog-output-service.js"
 import fs from "node:fs"
@@ -17,6 +18,7 @@ import {
   loadBookConfig,
   normalizeLocale,
   retainedEasyRead,
+  activeEasyRead,
 } from "@adt/pipeline"
 import { createLLMModel, createPromptEngine, createRateLimiter } from "@adt/llm"
 import { readProviderCredentials } from "../middleware/provider-credentials.js"
@@ -108,8 +110,9 @@ export function createEasyReadRoutes(
           message: `Stored Easy Read data is invalid: ${parsed.error.message}`,
         })
       }
-      const active = retainedEasyRead(storage, buildEasyReadSourceBlocks(storage, storage.getPages()))
-      return c.json({ ...(active ?? parsed.data), version: row.version, sourceSignature: editSourceSignature(catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath), "easy-read") })
+      const sourceBlocks = buildEasyReadSourceBlocks(storage, storage.getPages())
+      const projection = activeEasyRead(storage, sourceBlocks)
+      return c.json({ ...projection, version: row.version, sourceSignature: editSourceSignature(catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath), "easy-read") })
     } finally {
       storage.close()
     }
@@ -133,7 +136,7 @@ export function createEasyReadRoutes(
       assertEditVersion(previousRow?.version, parsed.data.baseVersion)
       const outputs = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath)
       assertEditSource(editSourceSignature(outputs, "easy-read"), parsed.data.sourceSignature)
-      const oldEntries = new Map((previousEasyRead?.blocks ?? []).flatMap((block) => block.entries.map((entry) => [entry.easyReadId, entry] as const)))
+      const oldEntries = indexEasyReadEntries(previousEasyRead)
       const edits = new Map<string, string>()
       for (const entry of parsed.data.blocks.flatMap((block) => block.entries)) {
         if (!oldEntries.has(entry.easyReadId) || (edits.has(entry.easyReadId) && edits.get(entry.easyReadId) !== entry.text)) throw new HTTPException(409, { message: "Easy Read membership changed or shared text conflicts. Refresh before saving." })
@@ -142,7 +145,7 @@ export function createEasyReadRoutes(
       const output = EasyReadOutput.parse({ ...previousEasyRead, blocks: (previousEasyRead?.blocks ?? []).map((block) => ({ ...block,
         entries: block.entries.map((entry) => {
           const text = edits.get(entry.easyReadId)
-          if (text === undefined || text === entry.text) return entry
+          if (text === undefined || text === oldEntries.get(entry.easyReadId)?.text) return entry
           const status = outputs.find((item) => item.identity.kind === "easy-read" && item.identity.id === entry.easyReadId)
           return { ...entry, text, source: "manual", review: undefined, input: status ? outputEvidence(status.signature, text, captureOutputReferences(storage, status.identity.kind, status.identity.language)) : undefined }
         }),

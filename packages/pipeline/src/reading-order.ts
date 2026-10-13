@@ -25,7 +25,7 @@ import {
   withResolvedQuizIds,
   resolveQuizId,
 } from "@adt/types"
-import { getRenderSectioning, resolveRenderedSection } from "./render-sectioning.js"
+import { withLegacyFixedLayoutOwnership, getRenderSectioning, resolveRenderedSection } from "./render-sectioning.js"
 
 /** One output page, in reading order. */
 export type ResolvedItem =
@@ -99,7 +99,7 @@ function readPageContexts(storage: Storage): PageContext[] {
     const sectioning = getRenderSectioning(storage, page.pageId)
     const row = storage.getLatestNodeData("web-rendering", page.pageId)
     const parsed = row ? WebRenderingOutputSchema.safeParse(row.data) : null
-    const rendering = parsed?.success ? [...parsed.data.sections] : []
+    const rendering = parsed?.success ? [...withLegacyFixedLayoutOwnership(storage, page.pageId, parsed.data).sections] : []
     rendering.sort((a, b) => a.sectionIndex - b.sectionIndex)
     return { pageId: page.pageId, sections: sectioning?.sections ?? [], rendering }
   })

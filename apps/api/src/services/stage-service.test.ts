@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { openBookDb } from "@adt/storage"
 import { createBookEventBus, type BookSSEEvent } from "./book-event-bus.js"
+import { createStageRoutes } from "../routes/stages.js"
 import { createPageErrorDecisions } from "./page-error-decisions.js"
 import {
   createStageService,
@@ -311,4 +312,51 @@ describe("catalog run admission and skip scope", () => {
     expect(scopes[1].skip).toBeUndefined()
     finish!(); await tick()
   })
+})
+
+it("rejects a deleted book before admission without recreating its directory", () => {
+  const run = vi.fn(async () => {})
+  const service = createStageService({ run }, createBookEventBus())
+  expect(() => service.startStageRun("deleted", baseOptions("deleted"))).toThrow("Book not found")
+  expect(fs.existsSync(path.join(tmpDir, "deleted"))).toBe(false)
+  expect(run).not.toHaveBeenCalled()
+})
+
+it("rechecks a queued book before preparation after an external deletion", async () => {
+  const label = "deleted-queued"
+  makeBook(label)
+  const runner = controllableRunner()
+  const service = createStageService(runner.runner, createBookEventBus())
+  service.startStageRun(label, baseOptions(label))
+  await tick()
+  const beforeRun = vi.fn()
+  service.startStageRun(label, { ...baseOptions(label), beforeRun })
+  fs.rmSync(path.join(tmpDir, label), { recursive: true, force: true })
+  runner.finish()
+  await tick()
+  await tick()
+  expect(beforeRun).not.toHaveBeenCalled()
+  expect(fs.existsSync(path.join(tmpDir, label))).toBe(false)
+  expect(service.getStatus(label).active?.status).toBe("failed")
+})
+
+
+it("exposes the accepted run identity through HTTP before and after queue promotion", async () => {
+  const label = "review-run-identity"
+  makeBook(label)
+  const runner = controllableRunner()
+  const bus = createBookEventBus()
+  const service = createStageService(runner.runner, bus)
+  const app = createStageRoutes(service, bus, createPageErrorDecisions(bus), tmpDir, path.resolve("prompts"), path.resolve("assets/adt"))
+  const status = async () => (await (await app.request(`/books/${label}/stages/status`)).json())
+  const first = service.startStageRun(label, baseOptions(label))
+  await tick()
+  const second = service.startStageRun(label, baseOptions(label))
+  expect(await status()).toMatchObject({ id: first.id, status: "running", queue: [{ id: second.id }] })
+  runner.finish()
+  await tick()
+  expect(await status()).toMatchObject({ id: second.id, status: "running", queue: [] })
+  runner.finish()
+  await tick()
+  expect(await status()).toMatchObject({ status: "idle", queue: [] })
 })

@@ -1,3 +1,4 @@
+import { requireExistingBook } from "../utils/book-exists.js"
 import fs from "node:fs"
 import path from "node:path"
 import { Hono } from "hono"
@@ -166,6 +167,7 @@ export function makeBeforeRun(label: string, fromStage: StageName, toStage: Stag
   let ran = false
   return () => {
     if (ran) return
+    requireExistingBook(label, booksDir)
     const storage = createBookStorage(label, booksDir)
     try {
       if (fromStage === "extract" && storage.getPages().length) {
@@ -233,6 +235,7 @@ export function createStageRoutes(
   // POST /books/:label/stages/run — Start or queue a stage-scoped run
   app.post("/books/:label/stages/run", async (c) => {
     const { label } = c.req.param()
+    requireExistingBook(label, booksDir)
 
     let body: unknown
     try {
@@ -286,7 +289,7 @@ export function createStageRoutes(
       beforeRun: clearData,
     })
 
-    return c.json({ status: result.status, label, fromStage, toStage })
+    return c.json({ id: result.id, status: result.status, label, fromStage, toStage })
   })
 
   app.post("/books/:label/stages/skip-outputs", async (c) => {

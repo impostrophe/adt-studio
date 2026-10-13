@@ -60,7 +60,21 @@ The catalog remains derived from the latest saved authored content, not a second
 
 Moves retain identity; new or cloned elements receive new IDs. Reject new or changed conflicting duplicate IDs on save with HTTP 409 and the ID. Reads of legacy conflicts keep the first value in reading order and report one source-conflict warning per ID in the attention panel. An unchanged legacy conflict does not block unrelated or cosmetic saves; resolving it must not reassign retained corrections to a different ID. Positional activity IDs currently minted during catalog extraction must be made stable before relying on them for correction preservation. Reconcile a complete snapshot or an explicit source contribution; never treat a partial-page response as a complete catalog and retire unseen entries.
 
-Keep an image inventory alongside the text catalog using existing book image storage. It records active image IDs, asset content identity and references from Storyboard/glossary. An image must be discoverable before a caption exists. Image pixels/crops affect captioning; displayed size and CSS do not. Caption text uses the authoritative caption store; HTML alt edits must update that same source rather than an unused competing value.
+**October 13 compatibility clarification, pending human review:** legacy glossary
+IDs are materialized before editing. Where explicit and positional IDs collide,
+the first catalog owner keeps its ID; later terms receive unused IDs without
+moving the first owner's translations or recordings. Divergent retained
+translations display their first copy. For divergent legacy Easy Read copies,
+the displayed authority is the first manual copy, otherwise the first protected
+copy, otherwise the first copy. This preserves an authored correction when its
+original section disappears. Raw copies/history remain intact, ordinary
+generation preserves the conflict, and a warning requires an actual edit or
+explicit replacement. Keep cannot certify conflicting copies. Replacement is
+bound to every retained copy, including values not displayed. Current source
+membership alone controls Preview/export inclusion. This Easy Read authority
+rule is an explicit compatibility assumption, not specification approval.
+
+Keep an image inventory alongside the text catalog using existing book image storage. It records active image IDs, physical availability and references from Storyboard/glossary. An image must be discoverable before a caption exists. Image freshness is ID-based: in-app crops and generated replacements mint new image IDs; displayed size and CSS do not affect freshness. Per elasticsounds’ October 13 review decision, changed pixels under the same ID (including re-extraction or external file edits) do not invalidate captions or image translations in this revision; detecting that case is deferred. Caption text uses the authoritative caption store; HTML alt edits must update that same source rather than an unused competing value.
 
 ### 2. Store the inputs used by each output
 
@@ -70,7 +84,7 @@ The signature covers normalized input content, effective prompt/model/settings a
 
 | Output | Required input basis |
 |--------|----------------------|
-| Caption | Image asset, required page/image context, language and caption settings |
+| Caption | Stable image ID, language, summary and caption prompt/model/settings; page/image bytes are generation context, not freshness inputs |
 | Translation | Source entry, source/target language, prompt/model/settings and any explicitly required context |
 | Easy-read | Full eligible section text, IDs/order, section type and settings |
 | Core TTS | Display text, relevant source-language context, required neighboring text and preparation settings |
@@ -163,14 +177,13 @@ the walkthrough above. The user delegated this safety choice with an explicit
 requirement to document the assumption. This is an additional compatibility
 restriction, not an amendment silently folded into AC-7 or AC-12: those criteria
 remain qualified for this edge until the spec owner ratifies the clarification
-or a safe repair workflow is implemented. Original acceptance criteria are
-unchanged; neither this note nor implementation constitutes specification approval.
+or a safe repair workflow is implemented. This note does not waive AC-7 or AC-12; neither it nor implementation constitutes specification approval. The October 13 repairs recognize develop’s single-section fixed-layout output and stamp new agent-created sections; those ordinary cases are included. Truly ambiguous or contradictory legacy owners remain qualified.
 
 Preview/export may include usable stale or review-needed content under existing eligibility rules. Show outdated content included, missing content omitted, and actual fallback use. Warnings introduce no extra approval popup or freshness gate; exporting does not clear them. Disabled/excluded features do not warn about work not included. Apart from Core TTS fallback, this spec adds no new export fallback.
 
 ### 7. Preserve physical assets
 
-Audio, uploaded recordings and their matching timing data must remain restorable, not just their database rows. Generate into unpublished storage; publication must preserve files referenced by retained history. Cache hits obey the same rule. History must not depend on a disposable LLM cache. Scope also includes preserving replaced image-translation variants where retained output versions reference them.
+Audio, uploaded recordings and their matching timing data must remain restorable, not just their database rows. Generate into unpublished storage; publication must preserve files referenced by retained history. Cache hits obey the same rule. History must not depend on a disposable LLM cache. Read-only status, ordinary reuse and packaging cache checks use recorded immutable hashes/filenames and contained, readable, nonempty-file existence checks. They do not rehash retained media. External same-name corruption is an accepted read-time detection gap; publication and explicit restore still verify bytes. Scope also includes preserving replaced image-translation variants where retained output versions reference them.
 
 Failure before a scope publishes keeps its previous playable output intact; other scopes already published successfully need not roll back. Page-batched generation cannot overwrite neighboring live assets. Preview/export resolve the active manifest's files, and published asset changes invalidate cached packages. Preserve legacy files before the first modifying operation; do not promise recovery of already-overwritten historical bytes.
 
