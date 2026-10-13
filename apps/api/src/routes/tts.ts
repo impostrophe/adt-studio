@@ -505,7 +505,7 @@ export function createTTSRoutes(booksDir: string, configPath?: string, taskServi
       let readyIds: Set<string>
       try {
         const { config, language: sourceLanguage } = getSourceLanguage(storage, booksDir, safeLabel, configPath)
-        readyIds = new Set(reconcileSpeechInputs({ storage, config, sourceLanguage, languages: [language], profiles: loadCoreTtsProfiles(getConfigDir(configPath)), promptsDir, bookDir: path.join(resolvedBooksDir, safeLabel), persist: false })[0].entries.map((entry) => entry.id))
+        readyIds = storage.readSnapshot(() => new Set(reconcileSpeechInputs({ storage, config, sourceLanguage, languages: [language], profiles: loadCoreTtsProfiles(getConfigDir(configPath)), promptsDir, bookDir: path.join(resolvedBooksDir, safeLabel), persist: false })[0].entries.map((entry) => entry.id)))
       } finally {
         storage.close()
       }

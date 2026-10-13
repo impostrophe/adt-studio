@@ -438,3 +438,25 @@ it("checking a declared fallback resolves only that warning and reappears after 
   const changed = (await outputs()).find((output) => output.identity.kind === "preparation" && output.identity.id === "pg001_t001" && output.identity.language === "fr")!
   expect(changed.warnings.some((warning) => warning.reason.startsWith("preparation-"))).toBe(true)
 })
+
+it("projects editor source guards identically without reading unrelated retained audio", async () => {
+  const { readOutputCatalog } = await import("@adt/pipeline")
+  const db = storage()
+  try {
+    const options = { storage: db, config: loadBookConfig(label, root), bookDir: db.bookDir!, promptsDir: prompts, configDir: path.resolve("config") }
+    const before = db.getNodeVersionFingerprint()
+    const full = readOutputCatalog(options)
+    for (const kinds of [["caption"], ["easy-read"], ["translation", "preparation"]] as const) {
+      expect(readOutputCatalog({ ...options, kinds: [...kinds] })).toEqual(full.filter((output) => (kinds as readonly string[]).includes(output.identity.kind)))
+    }
+    expect(db.getNodeVersionFingerprint()).toEqual(before)
+    // No projection-local memo can outlive the call, even inside an outer writer.
+    db.transaction(() => {
+      const previous = readOutputCatalog(options)
+      db.putNodeData("web-rendering", "pg001", rendering("Changed source"))
+      const changed = readOutputCatalog(options)
+      expect(changed.find((output) => output.identity.kind === "translation" && output.identity.id === "pg001_t001")?.signature)
+        .not.toBe(previous.find((output) => output.identity.kind === "translation" && output.identity.id === "pg001_t001")?.signature)
+    })
+  } finally { db.close() }
+})

@@ -848,3 +848,35 @@ describe("quiz history retention on invalidation", () => {
     } finally { storage.close() }
   })
 })
+
+it("read snapshots keep a consistent view and release the WASM lock for the next writer", () => {
+  const { storage, paths } = createTempStorage()
+  storage.putNodeData("metadata", "book", { value: "before" })
+  const writer = openBookDb(paths.dbPath)
+  try {
+    storage.readSnapshot(() => {
+      expect(storage.getLatestNodeData("metadata", "book")?.data).toEqual({ value: "before" })
+      expect(() => writer.exec("BEGIN IMMEDIATE")).toThrow("database is locked")
+      expect(storage.getLatestNodeData("metadata", "book")?.data).toEqual({ value: "before" })
+    })
+    writer.run("INSERT INTO node_data (node, item_id, version, data) VALUES (?, ?, ?, ?)", ["metadata", "book", 2, JSON.stringify({ value: "after" })])
+    writer.run("UPDATE node_current SET version = ? WHERE node = ? AND item_id = ?", [2, "metadata", "book"])
+    expect(storage.readSnapshot(() => storage.getLatestNodeData("metadata", "book")?.data)).toEqual({ value: "after" })
+  } finally { writer.close(); storage.close() }
+})
+
+it("releases failed read snapshots and joins an outer transaction without committing it", () => {
+  const { storage } = createTempStorage()
+  try {
+    storage.putNodeData("metadata", "book", { value: "before" })
+    expect(() => storage.readSnapshot(() => { throw new Error("read failed") })).toThrow("read failed")
+    expect(() => storage.readSnapshot(() => Promise.resolve())).toThrow("must be synchronous")
+    expect(() => storage.transaction(() => {
+      storage.putNodeData("metadata", "book", { value: "inside" })
+      expect(storage.readSnapshot(() => storage.getLatestNodeData("metadata", "book")?.data)).toEqual({ value: "inside" })
+      throw new Error("publication rejected")
+    })).toThrow("publication rejected")
+    expect(storage.getLatestNodeData("metadata", "book")?.data).toEqual({ value: "before" })
+    expect(storage.getAllNodeVersions("metadata", "book")).toHaveLength(1)
+  } finally { storage.close() }
+})

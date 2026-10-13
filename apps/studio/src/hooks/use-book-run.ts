@@ -1,3 +1,4 @@
+import { invalidateBookQueries } from "./run-query-invalidation"
 import { useEffect, useCallback, useRef, createContext, useContext, useState } from "react"
 import { useQueryClient, useQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
@@ -924,13 +925,6 @@ function taskCompleteMessage(kind: string | undefined): string {
   }
 }
 
-function invalidateBookQueries(qc: ReturnType<typeof useQueryClient>, label: string) {
-  qc.invalidateQueries({ queryKey: ["books", label] })
-  qc.invalidateQueries({ queryKey: ["books"] })
-  qc.invalidateQueries({ queryKey: ["books", label, "pages"] })
-  qc.invalidateQueries({ queryKey: ["package-adt-status", label] })
-  qc.invalidateQueries({ queryKey: ["debug"] })
-}
 
 function removeStepMessage(
   messages: Record<string, string> | null | undefined,

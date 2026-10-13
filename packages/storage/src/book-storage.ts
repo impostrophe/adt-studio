@@ -45,13 +45,13 @@ export function createBookStorage(label: string, booksRoot: string): Storage {
   const db = openBookDb(paths.dbPath)
   let transactionDepth = 0
 
-  const transaction = <T>(operation: () => T): T => {
+  const transaction = <T>(operation: () => T, mode: "IMMEDIATE" | "DEFERRED" = "IMMEDIATE"): T => {
     // All Storage methods share this connection, so nested operations are
     // already part of the outer transaction. The outermost call alone owns
     // BEGIN/COMMIT/ROLLBACK.
     if (transactionDepth > 0) return operation()
 
-    db.exec("BEGIN IMMEDIATE")
+    db.exec(`BEGIN ${mode}`)
     transactionDepth = 1
     try {
       const result = operation()
@@ -68,6 +68,11 @@ export function createBookStorage(label: string, booksRoot: string): Storage {
   return {
     bookDir: paths.bookDir,
     transaction,
+    readSnapshot: (operation) => transaction(() => {
+      const result = operation()
+      if (result && typeof (result as { then?: unknown }).then === "function") throw new Error("Read snapshots must be synchronous")
+      return result
+    }, "DEFERRED"),
 
     clearExtractedData(): void {
       clearImageFiles(paths.imagesDir)

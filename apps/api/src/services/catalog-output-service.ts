@@ -5,10 +5,10 @@ import type { OutputKind, OutputStatus } from "@adt/types"
 import { inputSignature, loadBookConfig, normalizeLocale, readOutputCatalog } from "@adt/pipeline"
 
 /** One read model for generation, review and manual-save preconditions. */
-export function catalogOutputs(storage: Storage, label: string, booksDir: string, promptsDir: string, configPath?: string, options: { timestamps?: boolean } = {}): OutputStatus[] {
+export function catalogOutputs(storage: Storage, label: string, booksDir: string, promptsDir: string, configPath?: string, options: { timestamps?: boolean; kinds?: OutputKind[] } = {}): OutputStatus[] {
   const config = loadBookConfig(label, booksDir, configPath)
   if (options.timestamps) config.speech = { ...config.speech, word_highlighting: true }
-  return readOutputCatalog({ storage, config,
+  return readOutputCatalog({ storage, config, kinds: options.kinds,
     bookDir: path.join(path.resolve(booksDir), label), promptsDir,
     configDir: configPath ? path.join(path.dirname(configPath), "config") : path.resolve("config"),
   })

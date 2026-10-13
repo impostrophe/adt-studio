@@ -1057,7 +1057,7 @@ export function createPageRoutes(
 
       const catalogStorage = createBookStorage(safeLabel, booksDir)
       let captionSourceSignature: string
-      try { captionSourceSignature = editSourceSignature(catalogOutputs(catalogStorage, safeLabel, booksDir, promptsDir, configPath), "caption", undefined, pageId) }
+      try { captionSourceSignature = editSourceSignature(catalogOutputs(catalogStorage, safeLabel, booksDir, promptsDir, configPath, { kinds: ["caption"] }), "caption", undefined, pageId) }
       finally { catalogStorage.close() }
       const result: PageDetail = {
         captionSourceSignature,
@@ -1479,7 +1479,7 @@ export function createPageRoutes(
         throw new HTTPException(404, { message: `Page not found: ${pageId}` })
       }
 
-      const outputs = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath)
+      const outputs = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath, { kinds: ["caption"] })
       const version = storage.transaction(() => {
         saveAuthoredImageAlts(storage, pageId, parsed.data, outputs)
         return saveStoryboardNode(storage, "web-rendering", pageId, parsed.data)
@@ -1551,7 +1551,7 @@ export function createPageRoutes(
 
       // Rendering, sectioning, downstream invalidations, and step status are a
       // single editor save. If any statement fails, none of them may survive.
-      const outputs = rendering ? catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath) : []
+      const outputs = rendering ? catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath, { kinds: ["caption"] }) : []
       const { renderingVersion, sectioningVersion } = storage.transaction(() => {
         if (rendering) saveAuthoredImageAlts(storage, pageId, rendering, outputs)
         return {
@@ -1639,7 +1639,7 @@ export function createPageRoutes(
 
       const previous = storage.getLatestNodeData("image-captioning", pageId)
       assertEditVersion(previous?.version, parsed.data.baseVersion)
-      const outputs = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath)
+      const outputs = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath, { kinds: ["caption"] })
       assertEditSource(editSourceSignature(outputs, "caption", undefined, pageId), parsed.data.sourceSignature)
       const oldEntries = new Map((ImageCaptioningOutput.safeParse(previous?.data).data?.captions ?? []).map((entry) => [entry.imageId, entry]))
       const captions = parsed.data.captions.map((entry) => {

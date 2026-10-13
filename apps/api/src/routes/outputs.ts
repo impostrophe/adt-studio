@@ -30,8 +30,8 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
     try {
       let conflicts: CatalogConflict[] = []
       const outputs = read(label, storage, (items) => { conflicts = items })
-      return c.json({ stages: summarizeOutputScopes(outputs, conflicts).stages,
-        stagesWithoutMissingSpeech: summarizeOutputScopes(withoutMissingSpeech(outputs), conflicts).stages,
+      return c.json({ stages: summarizeOutputScopes(outputs, conflicts, { stagesOnly: true }).stages,
+        stagesWithoutMissingSpeech: summarizeOutputScopes(withoutMissingSpeech(outputs), conflicts, { stagesOnly: true }).stages,
         showMissingSpeech: showMissingSpeech(storage) })
     } finally { storage.close() }
   })

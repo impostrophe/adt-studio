@@ -25,8 +25,31 @@ export function captionInputSignature(options: { language: string; summary?: str
 export function readOutputCatalog(options: {
   storage: Storage; config: AppConfig; bookDir: string; promptsDir: string; configDir: string
   onConflicts?: (conflicts: import("@adt/types").CatalogConflict[]) => void
+  kinds?: import("@adt/types").OutputKind[]
 }): OutputStatus[] {
-  const { storage, config, bookDir, promptsDir, configDir } = options
+  // One synchronous SQLite read transaction avoids thousands of WASM file-lock
+  // round trips and keeps versions consistent within the projection. No result
+  // survives this read: the next request rechecks data, config and assets.
+  return options.storage.readSnapshot(() => projectOutputCatalog(options))
+}
+
+function projectOutputCatalog(options: Parameters<typeof readOutputCatalog>[0]): OutputStatus[] {
+  const { config, bookDir, promptsDir, configDir } = options
+  // Source builders share the same rows within this synchronous projection.
+  // Discard these lookups at return so edits/restores never see a stale view.
+  const nodes = new Map<string, ReturnType<Storage["getLatestNodeData"]>>()
+  const images = new Map<string, ReturnType<Storage["getImageMeta"]>>()
+  const storage: Storage = { ...options.storage,
+    getLatestNodeData(node, itemId) {
+      const key = JSON.stringify([node, itemId])
+      if (!nodes.has(key)) nodes.set(key, options.storage.getLatestNodeData(node, itemId))
+      return nodes.get(key)!
+    },
+    getImageMeta(id) {
+      if (!images.has(id)) images.set(id, options.storage.getImageMeta(id))
+      return images.get(id)!
+    },
+  }
   const assets = new Map<string, boolean>()
   const available = (relative: string) => {
     if (!assets.has(relative)) assets.set(relative, bookAssetExists(bookDir, relative))
@@ -45,6 +68,8 @@ export function readOutputCatalog(options: {
     return fingerprints.get(key)!
   }
   const { inventory, catalog, entries: sources, easyBlocks, easy } = buildOutputSources(storage, config)
+  options.onConflicts?.(catalog.conflicts ?? [])
+  const selected = (items: OutputStatus[]) => options.kinds ? items.filter((item) => options.kinds!.includes(item.identity.kind)) : items
   const conflictedIds = new Set(catalog.conflicts?.map((conflict) => conflict.id))
   const inheritSourceConflicts = (status: OutputStatus, ids: string[]) => {
     for (const id of new Set(ids)) if (!status.excluded && conflictedIds.has(id) && !status.warnings.some((warning) => warning.conflictId === id)) {
@@ -77,6 +102,7 @@ export function readOutputCatalog(options: {
     })
     add({ ...status, locations: image.locations, pageIds: image.pageIds, sectionIds: image.sectionIds, group: image.glossary ? "glossary" : undefined })
   }
+  if (options.kinds?.every((kind) => kind === "caption")) return selected(statuses)
   const imageConfig = buildImageTranslationConfig(config)
   for (const image of inventory) for (const language of getTargetLanguages(languages, sourceLanguage)) {
     const itemId = `${image.id}_tr_${language}`
@@ -91,7 +117,6 @@ export function readOutputCatalog(options: {
       excluded: !imageConfig.enabled || !imageConfig.selectedImageIds.includes(image.id),
     }), locations: image.locations, pageIds: image.pageIds, sectionIds: image.sectionIds, group: image.glossary ? "glossary" : undefined })
   }
-  options.onConflicts?.(catalog.conflicts ?? [])
   const easyConfig = buildEasyReadConfig(config, sourceLanguage)
   easyConfig.promptSignature = prompt(easyConfig.promptName, easyConfig.modelId)
   const easyConflicts = conflictingEasyReadHashes(easy)
@@ -136,6 +161,7 @@ export function readOutputCatalog(options: {
     }
     displays.set(language, display)
   }
+  if (options.kinds?.every((kind) => !["preparation", "audio", "timestamps"].includes(kind))) return selected(statuses)
   const preparation = buildCoreTtsPreparationConfig(config)
   preparation.promptSignature = prompt(preparation.promptName, preparation.modelId)
   const profiles = loadCoreTtsProfiles(configDir)
@@ -144,21 +170,27 @@ export function readOutputCatalog(options: {
   const sourceContext = buildCoreTtsSourceContext(sources, effectiveSourceCore)
   const voices = loadVoicesConfig(configDir)
   const instructions = loadSpeechInstructions(configDir)
+  const sourceBaseLanguage = getBaseLanguage(sourceLanguage)
   for (const language of languages) {
-    const entries = getBaseLanguage(language) === getBaseLanguage(sourceLanguage) ? sources : displays.get(language) ?? []
+    const usesSourceText = getBaseLanguage(language) === sourceBaseLanguage
+    const profile = resolveCoreTtsProfile(language, profiles)
+    const resolvedVoices = (["primary", "secondary"] as const).map((voiceSlot) => ({ voiceSlot,
+      voice: resolveSpeechVoice(language, voiceSlot, config.speech, voices, config.speech?.model ?? config.default_speech_generation_model),
+    }))
+    const entries = usesSourceText ? sources : displays.get(language) ?? []
     const core = retainedCoreTts(storage, language, entries.map((entry) => entry.id))
     const coreById = new Map((core?.entries ?? []).map((entry) => [entry.id, entry]))
     const audio = ((storage.getLatestNodeData("tts", language) ?? storage.getLatestNodeData("tts", language.replace("-", "_")))?.data as TTSOutput | undefined)?.entries ?? []
     const timings = ((storage.getLatestNodeData("tts-timestamps", language) ?? storage.getLatestNodeData("tts-timestamps", language.replace("-", "_")))?.data as WordTimestampOutput | undefined)?.entries
-    const effectiveCore = resolveCoreTtsSpeechCatalog({ entries, language, config: preparation, profile: resolveCoreTtsProfile(language, profiles), previous: core, sourceContext: language === sourceLanguage ? undefined : sourceContext })
+    const effectiveCore = resolveCoreTtsSpeechCatalog({ entries, language, config: preparation, profile, previous: core, sourceContext: language === sourceLanguage ? undefined : sourceContext })
     const effectiveById = new Map(effectiveCore.entries.map((entry) => [entry.id, entry]))
     const pageOf = (entry: TextCatalogEntry) => speechPageId(entry.id, entry.locations?.flatMap((location) => location.pageId ? [location.pageId] : []))
     const speechEntries = entries.map((entry) => ({ ...entry, text: effectiveById.get(entry.id)?.speechText ?? entry.text }))
     for (let index = 0; index < entries.length; index++) {
       const source = entries[index]
       const previous = effectiveById.get(source.id) ?? coreById.get(source.id)
-      const { signature, input } = coreTtsInputBasis({ entries, index, language, config: preparation, profile: resolveCoreTtsProfile(language, profiles), sourceContext: language === sourceLanguage ? undefined : sourceContext })
-      const upstream = getBaseLanguage(language) === getBaseLanguage(sourceLanguage) ? sourceStatus(source) : find("translation", source.id, language)
+      const { signature, input } = coreTtsInputBasis({ entries, index, language, config: preparation, profile, sourceContext: language === sourceLanguage ? undefined : sourceContext })
+      const upstream = usesSourceText ? sourceStatus(source) : find("translation", source.id, language)
       const metadata: OutputMetadata | undefined = previous?.generation.mode === "manual" ? { ...previous, source: "manual" } : previous
       // Easy Read is read aloud unless muted in Read-Aloud Content (the
       // "easy-read" category) or per entry, as before this spec. The unused
@@ -168,14 +200,14 @@ export function readOutputCatalog(options: {
         content: previous?.speechText, metadata, excluded: speechExcluded, usable: !!previous?.speechText?.trim(), fallback: previous?.fallbackReason, upstream: upstream ? [upstream] : [],
       }), source))
       const contextWarnings = (input.enabled_transformations.length ? entries.slice(Math.max(0, index - 1), index + 2) : [source]).flatMap((entry) => {
-        const status = getBaseLanguage(language) === getBaseLanguage(sourceLanguage) ? sourceStatus(entry) : find("translation", entry.id, language)
+        const status = usesSourceText ? sourceStatus(entry) : find("translation", entry.id, language)
         return status ? [outputIdentityKey(status.identity)] : []
       })
       inheritSourceConflicts(prepStatus, (input.enabled_transformations.length ? entries.slice(Math.max(0, index - 1), index + 2) : [source]).map((entry) => entry.id))
       if (input.enabled_transformations.length && language !== sourceLanguage) contextWarnings.push(outputIdentityKey({ kind: "preparation", id: source.id, language: sourceLanguage }))
       dependencies.set(outputIdentityKey(prepStatus.identity), contextWarnings)
-      for (const voiceSlot of ["primary", "secondary"] as const) {
-        const voice = resolveSpeechVoice(language, voiceSlot, config.speech, voices, config.speech?.model ?? config.default_speech_generation_model)
+      if (options.kinds && !options.kinds.some((kind) => kind === "audio" || kind === "timestamps")) continue
+      for (const { voiceSlot, voice } of resolvedVoices) {
         if (!voice) continue
         const prior = audio.find((entry) => entry.textId === source.id && (entry.voiceSlot ?? "primary") === voiceSlot)
         const text = stripEmojis(speechEntries[index].text).trim()
@@ -237,7 +269,7 @@ export function readOutputCatalog(options: {
       if (!status.warnings.some((warning) => warning.source && outputIdentityKey(warning.source) === key)) status.warnings.push({ reason: "upstream", source: upstream.identity })
     }
   }
-  return statuses
+  return selected(statuses)
 }
 
 export function timestampInputSignature(audioHash: string | null, language: string, text: string): string {

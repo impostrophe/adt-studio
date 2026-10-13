@@ -112,7 +112,7 @@ export function createEasyReadRoutes(
       }
       const sourceBlocks = buildEasyReadSourceBlocks(storage, storage.getPages())
       const projection = activeEasyRead(storage, sourceBlocks)
-      return c.json({ ...projection, version: row.version, sourceSignature: editSourceSignature(catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath), "easy-read") })
+      return c.json({ ...projection, version: row.version, sourceSignature: editSourceSignature(catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath, { kinds: ["easy-read"] }), "easy-read") })
     } finally {
       storage.close()
     }
@@ -134,7 +134,7 @@ export function createEasyReadRoutes(
       const previousRow = storage.getLatestNodeData("easy-read", "book")
       const previousEasyRead = retainedEasyRead(storage, buildEasyReadSourceBlocks(storage, storage.getPages()))
       assertEditVersion(previousRow?.version, parsed.data.baseVersion)
-      const outputs = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath)
+      const outputs = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath, { kinds: ["easy-read"] })
       assertEditSource(editSourceSignature(outputs, "easy-read"), parsed.data.sourceSignature)
       const oldEntries = indexEasyReadEntries(previousEasyRead)
       const edits = new Map<string, string>()
@@ -194,14 +194,14 @@ export function createEasyReadRoutes(
       const previousRow = storage.getLatestNodeData("easy-read", "book")
       const previousEasyRead = retainedEasyRead(storage, blocks)
       const sourceBefore = inputSignature(blocks)
-      const outputsBefore = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath)
+      const outputsBefore = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath, { kinds: ["easy-read"] })
       easyReadConfig.promptSignature = promptEngine.fingerprint(easyReadConfig.promptName, { modelId: easyReadConfig.modelId })
       const output: EasyReadOutputType = await generateEasyRead(blocks, easyReadConfig, model, {
         concurrency: config.concurrency ?? 32, previous: previousEasyRead, signal: c.req.raw.signal,
         references: captureOutputReferences(storage, "easy-read", language),
       })
       c.req.raw.signal.throwIfAborted()
-      const outputsAfter = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath)
+      const outputsAfter = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath, { kinds: ["easy-read"] })
       assertOutputPublication(outputsBefore, outputsAfter, outputsBefore.filter((item) => item.identity.kind === "easy-read").map((item) => item.identity))
       // The legacy route permits generation while Easy Read is disabled, when
       // the public projection intentionally contains no applicable outputs.

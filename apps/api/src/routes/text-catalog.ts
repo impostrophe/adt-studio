@@ -17,7 +17,7 @@ import {
   type WordTimestampOutput,
 } from "@adt/types"
 import { openBookDb, createBookStorage, readCurrentNodeRow, CURRENT_VERSION_ORDER } from "@adt/storage"
-import { buildTextCatalog, outputEvidence } from "@adt/pipeline"
+import { buildTextCatalogSnapshot, outputEvidence } from "@adt/pipeline"
 import {
   getCoreTtsCatalog,
   invalidateCoreTtsForDisplayEntries,
@@ -58,11 +58,14 @@ export function createTextCatalogRoutes(booksDir: string, promptsDir = path.reso
     let outputs: ReturnType<typeof catalogOutputs> = []
     let currentCatalog: ReturnType<typeof TextCatalogOutput.parse> | null = null
     try {
-      outputs = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath)
-      const derived = await buildTextCatalog(storage, storage.getPages())
-      const saved = storage.getLatestNodeData("text-catalog", "book")
-      const hasAuthored = storage.getPages().some((page) => storage.getLatestNodeData("web-rendering", page.pageId)) || storage.getLatestNodeData("glossary", "book") || storage.getLatestNodeData("quiz-generation", "book")
-      currentCatalog = hasAuthored || derived.entries.length ? derived : saved?.data as typeof currentCatalog
+      currentCatalog = storage.readSnapshot(() => {
+        outputs = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath, { kinds: ["translation", "preparation"] })
+        const pages = storage.getPages()
+        const derived = buildTextCatalogSnapshot(storage, pages)
+        const saved = storage.getLatestNodeData("text-catalog", "book")
+        const hasAuthored = pages.some((page) => storage.getLatestNodeData("web-rendering", page.pageId)) || storage.getLatestNodeData("glossary", "book") || storage.getLatestNodeData("quiz-generation", "book")
+        return hasAuthored || derived.entries.length ? derived : (saved?.data as TextCatalogOutput | undefined) ?? null
+      })
     } finally { storage.close() }
 
     const db = openBookDb(dbPath)
@@ -159,7 +162,7 @@ export function createTextCatalogRoutes(booksDir: string, promptsDir = path.reso
       if ((previous?.version ?? 0) !== parsed.data.baseVersion || (storage.getLatestNodeData("text-catalog", "book")?.version ?? 0) !== parsed.data.sourceVersion) {
         throw new HTTPException(409, { message: "Translation or source changed. Refresh before saving." })
       }
-      const outputs = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath)
+      const outputs = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath, { kinds: ["translation", "preparation"] })
       assertEditSource(editSourceSignature(outputs, "translation", language), parsed.data.sourceSignature)
       const retainedEntries = TextCatalogOutput.safeParse(previous?.data).data?.entries ?? []
       const previousEntries = firstCatalogEntries(retainedEntries)
@@ -244,7 +247,7 @@ export function createTextCatalogRoutes(booksDir: string, promptsDir = path.reso
         throw new HTTPException(404, { message: `Core TTS entry not found: ${entryId}` })
       }
 
-      const outputs = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath)
+      const outputs = catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath, { kinds: ["translation", "preparation"] })
       assertEditSource(editSourceSignature(outputs, "preparation", normalizedLanguage), parsed.data.sourceSignature)
       const status = outputs.find((item) => item.identity.kind === "preparation" && item.identity.id === entryId && item.identity.language === normalizedLanguage)
       const now = new Date().toISOString()

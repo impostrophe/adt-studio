@@ -103,7 +103,7 @@ export function summarizeOutputs(outputs: OutputStatus[]): OutputSummary {
 /** One projection powers stage, page, section and standalone-group summaries.
  * Optional preparation is reviewed with speech, not unfinished Language work.
  * Its warnings remain visible through consuming audio and inline details. */
-export function summarizeOutputScopes(outputs: OutputStatus[], conflicts: CatalogConflict[] = []): OutputSummaries {
+export function summarizeOutputScopes(outputs: OutputStatus[], conflicts: CatalogConflict[] = [], options: { stagesOnly?: boolean } = {}): OutputSummaries {
   const scopes: Record<keyof OutputSummaries, Map<string, OutputStatus[]>> = {
     stages: new Map(), pages: new Map(), sections: new Map(), groups: new Map(),
   }
@@ -115,6 +115,7 @@ export function summarizeOutputScopes(outputs: OutputStatus[], conflicts: Catalo
   for (const output of outputs) {
     if (output.excluded) continue
     if (output.identity.kind !== "preparation") add("stages", OUTPUT_KIND_TO_STAGE[output.identity.kind], output)
+    if (options.stagesOnly) continue
     for (const page of output.pageIds) add("pages", page, output)
     for (const section of output.sectionIds) add("sections", section, output)
     if (output.group) add("groups", output.group, output)
