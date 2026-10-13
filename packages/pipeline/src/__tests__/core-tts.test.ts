@@ -10,6 +10,7 @@ import {
   resolveCoreTtsProfile,
   resolveCoreTtsSpeechCatalog,
 } from "../core-tts.js"
+import { inputSignature } from "../output-freshness.js"
 
 const config = {
   modelId: "openai:gpt-5.4",
@@ -224,6 +225,20 @@ describe("speech fallback and retry admission", () => {
     const prepared = await prepareCoreTtsCatalog({ entries, language: "fr", config, profile, previous: fallback, llmModel: llm })
     expect(llm.generateObject).toHaveBeenCalledTimes(1)
     expect(prepared.entries.map((entry) => [entry.status, entry.fallbackReason])).toEqual([["ready", undefined], ["ready", undefined]])
+  })
+  it("keeps a checked never-attempted fallback on ordinary runs and prepares it only on explicit retry", async () => {
+    const fallback = resolveCoreTtsSpeechCatalog({ entries, language: "fr", config, profile })
+    const checked = fallback.entries[0]
+    checked.review = { signature: checked.input!.signature, contentHash: inputSignature(checked.speechText), action: "checked" }
+    const llm = modelWith([{ id: "t2", speech_text: "Monde", transformation_kinds: [], failure_reason: null }])
+    const ordinary = await prepareCoreTtsCatalog({ entries, language: "fr", config, profile, previous: fallback, llmModel: llm })
+    // Only the unchecked entry is prepared; the accepted fallback is kept as reviewed.
+    const batch = (vi.mocked(llm.generateObject).mock.calls[0][0] as { context: { entries: Array<{ id: string }> } }).context.entries
+    expect(batch.map((entry) => entry.id)).toEqual(["t2"])
+    expect(ordinary.entries[0]).toEqual(checked)
+    vi.mocked(llm.generateObject).mockResolvedValueOnce({ object: { entries: [{ id: "t1", speech_text: "Bonjour", transformation_kinds: [], failure_reason: null }] }, cached: false })
+    const retried = await prepareCoreTtsCatalog({ entries, language: "fr", config, profile, previous: ordinary, llmModel: llm, retryIds: ["t1"] })
+    expect(retried.entries[0]).toMatchObject({ status: "ready", speechText: "Bonjour" })
   })
   it("keeps a never-attempted fallback labelled missing when its neighboring context changes", () => {
     const fallback = resolveCoreTtsSpeechCatalog({ entries, language: "fr", config, profile })

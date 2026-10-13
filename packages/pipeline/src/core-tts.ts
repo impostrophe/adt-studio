@@ -317,8 +317,11 @@ export async function prepareCoreTtsCatalog(options: {
     const explicitRetry = options.retryIds?.includes(entry.id)
     // Only a failed attempt is reused until retry or an input change. A fallback
     // recorded without an attempt ("missing"/"outdated") is still owed a
-    // preparation, under the same selection, exclusion and protection rules.
-    const unattempted = previous?.fallbackReason === "missing" || previous?.fallbackReason === "outdated"
+    // preparation, under the same selection, exclusion and protection rules,
+    // unless the user checked (accepted) it for these inputs and this text.
+    const accepted = previous?.review?.action === "checked" && previous.review.signature === signature &&
+      previous.review.contentHash === inputSignature(previous.speechText)
+    const unattempted = !accepted && (previous?.fallbackReason === "missing" || previous?.fallbackReason === "outdated")
     const scope = unattempted ? { ...options.scope, retry: [...(options.scope?.retry ?? []), status.identity] } : options.scope
     if (previous && status.protected) protectedIds.add(entry.id)
     if (!selectedForGeneration(status, metadata, scope) && !(explicitRetry && !status.protected)) {
