@@ -1241,23 +1241,26 @@ export function createPageRoutes(
           Buffer.from(storage.getImageBase64(imageId), "base64"),
       }
       for (const page of newPages) {
-        storage.putExtractedPage(page)
-        storage.putNodeData("positioned-text", page.pageId, page.positionedText)
-        if (page.extractionDebug) {
-          storage.putNodeData("extraction-debug", page.pageId, page.extractionDebug)
-        }
-        const classified = classifyPageImages(
-          page.pageId,
-          storage.getPageImages(page.pageId),
-          imageClassifyConfig,
-        )
-        storage.putNodeData(
-          "image-filtering",
-          page.pageId,
-          autoFigureMode
-            ? deduplicateAutoFigureCandidates(classified, page.extractionDebug)
-            : classified,
-        )
+        storage.transaction(() => {
+          storage.putExtractedPage(page)
+          storage.putNodeData("positioned-text", page.pageId, page.positionedText)
+          if (page.extractionDebug) {
+            storage.putNodeData("extraction-debug", page.pageId, page.extractionDebug)
+          }
+          const classified = classifyPageImages(
+            page.pageId,
+            storage.getPageImages(page.pageId),
+            imageClassifyConfig,
+          )
+          storage.putNodeData(
+            "image-filtering",
+            page.pageId,
+            autoFigureMode
+              ? deduplicateAutoFigureCandidates(classified, page.extractionDebug)
+              : classified,
+          )
+          storage.clearStepRuns([...SOURCE_GENERATION_RESET_STEPS])
+        })
       }
     }
     // Retire before deleting, and in one pass so the whole reconcile costs a
@@ -1288,10 +1291,12 @@ export function createPageRoutes(
         `[pages] ${safeLabel}: detached ${retired.detachedRecordings.length} uploaded audio recording(s) from removed page(s); ${preserved.length} file(s) backed up to ${DETACHED_AUDIO_DIR}/ so a later re-section cannot overwrite the backups.`
       )
     }
-    for (const id of toRemove) storage.deletePage(id)
-    // Spread reconciliation changes the set/order of source pages without a
-    // Sectioning/Storyboard node write. Keep the separate generators honest.
-    if (toAdd.length > 0 || toRemove.length > 0) storage.clearStepRuns([...SOURCE_GENERATION_RESET_STEPS])
+    // A later extraction/retirement failure may leave an earlier page published.
+    // Reset with each committed membership change, never only on HTTP success.
+    for (const id of toRemove) storage.transaction(() => {
+      storage.deletePage(id)
+      storage.clearStepRuns([...SOURCE_GENERATION_RESET_STEPS])
+    })
 
     return c.json({
       merged: toAdd.length,

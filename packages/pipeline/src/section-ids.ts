@@ -233,10 +233,8 @@ function pruneSpeechForRetiredSections(
 
   let speechEntries = 0
   let wordTimestamps = 0
-  // Tracked separately from the counters: a row rewritten *only* because a
-  // `failed` item named a retired section still has to invalidate the steps that
-  // produced it, but it dropped no delivered audio, so counting it as a dropped
-  // entry would misreport what the user lost.
+  // Failed-only retirement does not count as dropped delivered audio. Attempt
+  // records are retained; current work is derived from catalog membership.
   const detachedRecordings: DetachedRecording[] = []
   const generatedAt = new Date().toISOString()
 

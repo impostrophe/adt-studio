@@ -342,11 +342,9 @@ describe("retireSectionIdsForClearedSectioning", () => {
     expect(
       withStorage((storage) => storage.getLatestNodeData("tts", "en")?.data)
     ).not.toHaveProperty("failed")
-    // The row was rewritten, so Speech must not stay marked complete over it —
-    // a counter-driven guard would miss this, since no delivered entry dropped.
-    expect(withStorage((storage) => storage.getStepRuns().map((run) => run.step))).not.toContain(
-      "tts"
-    )
+    // Retiring the last failed identity changes active membership, not history:
+    // catalog freshness accounts for remaining work without erasing the attempt.
+    expect(withStorage((storage) => storage.getStepRuns().map((run) => run.step))).toContain("tts")
   })
 
   it("sectioning preparation retains current source, recordings, timings and video assignments", () => {
