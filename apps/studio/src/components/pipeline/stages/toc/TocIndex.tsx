@@ -14,7 +14,7 @@ export function TocIndex({
   const status = useStageStatus("toc")
   const { data } = useToc(bookLabel)
 
-  if (status.isCompleted || status.isRunning || data?.entries.length) {
+  if (status.isCompleted || status.isRunning || data != null) {
     return <TocView bookLabel={bookLabel} />
   }
 

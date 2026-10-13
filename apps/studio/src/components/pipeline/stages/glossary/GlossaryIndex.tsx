@@ -7,7 +7,7 @@ export function GlossaryIndex({ bookLabel }: { bookLabel: string }) {
   const status = useStageStatus("glossary")
   const { data } = useGlossary(bookLabel)
 
-  if (status.isCompleted || status.isRunning || data?.items.length) {
+  if (status.isCompleted || status.isRunning || data != null) {
     return <GlossaryView bookLabel={bookLabel} />
   }
 

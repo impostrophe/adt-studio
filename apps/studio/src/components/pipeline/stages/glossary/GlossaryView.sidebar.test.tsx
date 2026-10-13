@@ -25,13 +25,15 @@ let servedGlossary = glossary
 const HeaderContext = createContext<{ setExtra: (extra: ReactNode) => void }>({ setExtra: () => {} })
 vi.mock("../../components/StepViewRouter", () => ({ useStepHeader: () => useContext(HeaderContext) }))
 vi.mock("@/hooks/use-glossary", () => ({ useGlossary: () => ({ data: servedGlossary, isLoading: false }) }))
+vi.mock("@/hooks/use-stage-status", () => ({ useStageStatus: () => ({ isCompleted: false, isRunning: false }) }))
+vi.mock("./GlossaryLandingPage", () => ({ GlossaryLandingPage: () => <div>Glossary landing</div> }))
 vi.mock("@/hooks/use-sign-language-videos", () => ({
   useSignLanguageVideos: () => ({ data: { videos: [] } }),
   useUploadSignLanguageVideo: () => ({ mutate: vi.fn(), isPending: false }),
   useAssignSignLanguageVideo: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteSignLanguageVideo: () => ({ mutate: vi.fn(), isPending: false }),
 }))
-vi.mock("@/hooks/use-book-run", () => ({ useBookRun: () => ({ stageState: () => "done", queueRun: vi.fn() }) }))
+vi.mock("@/hooks/use-book-run", () => ({ useBookRun: () => ({ stageState: () => "idle", queueRun: vi.fn() }) }))
 vi.mock("@/hooks/use-api-key", () => ({ useApiKey: () => ({ apiKey: "" }), useBookStructuredTextAvailability: () => true }))
 vi.mock("../../components/StageRunCard", () => ({ StageRunCard: () => null }))
 vi.mock("../../components/VersionPicker", () => ({
@@ -47,14 +49,14 @@ vi.mock("@/components/ui/sonner", () => ({ toast: { error: vi.fn() } }))
 const { toast } = await import("@/components/ui/sonner")
 const { api } = await import("@/api/client")
 const { TooltipProvider } = await import("@/components/ui/tooltip")
-const { GlossaryView } = await import("./GlossaryView")
+const { GlossaryIndex } = await import("./GlossaryIndex")
 let client: QueryClient
 
 function Harness() {
   const [extra, setExtra] = useState<ReactNode>(null)
   return <HeaderContext.Provider value={{ setExtra }}>
     <header>{extra}</header>
-    <GlossaryView bookLabel="book" />
+    <GlossaryIndex bookLabel="book" />
   </HeaderContext.Provider>
 }
 
@@ -87,7 +89,7 @@ describe("sidebar attention after a glossary save", () => {
   })
 })
 
-it("retains a rejected glossary draft and enables saving again", async () => {
+it.each([false, true])("retains a rejected glossary draft through the route and enables saving again (empty refresh: %s)", async (emptyRefresh) => {
   vi.mocked(api.updateGlossary).mockRejectedValue(new Error("Glossary changed"))
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const view = render(<QueryClientProvider client={client}><TooltipProvider><Harness /></TooltipProvider></QueryClientProvider>)
@@ -97,7 +99,7 @@ it("retains a rejected glossary draft and enables saving again", async () => {
   await waitFor(() => expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false))
   expect((screen.getByLabelText("Definition for Nile") as HTMLTextAreaElement).value).toBe("My retained draft")
   expect(api.updateGlossary).toHaveBeenCalledWith("book", expect.objectContaining({ version: 1 }))
-  servedGlossary = { ...glossary, version: 2, items: [{ ...glossary.items[0], definition: "Another writer's change" }] }
+  servedGlossary = { ...glossary, version: 2, items: emptyRefresh ? [] : [{ ...glossary.items[0], definition: "Another writer's change" }] }
   view.rerender(<QueryClientProvider client={client}><TooltipProvider><Harness /></TooltipProvider></QueryClientProvider>)
   expect((screen.getByLabelText("Definition for Nile") as HTMLTextAreaElement).value).toBe("My retained draft")
   fireEvent.click(screen.getByRole("button", { name: "Save" }))
