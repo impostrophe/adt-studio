@@ -273,8 +273,10 @@ export function resolveCoreTtsSpeechCatalog(options: {
       }
       if (!entry.text.trim()) return []
       if (previous?.input?.signature === signature && previous.input.contentHash === inputSignature(previous.speechText) && previous.speechText?.trim()) return previous
+      // Every fallback is stored with status "failed"; keep its recorded reason
+      // so a never-attempted ("missing"/"outdated") entry is not reported as failed.
       const reason = input.enabled_transformations.length === 0 ? undefined
-        : !previous ? "missing" : previous.status === "failed" && previous.displayText === entry.text ? "failed" : "outdated"
+        : !previous ? "missing" : previous.status === "failed" && previous.displayText === entry.text ? previous.fallbackReason ?? "failed" : "outdated"
       return fallbackEntry({ entry, signature, language: options.language, profile: options.profile, enabled: input.enabled_transformations, reason, failureReason: reason === "failed" ? previous?.failureReason : undefined, now })
     }),
   }
@@ -313,8 +315,13 @@ export async function prepareCoreTtsCatalog(options: {
     const status = withOutputLocations(deriveOutputStatus({ identity: { kind: "preparation", id: entry.id, language }, signature,
       content: previous?.speechText, metadata, usable: !!previous?.speechText?.trim() }), entry)
     const explicitRetry = options.retryIds?.includes(entry.id)
+    // Only a failed attempt is reused until retry or an input change. A fallback
+    // recorded without an attempt ("missing"/"outdated") is still owed a
+    // preparation, under the same selection, exclusion and protection rules.
+    const unattempted = previous?.fallbackReason === "missing" || previous?.fallbackReason === "outdated"
+    const scope = unattempted ? { ...options.scope, retry: [...(options.scope?.retry ?? []), status.identity] } : options.scope
     if (previous && status.protected) protectedIds.add(entry.id)
-    if (!selectedForGeneration(status, metadata, options.scope) && !(explicitRetry && !status.protected)) {
+    if (!selectedForGeneration(status, metadata, scope) && !(explicitRetry && !status.protected)) {
       if (previous) resultById.set(entry.id, previous)
       continue
     }
@@ -322,7 +329,7 @@ export async function prepareCoreTtsCatalog(options: {
       if (previous) resultById.set(entry.id, previous)
       continue
     }
-    if (!options.scope?.replace?.some((item) => item.identity.kind === "preparation" && item.identity.id === entry.id && item.identity.language === language) && !options.scope?.retry?.some((item) => item.kind === "preparation" && item.id === entry.id && item.language === language) && !options.retryIds?.includes(entry.id) && previous?.input?.signature === signature &&
+    if (!options.scope?.replace?.some((item) => item.identity.kind === "preparation" && item.identity.id === entry.id && item.identity.language === language) && !scope?.retry?.some((item) => item.kind === "preparation" && item.id === entry.id && item.language === language) && !options.retryIds?.includes(entry.id) && previous?.input?.signature === signature &&
       previous.input.contentHash === inputSignature(previous.speechText) && previous.speechText?.trim()) {
       resultById.set(entry.id, previous)
       continue

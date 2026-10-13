@@ -85,19 +85,37 @@ describe("catalog execution at the HTTP provider boundary", () => {
     expect(transport).not.toHaveBeenCalled()
   })
 
-  it("reuses fallback until explicitly retried, then keeps identical speech text", async () => {
+  it("reuses a failed attempt until explicitly retried, then keeps identical speech text", async () => {
     const config = { modelId: "ollama:tinyllama", promptName: "prepare", maxRetries: 0, batchSize: 50, latexToSpeech: true, languageNormalization: true }
     const entries = [{ id: "a", text: "Bonjour" }]
     const profile = { key: "fr", guidance: "Normalize" }
-    const previous = resolveCoreTtsSpeechCatalog({ entries, language: "fr", config, profile })
     const llmModel = model()
+    const respond = transport.getMockImplementation()!
+    transport.mockRejectedValue(new TypeError("fetch failed"))
+    const previous = await prepareCoreTtsCatalog({ entries, language: "fr", config, profile, llmModel })
+    expect(previous.entries[0].fallbackReason).toBe("failed")
+    const attempts = transport.mock.calls.length
+    transport.mockImplementation(respond)
     await prepareCoreTtsCatalog({ entries, language: "fr", config, profile, previous, llmModel })
-    expect(transport).not.toHaveBeenCalled()
+    expect(transport).toHaveBeenCalledTimes(attempts)
     response = { entries: [{ id: "a", speech_text: "Bonjour", transformation_kinds: [], failure_reason: null }] }
     const result = await prepareCoreTtsCatalog({ entries, language: "fr", config, profile, previous, llmModel, retryIds: ["a"] })
-    expect(transport).toHaveBeenCalledTimes(1)
+    expect(transport).toHaveBeenCalledTimes(attempts + 1)
     expect(result.entries[0].speechText).toBe(previous.entries[0].speechText)
     expect(result.entries[0].status).toBe("ready")
+  })
+
+  it("prepares a never-attempted fallback on the next ordinary run", async () => {
+    const config = { modelId: "ollama:tinyllama", promptName: "prepare", maxRetries: 0, batchSize: 50, latexToSpeech: true, languageNormalization: true }
+    const entries = [{ id: "a", text: "Bonjour" }]
+    const profile = { key: "fr", guidance: "Normalize" }
+    const missing = resolveCoreTtsSpeechCatalog({ entries, language: "fr", config, profile })
+    expect(missing.entries[0].fallbackReason).toBe("missing")
+    response = { entries: [{ id: "a", speech_text: "Bonjour", transformation_kinds: [], failure_reason: null }] }
+    const result = await prepareCoreTtsCatalog({ entries, language: "fr", config, profile, previous: missing, llmModel: model() })
+    expect(transport).toHaveBeenCalledTimes(1)
+    expect(result.entries[0]).toMatchObject({ status: "ready", speechText: "Bonjour" })
+    expect(result.entries[0].fallbackReason).toBeUndefined()
   })
 
   it("keeps full Easy Read section context while publishing only selected generated entries", async () => {
