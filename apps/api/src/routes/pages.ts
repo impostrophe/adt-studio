@@ -1,5 +1,5 @@
 import { SOURCE_GENERATION_RESET_STEPS } from "@adt/types"
-import { putSourceNodeData, resetSourceGenerationAttempts, sourceGenerationBasis, inputSignature as sourceInputSignature } from "@adt/pipeline"
+import { putSourceNodeData, resetSourceGenerationAttempts } from "@adt/pipeline"
 import { cloneRenderedIdentities, stampRenderedOwner } from "@adt/pipeline"
 import { captureOutputReferences } from "@adt/pipeline"
 import { scopeLegacyActivityIds, renderedSectionId } from "@adt/pipeline"
@@ -548,7 +548,6 @@ function saveStoryboardNode(
   { renderingInSync = false }: { renderingInSync?: boolean } = {}
 ): number {
   if (node === "page-sectioning") assertNoActivePipelineRun(storage)
-  const sourceChanged = sourceInputSignature(sourceGenerationBasis(node, storage.getLatestNodeData(node, itemId)?.data)) !== sourceInputSignature(sourceGenerationBasis(node, data))
   const version = storage.transaction(() => {
     const conflictsBefore = buildTextCatalogSnapshot(storage, storage.getPages()).conflicts ?? []
     const parsed = node === "web-rendering" ? WebRenderingOutput.safeParse(data) : null
@@ -581,7 +580,7 @@ function saveStoryboardNode(
   // HTML it has already mirrored, or has queued a targeted re-render for. The
   // storyboard is current (or seconds from it) and only its dependents are
   // behind, so resetting the stage would take the editor away for nothing.
-  if (node === "page-sectioning" && sourceChanged) {
+  if (node === "page-sectioning") {
     markStoryboardChainStale(storage, { includeStoryboard: !renderingInSync })
   }
   return version

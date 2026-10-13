@@ -333,7 +333,10 @@ describe("Page routes", () => {
       const save = (body: unknown) => app.request(`/api/books/${label}/pages/${label}_p1/sectioning`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       expect((await save(cosmetic)).status).toBe(200)
       const afterCosmetic = createBookStorage(label, tmpDir)
-      expect(afterCosmetic.getStepRuns().map((run) => run.step)).toEqual(expect.arrayContaining([...sourceSteps, "tts", "web-rendering"]))
+      expect(afterCosmetic.getStepRuns().map((run) => run.step)).toEqual(expect.arrayContaining([...sourceSteps, "tts"]))
+      // This was a Sectioning-only save: the old HTML does not yet reflect the
+      // palette. Storyboard's separate rendering policy remains unchanged.
+      expect(afterCosmetic.getStepRuns().map((run) => run.step)).not.toContain("web-rendering")
       const changed = structuredClone(original)
       changed.sections[0].nodes[0].text = "Changed source"
       afterCosmetic.putNodeData("page-sectioning", `${label}_p1`, changed)
