@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { AppConfig, WebRenderingOutput } from "@adt/types"
 import type {
   GenerateObjectOptions,
@@ -629,6 +629,7 @@ describe("regenerateGlossaryPreservingEdits", () => {
         return null
       },
       getAllNodeVersions: () => [{ version: 1, data: existing }],
+      putNodeData: vi.fn(() => 2),
       getSignLanguageVideos: () => [
         { videoId: "v1", sectionId: "gl001" },
         { videoId: "v2", sectionId: "gl_manual_river" },
@@ -718,6 +719,7 @@ describe("regenerateGlossaryPreservingEdits", () => {
         return null
       },
       getAllNodeVersions: () => [{ version: 1, data: existing }],
+      putNodeData: vi.fn(() => 2),
       getSignLanguageVideos: () => [
         { videoId: "v1", sectionId: "gl001" },
         { videoId: "v2", sectionId: "pg001_sec001" },

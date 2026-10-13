@@ -1,6 +1,7 @@
 import { putSourceNodeData } from "@adt/pipeline"
 import { stampRenderedOwner } from "@adt/pipeline"
 import { z } from "zod"
+import { parseDocument, DomUtils } from "htmlparser2"
 import type { AgentToolSet } from "@adt/llm"
 import type { Storage } from "@adt/storage"
 import {
@@ -10,7 +11,7 @@ import {
   type PageSectioningSection,
   type SectionRendering,
 } from "@adt/types"
-import { createSectionIdFactory, renderedSectionId, resolveRenderedSection } from "@adt/pipeline"
+import { collectSpentContentIds, createSectionIdFactory, renderedSectionId, resolveRenderedSection, withLegacyRenderingOwnership } from "@adt/pipeline"
 import { buildSectioningSectionFromHtml } from "./build-sectioning.js"
 import {
   TEMPLATED_ACTIVITY_TYPES,
@@ -117,7 +118,7 @@ function loadRendering(storage: Storage, pageId: string): WebRenderingOutput {
   if (!parsed.success) {
     throw new Error(`Invalid web-rendering data for ${pageId}`)
   }
-  return parsed.data
+  return withLegacyRenderingOwnership(storage, pageId, parsed.data)
 }
 
 function ensureWritable(ctx: BookToolsContext, pageId: string): void {
@@ -610,6 +611,24 @@ export function createBookTools(ctx: BookToolsContext): BookToolsResult {
               ? extractAnswersFromHtml(html)
               : undefined
           const effectiveAnswers = activityAnswers ?? derivedAnswers ?? null
+          // Ownership is allocated by the server, never supplied by the model.
+          // Rewriting a copied owner can break scripts selecting that owner.
+          // Reject before either write so the agent can correct its markup.
+          const owners = DomUtils.findAll(element => element.type === "tag" && element.attribs["data-section-id"] !== undefined, parseDocument(html).children)
+          if (owners.length > 1 || owners.some(owner => owner.attribs["data-section-id"] !== sectionId)) {
+            throw new Error("New sections cannot copy data-section-id from another section. Retry without data-section-id; the server assigns it. Register the activity using document.currentScript.closest('section'), preserving its local IDs and answer keys.")
+          }
+          const spent = collectSpentContentIds(ctx.storage)
+          const proposedIds = DomUtils.findAll(element => element.type === "tag" && element.name !== "img" && !!element.attribs["data-id"], parseDocument(html).children)
+          const collision = proposedIds.find(element => spent.has(element.attribs["data-id"]))
+          if (collision) throw new Error(`New custom content cannot reuse data-id "${collision.attribs["data-id"]}" from existing or historical content. Retry with unused data-id values. Keep image IDs and local DOM/activity keys unchanged.`)
+          const uniqueIds = new Set<string>()
+          for (const element of proposedIds) {
+            const id = element.attribs["data-id"]
+            if (uniqueIds.has(id)) throw new Error(`New custom content repeats data-id "${id}". Retry with a distinct unused data-id for each text element.`)
+            uniqueIds.add(id)
+          }
+          html = stampRenderedOwner(html, sectionId)
 
           const newRendering: SectionRendering = {
             sectionIndex: nextIndex,

@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 vi.mock("@/hooks/use-stage-status", () => ({ useStageStatus: () => ({ isCompleted: false, isRunning: false, hasError: false }) }))
 vi.mock("./output-review/OutputReviewPanel", () => ({ OutputReviewPanel: () => null }))
+vi.mock("./RenderingOwnershipRepair", () => ({ RenderingOwnershipRepair: () => null }))
 vi.mock("../stages/languages/LanguageView", () => ({ LanguageView: () => <p>Saved translations</p> }))
 vi.mock("../stages/languages/LanguageLandingPage", () => ({ LanguageLandingPage: () => <p>First run</p> }))
 vi.mock("../stages/captions/CaptionsView", () => ({ CaptionsView: () => <p>Saved captions</p> }))

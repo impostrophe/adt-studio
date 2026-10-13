@@ -7,7 +7,7 @@ import { DEFAULT_LLM_MAX_RETRIES, EasyReadOutput as EasyReadOutputSchema, WebRen
 import type { LLMModel, ValidationResult } from "@adt/llm"
 import type { Storage, PageData } from "@adt/storage"
 import { buildLanguageContext, normalizeLocale } from "./language-context.js"
-import { withLegacyFixedLayoutOwnership, getRenderSectioning, resolveRenderedSection } from "./render-sectioning.js"
+import { withLegacyRenderingOwnership, getRenderSectioning, resolveRenderedSection } from "./render-sectioning.js"
 import { processWithConcurrency } from "./concurrency.js"
 
 import { inputSignature, outputEvidence, deriveOutputStatus, withOutputLocations, selectedForGeneration } from "./output-freshness.js"
@@ -144,7 +144,7 @@ export function buildEasyReadSourceBlocks(
     const rendering = WebRenderingOutputSchema.safeParse(renderingRow.data)
     if (!rendering.success) continue
 
-    blocks.push(...buildPageEasyReadBlocks(page, withLegacyFixedLayoutOwnership(storage, page.pageId, rendering.data), sectioning))
+    blocks.push(...buildPageEasyReadBlocks(page, withLegacyRenderingOwnership(storage, page.pageId, rendering.data), sectioning))
   }
 
   return blocks

@@ -9,7 +9,7 @@ import {
 import type { LLMModel } from "@adt/llm"
 import type { Storage, PageData } from "@adt/storage"
 import { processWithConcurrency } from "./concurrency.js"
-import { withLegacyFixedLayoutOwnership, getRenderSectioning, resolveRenderedSection } from "./render-sectioning.js"
+import { withLegacyRenderingOwnership, getRenderSectioning, resolveRenderedSection } from "./render-sectioning.js"
 import { buildLanguageContext } from "./language-context.js"
 import { inputSignature } from "./output-freshness.js"
 
@@ -205,6 +205,7 @@ export function mergeGeneratedGlossaryWithManualItems(
         id: manualItem.id ?? generatedItem.id,
         source: "manual",
       }
+      existingIndexByWord.delete(normalizedWord)
       continue
     }
 
@@ -215,13 +216,8 @@ export function mergeGeneratedGlossaryWithManualItems(
   }
 
   // Re-add pruned AI items so the user can still see / unprune them.
-  const wordsInMerged = new Set(mergedItems.map((item) => normalizeGlossaryWord(item.word)))
   for (const prunedItem of prunedItems) {
-    const normalizedWord = normalizeGlossaryWord(prunedItem.word)
-    if (!wordsInMerged.has(normalizedWord)) {
-      mergedItems.push({ ...prunedItem, source: prunedItem.source ?? "ai", pruned: true })
-      wordsInMerged.add(normalizedWord)
-    }
+    mergedItems.push({ ...prunedItem, source: prunedItem.source ?? "ai", pruned: true })
   }
 
   return {
@@ -280,6 +276,7 @@ function preserveGlossaryMedia(
   for (const video of storage.getSignLanguageVideos()) {
     const sectionId = video.sectionId
     if (!sectionId) continue
+    if (items.some(item => item.id === sectionId) && existingIndexByTextId.has(sectionId)) continue
 
     const existingIndex = existingIndexByTextId.get(sectionId)
     let nextSectionId: string | null | undefined
@@ -321,7 +318,7 @@ export function collectPageTexts(
         `Invalid web-rendering output for page: ${page.pageId}: ${parsed.error.message}`
       )
     }
-    const rendering = withLegacyFixedLayoutOwnership(storage, page.pageId, parsed.data)
+    const rendering = withLegacyRenderingOwnership(storage, page.pageId, parsed.data)
     // Filter out pruned sections (resolver: positioned tree for fixed-layout)
     const sectioning = getRenderSectioning(storage, page.pageId)
     const htmlParts = rendering.sections
@@ -453,7 +450,10 @@ export async function generateGlossary(
 export async function regenerateGlossaryPreservingEdits(
   options: Omit<GenerateGlossaryOptions, "excludedWords">
 ): Promise<GlossaryOutput> {
-  const existingRow = options.storage.getLatestNodeData("glossary", "book")
+  // Run may be the first operation on an old book. Resolve positional/explicit
+  // collisions in its original order before generated ordering can choose a
+  // different owner for retained translations, recordings or manual edits.
+  const existingRow = materializeGlossaryIds(options.storage)
   const existingItems = ((existingRow?.data as GlossaryOutput | undefined)?.items ?? [])
     .map((item, index) => ({ ...item, id: getGlossaryItemTextId(item, index) }))
   const generated = await generateGlossary({

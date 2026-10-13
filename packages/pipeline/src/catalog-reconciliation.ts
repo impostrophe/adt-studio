@@ -6,7 +6,7 @@ import { buildTextCatalogSnapshot } from "./text-catalog.js"
 import { inputSignature } from "./output-freshness.js"
 import { rewriteRenderedIdentityReferences } from "./rendered-identity.js"
 import { extractImageIds } from "./image-captioning.js"
-import { withLegacyFixedLayoutOwnership, getRenderSectioning, renderedSectionId, resolveRenderedSection } from "./render-sectioning.js"
+import { withLegacyRenderingOwnership, getRenderSectioning, renderedSectionId, resolveRenderedSection } from "./render-sectioning.js"
 
 /** Assign newly generated activity leaves real stored identities once. Reading
  * order is never used as identity. Existing authored data IDs are untouched. */
@@ -75,7 +75,7 @@ export function buildImageInventory(storage: Storage) {
     const rendering = WebRenderingOutput.safeParse(storage.getLatestNodeData("web-rendering", page.pageId)?.data)
     if (!rendering.success) continue
     const sectioning = getRenderSectioning(storage, page.pageId)
-    for (const section of withLegacyFixedLayoutOwnership(storage, page.pageId, rendering.data).sections) {
+    for (const section of withLegacyRenderingOwnership(storage, page.pageId, rendering.data).sections) {
       const source = resolveRenderedSection(section, sectioning?.sections)
       if (source?.isPruned || (renderedSectionId(section) && sectioning && !source)) continue
       for (const id of extractImageIds([section.html])) add(id, page.pageId, source?.sectionId)

@@ -1,8 +1,9 @@
 import { SOURCE_GENERATION_RESET_STEPS } from "@adt/types"
+import { createRenderingOwnershipRoutes } from "./rendering-ownership.js"
 import { putSourceNodeData, resetSourceGenerationAttempts } from "@adt/pipeline"
 import { cloneRenderedIdentities, stampRenderedOwner } from "@adt/pipeline"
 import { captureOutputReferences } from "@adt/pipeline"
-import { scopeLegacyActivityIds, renderedSectionId } from "@adt/pipeline"
+import { scopeLegacyActivityIds, renderedSectionId, withLegacyRenderingOwnership, renderingOwnerSignature } from "@adt/pipeline"
 import { assertImageAltConflicts, saveAuthoredImageAlts } from "../services/authored-captions.js"
 import { catalogOutputs, editSourceSignature, assertEditSource, assertEditVersion } from "../services/catalog-output-service.js"
 import { OutputEditGuard } from "@adt/types"
@@ -649,7 +650,8 @@ function rewriteRenderingSectionIds(
     }
     const alreadyOwned = renderedSectionId(rs) === expectedId
     rs.sectionId = expectedId
-    if (!alreadyOwned) rs.html = stampRenderedOwner(rs.html, expectedId)
+    if (rs.ownerReview) rs.ownerReview = { ...rs.ownerReview, signature: renderingOwnerSignature(rs) }
+    else if (!alreadyOwned) rs.html = stampRenderedOwner(rs.html, expectedId)
   }
 }
 
@@ -706,7 +708,7 @@ function assertAlignedRendering(storage: Storage, pageId: string, sectioning: Pa
   const parsed = WebRenderingOutput.safeParse(row.data)
   if (!parsed.success) throw new HTTPException(409, { message: "Rendering is invalid. Restore matching versions before editing sections." })
   const seen = new Set<string>()
-  for (const entry of parsed.data.sections) {
+  for (const entry of withLegacyRenderingOwnership(storage, pageId, parsed.data).sections) {
     const owner = renderedSectionId(entry)
     if (!owner || seen.has(owner) || owner !== sectioning.sections[entry.sectionIndex]?.sectionId) {
       throw new HTTPException(409, { message: "Rendering and section order differ. Restore matching versions before editing sections." })
@@ -723,6 +725,7 @@ export function createPageRoutes(
   taskService?: TaskService
 ): Hono {
   const app = new Hono()
+  app.route("/", createRenderingOwnershipRoutes(booksDir))
 
   // GET /books/:label/pages — List pages with pipeline status
   app.get("/books/:label/pages", (c) => {

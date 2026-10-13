@@ -411,9 +411,12 @@ export { processFixedLayoutPages, isFixedLayoutBook } from "./fixed-layout-rende
 export {
   getRenderSectioning,
   getRenderSectioningRow,
+  getRenderSectioningSelection,
   getSemanticSectioning,
   renderedSectionId,
-  withLegacyFixedLayoutOwnership,
+  withLegacyRenderingOwnership,
+  renderingOwnerSignature,
+  withLegacyRenderingOwnership as withLegacyFixedLayoutOwnership,
   resolveRenderedSection,
   renderingOwnershipWarnings,
   FIXED_LAYOUT_SECTIONING_NODE,
@@ -502,7 +505,7 @@ export { OutputPublicationConflict } from "./output-freshness.js"
 
 export { materializeGlossaryIds, reconcileGlossaryEditIds } from "./glossary.js"
 
-export { reconcileSectioningIdentities } from "./sectioning-identity.js"
+export { reconcileSectioningIdentities, collectSpentContentIds } from "./sectioning-identity.js"
 export { cloneRenderedIdentities, stampRenderedOwner } from "./rendered-identity.js"
 
 export { indexEasyReadEntries } from "./easy-read.js"

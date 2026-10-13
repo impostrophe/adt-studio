@@ -9,7 +9,7 @@ import type { StageState } from "@/hooks/use-book-run"
 import { shouldShowMissingSpeech } from "../stages/languages/lib/speech-review-state"
 
 const calls = vi.hoisted(() => ({ run: vi.fn(), saveSpeech: vi.fn() }))
-vi.mock("@lingui/react/macro", () => ({ useLingui: () => ({
+vi.mock("@lingui/react/macro", () => ({ Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>, useLingui: () => ({
   i18n: { locale: "en" },
   t: (strings: TemplateStringsArray, ...values: unknown[]) => strings.reduce((text, part, index) => text + part + (values[index] ?? ""), ""),
 }) }))
@@ -48,7 +48,7 @@ it("AC-12 discloses unverifiable rendered ownership without offering generation 
   render(<CatalogSummary bookLabel="book" />, { wrapper: setup([], [{ kind: "orphaned-rendering", pageId: "pg001", sectionIndex: 0 }]) })
   expect(screen.getByText(/Some rendered sections on pg001 have no verified section owner/)).toBeTruthy()
   expect(screen.getByText(/Their content and history are retained/)).toBeTruthy()
-  expect(screen.queryByRole("button")).toBeNull()
+  expect(screen.getByRole("button", { name: "Repair section ownership: pg001" })).toBeTruthy()
 })
 
 it("AC-15 expanded details retain every reason and linked source", () => {

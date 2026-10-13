@@ -25,7 +25,11 @@ export function cloneRenderedIdentities(html: string, ids: Map<string, string>, 
   const elements = DomUtils.findAll((element) => element.type === "tag", doc.children)
   for (const element of elements) {
     const id = element.attribs["data-id"]
-    if (id && element.name !== "img" && !ids.has(id)) ids.set(id, allocate())
+    // Known source containers already have mappings. Extra HTML wrappers are
+    // local aliases (legacy scripts select their root); only add missing leaves
+    // that really enter the text catalog, not every attribute in the DOM.
+    const hasIdentifiedChild = DomUtils.findOne(child => child.type === "tag" && child.attribs["data-id"] !== undefined, element.children, true)
+    if (id && element.name !== "img" && !hasIdentifiedChild && !ids.has(id)) ids.set(id, allocate())
   }
   return rewriteRenderedIdentityReferences(html, ids)
 }

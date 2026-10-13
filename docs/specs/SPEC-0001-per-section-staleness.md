@@ -180,21 +180,38 @@ Resolve warnings only against the reviewed output and relevant inputs; reject ac
 
 **Legacy walkthrough:** Open a book with audio/translation but no trustworthy input evidence. Keep usable content with a warning and preserve known provenance; unknown authorship is protected. Keep existing content establishes a review baseline, not fabricated generation history. Missing/invalid files remain Missing. Opening the book performs no generation or deletion; metadata migration is allowed. Downgrade support is not assumed.
 
-**Implementation assumption / proposed compatibility clarification (2026-10-12;
-human spec review pending):** Some legacy rendered sections have neither a
-persisted owner nor one unambiguous owner in their HTML, or the two contradict
-each other. Current array position and moved text/image leaves cannot establish
-ownership: using either can attach retained manual activity answers to a different
-section after a reorder. For this case, the implementation retains all raw
-renderings, entity versions and assets, omits only sections whose owner cannot be
-proved from preview/export, and displays an ownership warning. It does not
-fabricate ownership or generation provenance. Ordinary legacy content with a
-known owner but missing freshness/provenance remains usable and protected under
-the walkthrough above. The user delegated this safety choice with an explicit
-requirement to document the assumption. This is an additional compatibility
-restriction, not an amendment silently folded into AC-7 or AC-12: those criteria
-remain qualified for this edge until the spec owner ratifies the clarification
-or a safe repair workflow is implemented. This note does not waive AC-7 or AC-12; neither it nor implementation constitutes specification approval. The October 13 repairs recognize develop’s single-section fixed-layout output and stamp new agent-created sections; those ordinary cases are included. Truly ambiguous or contradictory legacy owners remain qualified.
+**Implementation assumption / compatibility clarification (October 13;
+human spec review pending):** Current array position and moved text/image leaves
+cannot establish a legacy rendering's owner: either can attach retained manual
+activity answers to a different section after a reorder. Supported historical
+fixed-layout outputs are recovered from either the dedicated positioned-tree
+node or the earlier single positioned `page-sectioning` tree. Historical custom
+activities use a unique matching root identity or an exact saved successful
+creation receipt. Receipts take precedence over model-authored roots. Conflicting,
+missing or changed evidence never authorizes guessing. Reads preserve raw HTML,
+scripts, answer keys, provenance, entity versions and physical assets.
+
+When ownership remains ambiguous, the inline **Repair section ownership** action
+shows the retained rendering, original HTML/answers and available source sections.
+The user explicitly selects its owner. Publication checks the exact rendering
+version and the selected source node and version under shared writer admission;
+a background refresh clears the prior selection. Repair creates a new version,
+changes only ownership metadata, reconciles the catalog, and preserves scripts
+and old HTML owner attributes verbatim. It neither generates content nor certifies
+freshness/authorship. The original version remains restorable. If the source
+section was removed, restore the appropriate Sectioning version first; repair
+cannot silently reactivate excluded content. Until repaired, only unresolved
+renderings are omitted with disclosure. Preview/export remain read-only and add
+no approval popup. This closes the missing repair workflow recorded on October
+12; the safety assumptions are documented under the user's delegated judgment,
+not self-approved spec amendments.
+
+New custom activities cannot copy a section owner or active/historical text ID.
+The tool rejects these inputs before writing and requests a corrected retry;
+it does not rewrite arbitrary JavaScript selectors. It stamps the corrected
+activity's server-allocated owner, preserving local DOM/activity keys and shared
+image IDs. A cloned non-catalog wrapper retains its local `data-id` alias so a
+legacy script can still locate it; cloned catalog leaves receive fresh IDs.
 
 Preview/export may include usable stale or review-needed content under existing eligibility rules. Show outdated content included, missing content omitted, and actual fallback use. Warnings introduce no extra approval popup or freshness gate; exporting does not clear them. Disabled/excluded features do not warn about work not included. Apart from Core TTS fallback, this spec adds no new export fallback.
 

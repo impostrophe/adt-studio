@@ -2342,6 +2342,9 @@ msgstr "Elegir un Preajuste"
 msgid "Choose a previously uploaded video or upload a new one."
 msgstr "Elige un video subido anteriormente o sube uno nuevo."
 
+msgid "Choose a section after reviewing its content"
+msgstr "Elige una sección después de revisar su contenido"
+
 msgid "Choose an existing image from this project"
 msgstr "Elige una imagen existente de este proyecto"
 
@@ -2374,6 +2377,9 @@ msgstr "Elige el archivo de parte que te compartieron, o expórtalo de nuevo."
 
 msgid "Choose the source pages and where the quiz lands in the page editor."
 msgstr "Elige las páginas de origen y dónde se ubica el cuestionario en el editor de páginas."
+
+msgid "Choose the source section that owns each retained rendering. Linking preserves its HTML, scripts, answers and history, including old HTML owner attributes. It does not generate content or approve its freshness."
+msgstr "Elige la sección de origen a la que pertenece cada representación conservada. La vinculación mantiene su HTML, scripts, respuestas e historial, incluidos los antiguos atributos HTML de sección. No genera contenido ni confirma que esté actualizado."
 
 msgid "Choose the target model. The new global prompt file will use this file content and the normal model-specific prompt name."
 msgstr "Elige el modelo de destino. El nuevo archivo de prompt global usará el contenido de este archivo y el nombre normal específico del modelo."
@@ -3817,6 +3823,9 @@ msgstr "Cada página traducida y sincronizada — portugués, español, francés
 msgid "Every page, read aloud."
 msgstr "Cada página, leída en voz alta."
 
+msgid "Every rendering on this page has a verified owner."
+msgstr "Cada representación de esta página pertenece a una sección verificada."
+
 msgid "Every section has a video"
 msgstr "Cada sección tiene un video"
 
@@ -4125,6 +4134,9 @@ msgstr "Filtra imágenes decorativas o sin contenido en cada página."
 
 msgid "Final Page"
 msgstr "Página Final"
+
+msgid "Finish current edits and runs before linking retained content."
+msgstr "Finaliza las ediciones y ejecuciones en curso antes de vincular el contenido conservado."
 
 msgid "Finish signing in with ChatGPT in the browser window that just opened."
 msgstr "Termine de iniciar sesión con ChatGPT en la ventana del navegador que se acaba de abrir."
@@ -5060,6 +5072,9 @@ msgstr "Insertar el cuestionario aquí"
 msgid "Inside Cover"
 msgstr "Contraportada interna"
 
+msgid "Inspect original HTML and answers"
+msgstr "Inspeccionar el HTML y las respuestas originales"
+
 msgid "Install"
 msgstr "Instalar"
 
@@ -5421,6 +5436,9 @@ msgstr "Enlace"
 msgid "Link page"
 msgstr "Enlazar página"
 
+msgid "Link retained content to selected section"
+msgstr "Vincular el contenido conservado a la sección seleccionada"
+
 msgid "Linked pages are kept together as one spread."
 msgstr "Las páginas vinculadas se mantienen juntas como una doble página."
 
@@ -5567,6 +5585,9 @@ msgstr "Cargando cuestionario..."
 
 msgid "Loading quizzes..."
 msgstr "Cargando quizzes..."
+
+msgid "Loading retained content…"
+msgstr "Cargando contenido conservado…"
 
 msgid "Loading reviewer checklist…"
 msgstr "Cargando lista de verificación del revisor…"
@@ -5735,6 +5756,9 @@ msgstr "Seguir el tema del sistema"
 
 msgid "Matches the original book design with some flexibility."
 msgstr "Coincide con el diseño original del libro con cierta flexibilidad."
+
+msgid "Matching source section"
+msgstr "Sección de origen correspondiente"
 
 msgid "Max height"
 msgstr "Altura máx"
@@ -6532,6 +6556,9 @@ msgstr "No se aceptó ninguna traducción de todos modos en esta vista."
 
 msgid "No unassigned videos are available."
 msgstr "No hay videos sin asignar disponibles."
+
+msgid "No unclaimed source section is available. Restore the matching Sectioning version in Storyboard, then reload this review."
+msgstr "No hay ninguna sección de origen sin una representación asociada. Restaura la versión correspondiente de Sectioning en Storyboard y vuelve a cargar esta revisión."
 
 msgid "No variables detected in the current template."
 msgstr "No se detectaron variables en la plantilla actual."
@@ -8049,6 +8076,9 @@ msgstr "Notas de la versión"
 msgid "Reload app"
 msgstr "Recargar aplicación"
 
+msgid "Reload ownership review"
+msgstr "Volver a cargar la revisión de asociaciones"
+
 msgid "Remove"
 msgstr "Quitar"
 
@@ -8148,6 +8178,12 @@ msgstr "Renderiza actividades desde una plantilla fija para un estilo consistent
 
 msgid "Renders each page into the storyboard layout used by the web reader."
 msgstr "Renderiza cada página en el diseño de guion gráfico utilizado por el lector web."
+
+msgid "Repair section ownership"
+msgstr "Reparar la asociación con las secciones"
+
+msgid "Repair section ownership: {pageId}"
+msgstr "Reparar la asociación con las secciones: {pageId}"
 
 msgid "Replace"
 msgstr "Reemplazar"
@@ -8278,6 +8314,14 @@ msgstr "Punto de reanudación"
 #. placeholder {0}: resumeTarget.pageNumber ?? resumeTarget.pageId
 msgid "Resume target: page {0}"
 msgstr "Punto de reanudación: página {0}"
+
+#. placeholder {0}: String(renderingIndex + 1)
+msgid "Retained rendering {0}"
+msgstr "Representación conservada {0}"
+
+#. placeholder {0}: String(renderingIndex + 1)
+msgid "Retained rendering preview {0}"
+msgstr "Vista previa de la representación conservada {0}"
 
 msgid "Retries"
 msgstr "Retries"
