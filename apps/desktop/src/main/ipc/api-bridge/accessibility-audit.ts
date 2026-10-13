@@ -12,6 +12,9 @@ import {
 } from "../../services/accessibility-audit";
 
 function getAxeSource(mod: unknown): string {
+  // Keep this in sync with getAxeSource in
+  // packages/pipeline/src/accessibility-assessment-shared.ts. The desktop
+  // main process cannot import @adt/pipeline under the application layer rule.
   if (typeof mod === "object" && mod !== null && "source" in mod) {
     const source = (mod as { source?: unknown }).source;
     if (typeof source === "string") return source;
@@ -23,9 +26,10 @@ function getAxeSource(mod: unknown): string {
   throw new Error("Unable to load axe-core source");
 }
 
-function validateAuditFilePath(filePath: string): string {
-  const { booksDir } = resolvePaths();
-  const booksRoot = fs.realpathSync(booksDir);
+export function validateAuditFilePath(
+  filePath: string,
+  booksRoot: string,
+): string {
   const resolvedFilePath = fs.realpathSync(filePath);
   const relativePath = path.relative(booksRoot, resolvedFilePath);
 
@@ -35,7 +39,9 @@ function validateAuditFilePath(filePath: string): string {
     path.isAbsolute(relativePath) ||
     !fs.statSync(resolvedFilePath).isFile()
   ) {
-    throw new Error("Accessibility audit file must be a regular file inside the books directory");
+    throw new Error(
+      "Accessibility audit file must be a regular file inside the books directory",
+    );
   }
 
   return resolvedFilePath;
@@ -48,6 +54,11 @@ function validateAuditFilePath(filePath: string): string {
 export function handleAccessibilityAuditMessages(
   apiProcess: Electron.UtilityProcess,
 ) {
+  // resolvePaths() creates the books directory and logs the resolved paths, so
+  // resolve its canonical root once per API utility process rather than once
+  // for every page audit request.
+  const booksRoot = fs.realpathSync(resolvePaths().booksDir);
+
   return async (msg: unknown) => {
     const parsed = accessibilityAuditIpcUtilityToMainSchema.safeParse(msg);
     if (!parsed.success) {
@@ -59,7 +70,7 @@ export function handleAccessibilityAuditMessages(
 
     if (m.type === "axe-audit") {
       try {
-        const filePath = validateAuditFilePath(m.filePath);
+        const filePath = validateAuditFilePath(m.filePath, booksRoot);
         const axeSource = getAxeSource(await import("axe-core"));
         const result = await audit({
           filePath,
