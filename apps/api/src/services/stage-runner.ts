@@ -862,6 +862,7 @@ async function generateSpeechWordTimestamps(
 
         const result = await generateWordTimestamps({
           audioBuffer,
+          audioHash: entry.audioHash,
           fileName: entry.fileName,
           apiKey,
           language: getBaseLanguage(language),
@@ -875,7 +876,7 @@ async function generateSpeechWordTimestamps(
 
         const slot = resolveEntryVoiceSlot(entry)
         if (outputSkipped(options.scope, { kind: "timestamps", id: entry.textId, language, voiceSlot: slot })) return
-        const audioHash = entry.audioHash ?? createHash("sha256").update(readBookAsset(bookDir, path.join("audio", language, entry.fileName))).digest("hex") ?? crypto.createHash("sha256").update(audioBuffer).digest("hex")
+        const audioHash = result.audioHash
         entriesByLanguage.get(language)![voiceSlotEntryId(entry.textId, slot)] = {
           textId: entry.textId,
           language,

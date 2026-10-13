@@ -1496,6 +1496,7 @@ export function createTTSRoutes(booksDir: string, configPath?: string, taskServi
       const openaiApiKey = requireTranscriberKey(readProviderCredentials(c))
       const result = await generateWordTimestamps({
         audioBuffer,
+        audioHash: ttsEntry.audioHash,
         fileName: ttsEntry.fileName,
         apiKey: openaiApiKey,
         language: baseLanguage,
@@ -1504,7 +1505,7 @@ export function createTTSRoutes(booksDir: string, configPath?: string, taskServi
         onLog: (entry) => storage.appendLlmLog(entry),
       })
 
-      const timingAudioHash = (await import("node:crypto")).createHash("sha256").update(audioBuffer).digest("hex")
+      const timingAudioHash = result.audioHash
       const timestampEntry: WordTimestampEntry = {
         source: "ai", audioHash: timingAudioHash,
         input: outputEvidence(timestampInputSignature(timingAudioHash, normalizedLanguage, textPrompt ?? ""), { words: result.words, duration: result.duration }, captureOutputReferences(storage, "timestamps", normalizedLanguage)),
@@ -1623,11 +1624,11 @@ export function createTTSRoutes(booksDir: string, configPath?: string, taskServi
               const audioPath = resolvePathWithin(booksDir, safeLabel, "audio", normalizedLanguage, entry.fileName)
               if (!audioPath) throw new Error(`Invalid audio file path: ${entry.fileName}`)
               const audioBuffer = Buffer.from(fs.readFileSync(audioPath))
-              const result = await generateWordTimestamps({ audioBuffer, fileName: entry.fileName, apiKey: openaiApiKey,
+              const result = await generateWordTimestamps({ audioBuffer, audioHash: entry.audioHash, fileName: entry.fileName, apiKey: openaiApiKey,
                 language: getBaseLanguage(normalizedLanguage), prompt: textMap.get(entry.textId), cacheDir: path.join(bookDir, ".cache"),
                 onLog: (log) => storage.appendLlmLog(log) })
               assertCurrent()
-              const audioHash = (await import("node:crypto")).createHash("sha256").update(audioBuffer).digest("hex")
+              const audioHash = result.audioHash
               const timing: WordTimestampEntry = { textId: entry.textId, language: normalizedLanguage, voiceSlot,
                 source: "ai", audioHash, words: result.words, duration: result.duration,
                 input: outputEvidence(timestampInputSignature(audioHash, normalizedLanguage, textMap.get(entry.textId) ?? ""), { words: result.words, duration: result.duration }, captureOutputReferences(storage, "timestamps", normalizedLanguage)) }

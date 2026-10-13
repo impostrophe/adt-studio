@@ -89,3 +89,62 @@ it("audio-only regeneration creates timings for the new recording and retains th
   expect(fs.existsSync(path.join(reopened.bookDir!, "audio/en", oldFile))).toBe(true)
   reopened.close()
 })
+
+it.each(["stage", "single", "batch"])("%s transcription uses stored identity without hashing retained audio", async (entrypoint) => {
+  await run()
+  const db = storage()
+  const audio = (db.getLatestNodeData("tts", "en")!.data as TTSOutput).entries[0]
+  db.putNodeData("tts-timestamps", "en", { entries: {}, generatedAt: "removed-current-timing" })
+  db.close()
+  // Remove only the disposable alignment cache to prove the real transport is
+  // reached once; subsequent transcription reuses the same persisted identity.
+  fs.rmSync(path.join(root, label, ".cache", "word-timestamps"), { recursive: true, force: true })
+  const crypto = (await import("node:crypto")).default
+  const create = crypto.createHash
+  let binaryHashes = 0
+  const spy = vi.spyOn(crypto, "createHash").mockImplementation((...args) => {
+    const hash = create(...args)
+    const update = hash.update.bind(hash)
+    hash.update = ((value: Parameters<typeof hash.update>[0], ...rest: [BufferEncoding?]) => {
+      if (ArrayBuffer.isView(value)) binaryHashes++
+      return update(value, ...rest as [BufferEncoding])
+    }) as typeof hash.update
+    return hash
+  })
+  try {
+    if (entrypoint === "stage") await run()
+    else {
+      const { createTTSRoutes } = await import("../routes/tts.js")
+      const { createTaskService } = await import("./task-service.js")
+      const { createBookEventBus } = await import("./book-event-bus.js")
+      const bus = createBookEventBus()
+      const tasks = createTaskService(bus, root)
+      let finished = false
+      let error: unknown
+      const remove = bus.addListener(label, (event) => {
+        if (event.type === "task" && event.data.type === "task-complete") finished = true
+        if (event.type === "task" && event.data.type === "task-error") { error = event.data; finished = true }
+      })
+      try {
+        const app = createTTSRoutes(root, undefined, tasks)
+        const response = await app.request(`/books/${label}/tts/transcribe-${entrypoint === "single" ? "one" : "all"}`, {
+          method: "POST", headers: { "Content-Type": "application/json", "X-OpenAI-Key": "stub-transport" },
+          body: JSON.stringify({ language: "en", ...(entrypoint === "single" ? { textId: "stable" } : {}) }),
+        })
+        expect(response.status).toBe(200)
+        if (entrypoint === "batch") await vi.waitFor(() => expect(finished).toBe(true))
+        expect(error).toBeUndefined()
+      } finally { remove() }
+    }
+    expect(binaryHashes).toBe(0)
+    expect(transport.mock.calls.filter(([url]) => String(url).includes("/audio/transcriptions"))).toHaveLength(2)
+    const reopened = storage()
+    try {
+      const timing = reopened.getLatestNodeData("tts-timestamps", "en")!.data as WordTimestampOutput
+      expect(timing.entries.stable.audioHash).toBe(audio.audioHash)
+      expect((reopened.getLatestNodeData("tts", "en")!.data as TTSOutput).entries[0].fileName).toBe(audio.fileName)
+    } finally { reopened.close() }
+    await run()
+    expect(transport.mock.calls.filter(([url]) => String(url).includes("/audio/transcriptions"))).toHaveLength(2)
+  } finally { spy.mockRestore() }
+})

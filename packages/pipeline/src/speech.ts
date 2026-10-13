@@ -1267,6 +1267,8 @@ const PAGE_SLICE_FADE_MS = 8
 
 export interface GenerateWordTimestampsOptions {
   audioBuffer: Buffer
+  /** Trusted identity recorded when this immutable audio was written. */
+  audioHash?: string
   fileName: string
   apiKey: string
   language?: string
@@ -1277,6 +1279,7 @@ export interface GenerateWordTimestampsOptions {
 
 export interface GenerateWordTimestampsResult extends WhisperTranscriptionResult {
   cached: boolean
+  audioHash: string
 }
 
 /**
@@ -1307,7 +1310,10 @@ export async function generateWordTimestamps(
       }),
     )
 
-  const audioHash = crypto.createHash("sha256").update(audioBuffer).digest("hex")
+  // Retained audio already has a write-time identity. Only unpublished page
+  // audio or legacy callers without one need to derive it here, once; return
+  // it so publication never has to read/hash the same audio again.
+  const audioHash = options.audioHash ?? crypto.createHash("sha256").update(audioBuffer).digest("hex")
   const hash = crypto
     .createHash("sha256")
     .update(JSON.stringify({ audioHash, language: language ?? "", prompt: prompt ?? "", model: "whisper-1" }))
@@ -1321,7 +1327,7 @@ export async function generateWordTimestamps(
     try {
       const parsed = JSON.parse(fs.readFileSync(cachePath, "utf-8")) as WhisperTranscriptionResult
       log(true, true, parsed)
-      return { ...parsed, cached: true }
+      return { ...parsed, cached: true, audioHash }
     } catch {
       // Fall through to regenerate on parse failure
     }
@@ -1341,5 +1347,5 @@ export async function generateWordTimestamps(
   fs.mkdirSync(cacheRoot, { recursive: true })
   fs.writeFileSync(cachePath, JSON.stringify(result, null, 2) + "\n")
 
-  return { ...result, cached: false }
+  return { ...result, cached: false, audioHash }
 }
