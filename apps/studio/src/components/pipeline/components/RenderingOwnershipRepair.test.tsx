@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 const calls = vi.hoisted(() => ({ read: vi.fn(), repair: vi.fn(), dirty: false, running: false }))
-vi.mock("@/api/client", () => ({ api: { getRenderingOwnership: calls.read, repairRenderingOwner: calls.repair } }))
+vi.mock("@/api/client", () => ({ BASE_URL: "/api", api: { getRenderingOwnership: calls.read, repairRenderingOwner: calls.repair } }))
 vi.mock("@/hooks/use-book-run", () => ({ useBookRun: () => ({ isRunning: calls.running }) }))
 vi.mock("./floating-save", () => ({ useFloatingSaveDirtyEntries: () => calls.dirty ? [{}] : [] }))
 vi.mock("@/hooks/use-page-mutations", () => ({ invalidateStoryboardDependents: vi.fn() }))
@@ -64,5 +64,18 @@ it.each(["rendering", "source-node"])("requires a fresh explicit choice after ba
   await client.invalidateQueries({ queryKey: ["books", "book", "pages"] })
   await waitFor(() => expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe(""))
   expect(screen.getByRole("button", { name: "Link retained content to selected section" }).hasAttribute("disabled")).toBe(true)
+  expect(calls.repair).not.toHaveBeenCalled()
+})
+
+it("shows identified book images without running scripts or loading remote resources", async () => {
+  const html = '<section><img data-id="pg001_im001" src="https://remote.invalid/image.png"><a href="https://remote.invalid">link</a><svg><a xlink:href="https://remote.invalid/navigation"><text>Open</text></a></svg><script>danger()</script></section>'
+  calls.read.mockResolvedValue({ ...review, unresolved: [{ ...review.unresolved[0], rendering: { ...review.unresolved[0].rendering, html } }] })
+  mount()
+  fireEvent.click(screen.getByRole("button", { name: "Repair section ownership: pg001" }))
+  const frame = await screen.findByTitle("Retained rendering preview 2")
+  expect(frame.getAttribute("srcdoc")).toContain('/api/books/book/images/pg001_im001')
+  expect(frame.getAttribute("srcdoc")).not.toContain("remote.invalid")
+  expect(frame.getAttribute("srcdoc")).not.toContain("danger()")
+  expect(screen.getByText(/https:\/\/remote.invalid\/image.png/)).toBeTruthy()
   expect(calls.repair).not.toHaveBeenCalled()
 })

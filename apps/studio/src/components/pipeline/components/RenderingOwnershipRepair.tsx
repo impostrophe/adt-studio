@@ -1,12 +1,26 @@
 import { useState } from "react"
+import DOMPurify from "dompurify"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useLingui } from "@lingui/react/macro"
-import { api } from "@/api/client"
+import { api, BASE_URL } from "@/api/client"
 import { useBookRun } from "@/hooks/use-book-run"
 import { invalidateStoryboardDependents } from "@/hooks/use-page-mutations"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useFloatingSaveDirtyEntries } from "./floating-save"
+
+function retainedPreview(html: string, bookLabel: string): string {
+  // The preview is inert; inspect the exact original separately below. Resolve
+  // book images by ID so legacy relative URLs work without permitting remote
+  // resources or executing retained custom scripts during ownership review.
+  const body = document.createElement("div")
+  body.append(DOMPurify.sanitize(html, { RETURN_DOM_FRAGMENT: true, FORBID_ATTR: ["src", "srcset", "href", "xlink:href", "action"] }))
+  const imageBase = new URL(`${BASE_URL}/books/${encodeURIComponent(bookLabel)}/images/`, window.location.href)
+  for (const image of body.querySelectorAll("img[data-id]")) {
+    image.setAttribute("src", new URL(encodeURIComponent(image.getAttribute("data-id")!), imageBase).href)
+  }
+  return `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src ${imageBase.href}">${body.innerHTML}`
+}
 
 export function RenderingOwnershipRepair({ bookLabel, pageId }: { bookLabel: string; pageId: string }) {
   const { t } = useLingui()
@@ -45,7 +59,7 @@ export function RenderingOwnershipRepair({ bookLabel, pageId }: { bookLabel: str
       {query.data?.unresolved.length === 0 && <p>{t`Every rendering on this page has a verified owner.`}</p>}
       {query.data?.unresolved.map(({ renderingIndex, rendering }) => <section key={`${query.data.renderingVersion}:${renderingIndex}`} className="space-y-3 rounded border p-3">
         <p className="text-sm font-medium">{t`Retained rendering ${String(renderingIndex + 1)}`}</p>
-        <iframe title={t`Retained rendering preview ${String(renderingIndex + 1)}`} sandbox="" className="h-56 w-full border bg-white" srcDoc={`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">${rendering.html}`} />
+        <iframe title={t`Retained rendering preview ${String(renderingIndex + 1)}`} sandbox="" className="h-56 w-full border bg-white" srcDoc={retainedPreview(rendering.html, bookLabel)} />
         <details><summary className="cursor-pointer text-sm">{t`Inspect original HTML and answers`}</summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all text-xs">{rendering.html}{"\n"}{JSON.stringify(rendering.activityAnswers ?? {}, null, 2)}</pre></details>
         {query.data.choices.length === 0 ? <p className="text-sm">{t`No unclaimed source section is available. Restore the matching Sectioning version in Storyboard, then reload this review.`}</p> : <>
           <label className="block space-y-1 text-sm"><span>{t`Matching source section`}</span>
