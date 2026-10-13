@@ -1963,4 +1963,43 @@ describe("book admission before the first extraction", () => {
     expect(fs.existsSync(path.join(tmpDir, "fresh", "fresh.db"))).toBe(false)
     expect(started).toEqual([])
   })
+
+  it.each(["escaping-link", "dangling-link", "directory"])("does not let a valid source PDF mask an invalid database path (%s)", async (kind) => {
+    const started: string[] = []
+    const app = lifecycleApp(started)
+    const bookDir = path.join(tmpDir, "fresh")
+    fs.mkdirSync(bookDir)
+    fs.writeFileSync(path.join(bookDir, "fresh.pdf"), "%PDF-1.4 fixture")
+    const database = path.join(bookDir, "fresh.db")
+    const outside = path.join(tmpDir, "outside.db")
+    fs.writeFileSync(outside, "external data must remain unchanged")
+    if (kind === "directory") fs.mkdirSync(database)
+    else fs.symlinkSync(kind === "escaping-link" ? outside : path.join(bookDir, "missing.db"), database)
+
+    expect((await runExtract(app)).status).toBe(404)
+    expect((await app.request("/books/fresh/config", { method: "PUT", headers: json, body: JSON.stringify({ config: {} }) })).status).toBe(404)
+    expect(started).toEqual([])
+    expect(fs.readFileSync(outside, "utf8")).toBe("external data must remain unchanged")
+    expect(fs.existsSync(path.join(bookDir, "config.yaml"))).toBe(false)
+    expect(fs.existsSync(path.join(bookDir, "missing.db"))).toBe(false)
+    expect(fs.lstatSync(database).isSymbolicLink()).toBe(kind !== "directory")
+  })
+
+  it("rejects a cross-book database alias before metadata can modify its real SQLite target", async () => {
+    createTestBook("outside")
+    const original = createBookStorage("outside", tmpDir)
+    const before = original.getLatestNodeData("metadata", "book")
+    original.close()
+    const bookDir = path.join(tmpDir, "fresh")
+    fs.mkdirSync(bookDir)
+    fs.writeFileSync(path.join(bookDir, "fresh.pdf"), "%PDF-1.4 fixture")
+    fs.symlinkSync(path.join(tmpDir, "outside", "outside.db"), path.join(bookDir, "fresh.db"))
+    const app = lifecycleApp([])
+    const response = await app.request("/books/fresh/metadata", { method: "PUT", headers: json,
+      body: JSON.stringify({ title: "Unexpected cross-book write", authors: [], publisher: null, language_code: "en" }) })
+    expect(response.status).toBe(404)
+    const retained = createBookStorage("outside", tmpDir)
+    try { expect(retained.getLatestNodeData("metadata", "book")).toEqual(before) }
+    finally { retained.close() }
+  })
 })
