@@ -1,5 +1,5 @@
 import { OutputReviewPanel } from "./output-review/OutputReviewPanel"
-import { hasOutputConflict } from "./output-review/review-plan"
+import { hasOutputConflict, outputLocationCount } from "./output-review/review-plan"
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useLingui } from "@lingui/react/macro"
@@ -97,7 +97,7 @@ function OutputReviewItem({ bookLabel, output, outputs, dirty = false, disclosur
       {replace && <Button size="sm" variant="outline" disabled={mutation.isPending} onClick={() => mutation.mutate("replace")}>{t`Regenerate and replace my edit`}</Button>}
       {upstream.length > 0 && <Button size="sm" variant="ghost" onClick={() => setShowSource(!showSource)}>{t`Review source`}</Button>}
     </div>}
-    {output.identity.kind === "easy-read" && output.sectionIds.length > 1 && <p className="mt-1 text-muted-foreground">{t`This text is shared by ${output.sectionIds.length} sections. Updating it changes the shared text in every referring section.`}</p>}
+    {output.identity.kind === "easy-read" && outputLocationCount(output) > 1 && <p className="mt-1 text-muted-foreground">{t`This text is shared by ${outputLocationCount(output)} sections. Updating it changes the shared text in every referring section.`}</p>}
     {showSource && upstream.map((source) => <div key={JSON.stringify(source.identity)} className="mt-2 border-l pl-2"><p className="mb-1 font-mono">{source.identity.id} {source.identity.language}</p><OutputReviewItem bookLabel={bookLabel} output={source} outputs={outputs} dirty={dirty} disclosure={disclosure} detail inline={inline} /></div>)}
     {mutation.error && <p className="mt-1 text-red-700">{mutation.error.message}</p>}
   </div>

@@ -9,6 +9,10 @@ export const needsAttention = (output: OutputStatus) =>
 export const hasFallback = (output: OutputStatus) => output.identity.kind === "preparation" &&
   output.warnings.some((warning) => !warning.source && warning.reason.startsWith("preparation-"))
 
+export const outputLocationCount = (output: OutputStatus) =>
+  new Set(output.locations?.map((location) => JSON.stringify([location.pageId, location.sectionId]))).size ||
+  Math.max(output.pageIds.length, output.sectionIds.length)
+
 export const hasOutputConflict = (output: OutputStatus) =>
   output.warnings.some((warning) => warning.reason === "output-conflict")
 

@@ -63,3 +63,16 @@ it("labels an entry that differs from its saved text as an unsaved edit", async 
   fireEvent.change(await screen.findByLabelText("Easy Read text"), { target: { value: "The Nile floods once a year." } })
   expect(await screen.findByRole("button", { name: "Easy Read: Unsaved edit" })).toBeTruthy()
 })
+
+it("discloses that a shared edit also updates the section hidden by the page filter", async () => {
+  vi.mocked(api.getEasyRead).mockResolvedValue({ sourceSignature: "source", generatedAt: "before", version: 1, blocks: [
+    { pageId: "pg001", sectionId: "shared-section", sectionIndex: 0, sectionType: "text", entries: [entry] },
+    { pageId: "pg002", sectionId: "shared-section", sectionIndex: 0, sectionType: "text", entries: [{ ...entry, pageId: "pg002", sectionId: "shared-section" }] },
+  ] })
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><TooltipProvider>
+    <EasyReadEditor bookLabel="book" selectedPageId="pg001" isRunning={false} hasStructuredTextProvider onRegenerate={vi.fn()} />
+  </TooltipProvider></QueryClientProvider>)
+  expect(await screen.findByText("This Easy Read text is shared across sections. Saving it updates every referring section, including sections outside the current filter.")).toBeTruthy()
+  expect(screen.getAllByLabelText("Easy Read text")).toHaveLength(1)
+})

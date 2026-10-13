@@ -8981,6 +8981,9 @@ msgstr "Zgjidhni faqet nga të cilat është shkruar kuizi, pastaj zgjidhni ku s
 msgid "Select up to 5 pages to use as visual references. The LLM will analyze them and generate a styleguide."
 msgstr "Zgjidhni deri në 5 faqe për t'i përdorur si referenca vizuale. LLM do t'i analizojë dhe do të gjenerojë një udhëzues stili."
 
+msgid "Selected Easy Read text is shared across sections. Updating it changes every referring section, including sections outside the current filter."
+msgstr "Teksti i zgjedhur për Lexim të lehtë ndahet mes disa seksioneve. Përditësimi i tij ndryshon çdo seksion që e përdor, përfshirë seksionet jashtë filtrit aktual."
+
 msgid "Selected file"
 msgstr "Skedari i zgjedhur"
 
@@ -10213,6 +10216,9 @@ msgstr "Ky kompjuter"
 msgid "This connection isn't available yet."
 msgstr "Kjo lidhje nuk është ende e disponueshme."
 
+msgid "This Easy Read text is shared across sections. Saving it updates every referring section, including sections outside the current filter."
+msgstr "Ky tekst për Lexim të lehtë ndahet mes disa seksioneve. Ruajtja e tij përditëson çdo seksion që e përdor, përfshirë seksionet jashtë filtrit aktual."
+
 msgid "This entry has no speakable text, so no audio was generated and no request was sent to the provider."
 msgstr "Kjo hyrje nuk ka tekst të shqiptueshëm, kështu që nuk u krijua audio dhe nuk u dërgua asnjë kërkesë tek ofruesi."
 
@@ -10375,7 +10381,7 @@ msgstr "Ky sistem nuk mund të shfaqë njoftime në desktop."
 msgid "This text is only perceptible to assistive technologies."
 msgstr "Ky tekst perceptohet vetëm nga teknologjitë ndihmëse."
 
-#. placeholder {0}: output.sectionIds.length
+#. placeholder {0}: outputLocationCount(output)
 msgid "This text is shared by {0} sections. Updating it changes the shared text in every referring section."
 msgstr "Ky tekst ndahet nga {0} seksione. Përditësimi i tij ndryshon tekstin e përbashkët në çdo seksion që e përdor."
 

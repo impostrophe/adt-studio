@@ -8979,6 +8979,9 @@ msgstr "Selecione as páginas em que o questionário se baseia e escolha onde el
 msgid "Select up to 5 pages to use as visual references. The LLM will analyze them and generate a styleguide."
 msgstr "Selecione até 5 páginas para usar como referências visuais. O LLM irá analisá-las e gerar um guia de estilo."
 
+msgid "Selected Easy Read text is shared across sections. Updating it changes every referring section, including sections outside the current filter."
+msgstr "O texto de Leitura fácil selecionado é compartilhado entre seções. Atualizá-lo altera todas as seções que o utilizam, inclusive as que estão fora do filtro atual."
+
 msgid "Selected file"
 msgstr "Arquivo selecionado"
 
@@ -10211,6 +10214,9 @@ msgstr "Este computador"
 msgid "This connection isn't available yet."
 msgstr "Esta conexão ainda não está disponível."
 
+msgid "This Easy Read text is shared across sections. Saving it updates every referring section, including sections outside the current filter."
+msgstr "Este texto de Leitura fácil é compartilhado entre seções. Salvá-lo atualiza todas as seções que o utilizam, inclusive as que estão fora do filtro atual."
+
 msgid "This entry has no speakable text, so no audio was generated and no request was sent to the provider."
 msgstr "Esta entrada não tem texto pronunciável, portanto nenhum áudio foi gerado e nenhuma solicitação foi enviada ao provedor."
 
@@ -10373,7 +10379,7 @@ msgstr "Este sistema não pode exibir notificações do desktop."
 msgid "This text is only perceptible to assistive technologies."
 msgstr "Este texto é perceptível apenas para tecnologias assistivas."
 
-#. placeholder {0}: output.sectionIds.length
+#. placeholder {0}: outputLocationCount(output)
 msgid "This text is shared by {0} sections. Updating it changes the shared text in every referring section."
 msgstr "Este texto é compartilhado por {0} seções. Atualizá-lo altera o texto compartilhado em todas as seções que o utilizam."
 

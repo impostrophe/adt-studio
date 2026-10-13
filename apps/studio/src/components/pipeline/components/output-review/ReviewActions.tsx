@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useFloatingSaveDirtyEntries } from "../floating-save"
 import { getStageLabelI18n } from "../../pipeline-i18n"
-import { buildReviewPlan, hasFallback, identityKey, reviewGuard } from "./review-plan"
+import { buildReviewPlan, hasFallback, identityKey, reviewGuard, outputLocationCount } from "./review-plan"
 
 export function ReviewActions({ bookLabel, outputs, catalog, filtered, heading, detailsButton, scopeKey }: {
   bookLabel: string; outputs: OutputStatus[]; catalog: OutputStatus[]; filtered: boolean
@@ -29,6 +29,8 @@ export function ReviewActions({ bookLabel, outputs, catalog, filtered, heading, 
   const { updating, accepted } = useOutputReviewRun(bookLabel)
   const plan = buildReviewPlan(outputs, catalog)
   const sources = plan.sourceStages.map(getStageLabelI18n).join(", ")
+  const sharedEasyRead = [...plan.update, ...plan.replacement].some((output) => output.identity.kind === "easy-read" && outputLocationCount(output) > 1)
+  const usesContext = [...plan.update, ...plan.replacement].some((output) => ["easy-read", "preparation", "audio", "caption"].includes(output.identity.kind))
   const mutation = useMutation({
     mutationKey: ["books", bookLabel, "output-review"],
     mutationFn: async (action: "keep" | "update" | "replace") => {
@@ -76,6 +78,8 @@ export function ReviewActions({ bookLabel, outputs, catalog, filtered, heading, 
       {plan.keep.length > 0 && <>{t`Keep accepts existing content without regenerating it.`} </>}
       {sources && t`Includes linked source items in: ${sources}.`}
     </p>
+    {usesContext && <p className="text-muted-foreground">{t`Generation uses required section or page context and publishes only selected outputs. Current and protected outputs are kept.`}</p>}
+    {sharedEasyRead && <p className="text-muted-foreground">{t`Selected Easy Read text is shared across sections. Updating it changes every referring section, including sections outside the current filter.`}</p>}
     {dirty && <p>{t`Save or cancel your draft before reviewing outputs.`}</p>}
     {isRunning && <p role="status">{t`Updates are running. You can continue reviewing the book.`}</p>}
     {mutation.isPending && !isRunning && <p role="status">{t`Applying changes…`}</p>}

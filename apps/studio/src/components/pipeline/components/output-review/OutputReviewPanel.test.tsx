@@ -319,3 +319,19 @@ it("keeps unrelated reviewed content without trying to accept unresolved duplica
   expect(calls.review).toHaveBeenCalledWith("book", { ...reviewGuard(manual), action: "keep" })
   expect(calls.run).not.toHaveBeenCalled()
 })
+
+it("discloses shared Easy Read scope before a filtered bulk update with details collapsed", async () => {
+  const shared = output("shared_easy_read", { identity: { kind: "easy-read", id: "shared_easy_read", language: "en" },
+    pageIds: ["pg001", "pg002"], sectionIds: ["shared-section"],
+    locations: [{ pageId: "pg001", sectionId: "shared-section" }, { pageId: "pg002", sectionId: "shared-section" }] })
+  setup([shared])
+  fireEvent.click(screen.getByRole("button", { name: "Review items" }))
+  fireEvent.change(screen.getByRole("combobox", { name: "Page" }), { target: { value: "pg001" } })
+  fireEvent.change(screen.getByRole("combobox", { name: "Section" }), { target: { value: "shared-section" } })
+  fireEvent.click(screen.getByRole("button", { name: "Hide details" }))
+  expect(screen.getByText("Selected Easy Read text is shared across sections. Updating it changes every referring section, including sections outside the current filter.")).toBeTruthy()
+  expect(calls.run).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole("button", { name: "Update filtered items" }))
+  await waitFor(() => expect(calls.run).toHaveBeenCalledTimes(1))
+  expect(calls.run.mock.calls[0][2].outputScope.selection.identities).toEqual([shared.identity])
+})

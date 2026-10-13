@@ -43,6 +43,15 @@ export function EasyReadEditor({
   const [searchQuery, setSearchQuery] = useState("")
   const blocks = draftBlocks ?? data?.blocks ?? []
   const dirty = draftBlocks !== null
+  const sharedSections = useMemo(() => {
+    const owners = new Map<string, Set<string>>()
+    for (const block of blocks) for (const entry of block.entries) {
+      const sections = owners.get(entry.easyReadId) ?? new Set<string>()
+      sections.add(JSON.stringify([block.pageId, block.sectionId]))
+      owners.set(entry.easyReadId, sections)
+    }
+    return owners
+  }, [blocks])
   const savedTexts = useMemo(
     () => new Map((data?.blocks ?? []).flatMap((block) => block.entries.map((entry) => [entry.easyReadId, entry.text] as const))),
     [data?.blocks],
@@ -447,6 +456,7 @@ export function EasyReadEditor({
                                 <OutputReview bookLabel={bookLabel} id={entry.easyReadId} kinds={["easy-read"]} dirty={dirty}
                                   edited={dirty && entry.text !== (savedTexts.get(entry.easyReadId) ?? "")} compact />
                               </div>
+                              {(sharedSections.get(entry.easyReadId)?.size ?? 0) > 1 && <p className="text-xs text-muted-foreground">{t`This Easy Read text is shared across sections. Saving it updates every referring section, including sections outside the current filter.`}</p>}
                               <AutoTextarea
                                 value={entry.text}
                                 onChange={(value) => updateEntry(block, entry.easyReadId, value)}
