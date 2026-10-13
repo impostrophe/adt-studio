@@ -40,11 +40,14 @@ interface BookRunState {
   active: StageRunJob | null
   queue: QueuedStageRun[]
   runRevision: string
+  publicationTime: number
 }
 
 export interface BookRunStatus {
   /** Changes after a run settles or the service restarts; survives queue drain. */
   runRevision?: string
+  /** Monotonic age of the publication/epoch, independent of client wall clocks. */
+  publicationAgeMs?: number
   active: StageRunJob | null
   queue: Array<{ id: string; fromStage: string; toStage: string }>
 }
@@ -113,11 +116,12 @@ export function createStageService(
 ): StageService {
   const books = new Map<string, BookRunState>()
   const initialRunRevision = randomUUID()
+  const initialPublicationTime = performance.now()
 
   function getOrCreateState(label: string): BookRunState {
     let state = books.get(label)
     if (!state) {
-      state = { active: null, queue: [], runRevision: initialRunRevision }
+      state = { active: null, queue: [], runRevision: initialRunRevision, publicationTime: initialPublicationTime }
       books.set(label, state)
     }
     return state
@@ -157,7 +161,7 @@ export function createStageService(
       // no cancelled event, no step reset (the run genuinely finished).
       job.status = "completed"
       job.completedAt = Date.now()
-      getOrCreateState(label).runRevision = job.id
+      Object.assign(getOrCreateState(label), { runRevision: job.id, publicationTime: performance.now() })
       eventBus.emit(label, { type: "stage-run-complete", label })
     } catch (err) {
       if (job.controller.signal.aborted) {
@@ -177,7 +181,7 @@ export function createStageService(
         }
         job.status = "cancelled"
         job.completedAt = Date.now()
-        getOrCreateState(label).runRevision = job.id
+        Object.assign(getOrCreateState(label), { runRevision: job.id, publicationTime: performance.now() })
         eventBus.emit(label, { type: "stage-run-cancelled", label })
       } else {
         const message = err instanceof Error ? err.message : String(err)
@@ -185,7 +189,7 @@ export function createStageService(
         job.status = "failed"
         job.error = message
         job.completedAt = Date.now()
-        getOrCreateState(label).runRevision = job.id
+        Object.assign(getOrCreateState(label), { runRevision: job.id, publicationTime: performance.now() })
         eventBus.emit(label, { type: "stage-run-error", label, error: message })
       }
     } finally {
@@ -237,10 +241,11 @@ export function createStageService(
   return {
     getStatus(label: string): BookRunStatus {
       const state = books.get(label)
-      if (!state) return { active: null, queue: [], runRevision: initialRunRevision }
+      if (!state) return { active: null, queue: [], runRevision: initialRunRevision, publicationAgeMs: performance.now() - initialPublicationTime }
       return {
         active: state.active,
         runRevision: state.runRevision,
+        publicationAgeMs: performance.now() - state.publicationTime,
         queue: state.queue.map((q) => ({
           id: q.id,
           fromStage: q.fromStage,

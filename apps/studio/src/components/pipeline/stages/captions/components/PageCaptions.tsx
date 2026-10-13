@@ -133,10 +133,13 @@ export function PageCaptions({
     setPending(next)
     const minDelay = new Promise((r) => setTimeout(r, 400))
     try {
-      await api.updateImageCaptioning(bookLabel, pageId, { ...next, ...baseline.current })
+      const submittedBaseline = baseline.current
+      const result = await api.updateImageCaptioning(bookLabel, pageId, { ...next, ...submittedBaseline })
+      // A newer draft may already exist. Advance only to our acknowledged
+      // write, never to an unrelated background refresh that it did not review.
+      baseline.current = { ...submittedBaseline, baseVersion: result.version }
       await refreshAfterSave()
       setPending((current) => current === next ? null : current)
-      setEditing(null)
       setSaveError(null)
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error))
@@ -165,7 +168,6 @@ export function PageCaptions({
     imageId: string,
     patch: Partial<CaptioningData["captions"][number]>,
   ) => {
-    if (savingRef.current) return
     const base = optimistic ?? pending ?? page.imageCaptioning
     if (!base) return
     const next: CaptioningData = {
@@ -174,7 +176,7 @@ export function PageCaptions({
         c.imageId === imageId ? { ...c, ...patch, source: "manual" } : c,
       ),
     }
-    if (pending) setPending(next)
+    if (pending || savingRef.current) setPending(next)
     else void saveCaptions(next)
   }
 
@@ -197,7 +199,6 @@ export function PageCaptions({
   }
 
   const handleStartEdit = (cap: CaptionEntry) => {
-    if (savingRef.current) return
     if (editing && editing.imageId !== cap.imageId) {
       commitCaptionEdit(editing.imageId, editing.draft)
     }
@@ -369,7 +370,7 @@ export function PageCaptions({
           </div>
         </div>
       </div>
-      <fieldset disabled={saving} className="pt-4 pb-2">
+      <fieldset className="pt-4 pb-2">
         {filterSectionIndex != null ? (
           <div className={gridClass}>
             {filteredCaptions.map((cap) => renderCard(cap, filteredCaptions))}

@@ -368,6 +368,8 @@ it.each(["completed", "cancelled", "failed"])("retains a publication receipt for
   const bus = createBookEventBus()
   const rc = controllableRunner()
   const service = createStageService(rc.runner, bus)
+  const age = vi.spyOn(performance, "now")
+  age.mockReturnValue(100)
   const before = service.getStatus(label).runRevision
   let receiptAtEvent: string | undefined
   bus.addListener(label, (event) => {
@@ -376,6 +378,7 @@ it.each(["completed", "cancelled", "failed"])("retains a publication receipt for
   const run = service.startStageRun(label, baseOptions(label))
   await tick()
   expect(service.getStatus(label).runRevision).toBe(before)
+  age.mockReturnValue(150)
   if (outcome === "completed") rc.finish()
   else {
     if (outcome === "cancelled") service.cancelStageRun(label)
@@ -387,12 +390,15 @@ it.each(["completed", "cancelled", "failed"])("retains a publication receipt for
   const routes = createStageRoutes(service, bus, createPageErrorDecisions(), tmpDir, "", "")
   const response = await routes.request(`/books/${label}/step-status`)
   expect(response.status).toBe(200)
-  expect((await response.json()).runRevision).toBe(run.id)
+  expect(await response.json()).toMatchObject({ runRevision: run.id, publicationAgeMs: 0 })
+  age.mockReturnValue(250)
   const second = service.startStageRun(label, baseOptions(label))
   await tick()
   expect(service.getStatus(label).runRevision).toBe(run.id)
+  expect(service.getStatus(label).publicationAgeMs).toBe(100)
   rc.finish()
   await tick()
   expect(service.getStatus(label).runRevision).toBe(second.id)
   expect(createStageService(rc.runner, bus).getStatus(label).runRevision).not.toBe(run.id)
+  age.mockRestore()
 })

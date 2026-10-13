@@ -61,6 +61,7 @@ interface StepStatusResponse {
   stepMessages?: Record<string, string> | null
   runStatus?: "idle" | "running" | "cancelling" | "cancelled" | "completed" | "failed"
   runRevision?: string
+  publicationAgeMs?: number
   pendingDecisions?: PendingDecision[]
 }
 
@@ -160,8 +161,8 @@ export function useBookRunStatus(label: string): BookRunContextValue {
   // and service restarts. Step completion is not a publication boundary: prior
   // successful step records can remain done throughout a scoped rerun.
   useEffect(() => {
-    if (data?.runRevision) void reconcileRunPublication(queryClient, label, data.runRevision)
-  }, [data?.runRevision, label, queryClient])
+    if (data?.runRevision) void reconcileRunPublication(queryClient, label, data.runRevision, data.publicationAgeMs)
+  }, [data?.runRevision, data?.publicationAgeMs, label, queryClient])
 
   // Sub-step progress is cosmetic (page X/Y during a running step).
   // Stored in a ref + state counter so we don't trigger full re-renders on
@@ -207,7 +208,7 @@ export function useBookRunStatus(label: string): BookRunContextValue {
 
     // Refetch on (re)connection to catch up on any missed events
     es.addEventListener("open", () => {
-      void refreshRunStatus(queryClient, label)
+      void refreshRunStatus(queryClient, label, false)
     })
 
     es.addEventListener("progress", (e) => {
@@ -507,7 +508,7 @@ export function useBookRunStatus(label: string): BookRunContextValue {
         } catch { /* ignore */ }
       }
       // A failed run may have published successful siblings before failing.
-      void refreshRunStatus(queryClient, label)
+      void refreshRunStatus(queryClient, label, !!me.data)
     })
 
     // Handle ad-hoc task events (image generation, packaging, etc.)

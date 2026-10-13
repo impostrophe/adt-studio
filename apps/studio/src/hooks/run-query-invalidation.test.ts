@@ -41,11 +41,12 @@ it("deduplicates receipts across polling, late events, and route remounts, inclu
   const stop = observer.subscribe(() => {})
   try {
     await Promise.all([reconcileRunPublication(client, "book", "A"), reconcileRunPublication(client, "book", "A")])
+    expect(read).not.toHaveBeenCalled()
     await reconcileRunPublication(client, "book", "B")
     await reconcileRunPublication(client, "book", "A")
-    expect(read).toHaveBeenCalledTimes(2)
+    expect(read).toHaveBeenCalledTimes(1)
     await reconcileRunPublication(client, "book", "restarted-service")
-    expect(read).toHaveBeenCalledTimes(3)
+    expect(read).toHaveBeenCalledTimes(2)
   } finally { stop(); client.clear() }
 })
 

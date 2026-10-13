@@ -107,3 +107,60 @@ it("refreshes a fast accepted review run when every SSE event is missed", async 
     expect(review.result.current.updating).toBe(false)
   } finally { review.unmount(); close() }
 })
+
+
+it.each([false, true])("does not restart initial content/summary requests when the first receipt arrives (cached: %s)", async (cached) => {
+  vi.stubGlobal("EventSource", Events)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  vi.mocked(api.getStepStatus).mockResolvedValue({ stages: {}, steps: {}, error: null, runStatus: "idle", runRevision: "initial", publicationAgeMs: performance.now() + 100000, stepErrors: null, stepMessages: null, pendingDecisions: [] })
+  const reads = [vi.fn(async () => "content"), vi.fn(async () => "slow summary")]
+  const keys = [["books", "book", "pages"], ["books", "book", "outputs", "summary"]]
+  let release!: () => void
+  reads[1].mockImplementationOnce(() => new Promise(resolve => { release = () => resolve("slow summary") }))
+  if (cached) keys.forEach(key => client.setQueryData(key, "cached"))
+  const stops = keys.map((queryKey, index) => new QueryObserver(client, { queryKey, queryFn: reads[index] }).subscribe(() => {}))
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  const hook = renderHook(() => useBookRunStatus("book"), { wrapper })
+  try {
+    await waitFor(() => expect(client.getQueryData(["books", "book", "observed-run-publications"])).toEqual(["initial"]))
+    await act(async () => Events.current.emit("open"))
+    expect(reads.map(read => read.mock.calls.length)).toEqual(cached ? [0, 0] : [1, 1])
+    if (!cached) await act(async () => release())
+  } finally { hook.unmount(); stops.forEach(stop => stop()); client.clear() }
+})
+
+it("refreshes content when completion precedes the first status receipt", async () => {
+  vi.stubGlobal("EventSource", Events)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  vi.mocked(api.getStepStatus).mockImplementationOnce(() => new Promise(() => {})).mockResolvedValue({ stages: {}, steps: {}, error: null, runStatus: "idle", runRevision: "finished", stepErrors: null, stepMessages: null, pendingDecisions: [] })
+  const read = vi.fn(async () => "after")
+  client.setQueryData(["books", "book", "outputs"], "before")
+  const stop = new QueryObserver(client, { queryKey: ["books", "book", "outputs"], queryFn: read }).subscribe(() => {})
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  const hook = renderHook(() => useBookRunStatus("book"), { wrapper })
+  try {
+    await act(async () => Events.current.emit("complete"))
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1))
+    expect(client.getQueryData(["books", "book", "outputs"])).toBe("after")
+  } finally { hook.unmount(); stop(); client.clear() }
+})
+
+it('first settled receipt recovers a run that completed during initial reads before SSE connected',async()=>{
+ vi.stubGlobal('EventSource',Events);
+ const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
+ let releaseStatus!:()=>void;let releaseOld!:()=>void;
+ const state={stages:{},steps:{},error:null,runStatus:'completed',runRevision:'settled-during-open',publicationAgeMs:0,stepErrors:null,stepMessages:null,pendingDecisions:[]};
+ vi.mocked(api.getStepStatus).mockImplementationOnce(()=>new Promise(resolve=>{releaseStatus=()=>resolve(state as any)})).mockResolvedValue(state as any);
+ const read=vi.fn().mockImplementationOnce(()=>new Promise(resolve=>{releaseOld=()=>resolve('before')})).mockResolvedValue('after');
+ const key=['books','book','outputs'];const stop=new QueryObserver(client,{queryKey:key,queryFn:read}).subscribe(()=>{});
+ const wrapper=({children}:{children:ReactNode})=><QueryClientProvider client={client}>{children}</QueryClientProvider>;
+ const hook=renderHook(()=>useBookRunStatus('book'),{wrapper});
+ try{
+  // The output request has already captured the old book. An external/admitted
+  // run settles before our first status response and before SSE subscribes.
+  await act(async()=>releaseStatus());
+  await waitFor(()=>expect(client.getQueryData(['books','book','observed-run-publications'])).toEqual(['settled-during-open']));
+  await act(async()=>{releaseOld();Events.current.emit('open')});
+  await waitFor(()=>expect(client.getQueryData(key)).toBe('after'));
+ }finally{hook.unmount();stop();client.clear()}
+})
