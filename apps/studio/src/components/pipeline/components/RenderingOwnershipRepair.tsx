@@ -13,8 +13,11 @@ function retainedPreview(html: string, bookLabel: string): string {
   // The preview is inert; inspect the exact original separately below. Resolve
   // book images by ID so legacy relative URLs work without permitting remote
   // resources or executing retained custom scripts during ownership review.
-  const body = document.createElement("div")
-  body.append(DOMPurify.sanitize(html, { RETURN_DOM_FRAGMENT: true, FORBID_ATTR: ["src", "srcset", "href", "xlink:href", "action"] }))
+  const fragment = DOMPurify.sanitize(html, { RETURN_DOM_FRAGMENT: true, FORBID_ATTR: ["src", "srcset", "poster", "href", "xlink:href", "action"] })
+  // Keep the fragment in the sanitizer's inert document. Adopting it into the
+  // application document can start resource requests before iframe CSP applies.
+  const body = fragment.ownerDocument!.createElement("div")
+  body.append(fragment)
   const imageBase = new URL(`${BASE_URL}/books/${encodeURIComponent(bookLabel)}/images/`, window.location.href)
   for (const image of body.querySelectorAll("img[data-id]")) {
     image.setAttribute("src", new URL(encodeURIComponent(image.getAttribute("data-id")!), imageBase).href)

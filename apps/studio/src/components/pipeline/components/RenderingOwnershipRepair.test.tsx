@@ -68,7 +68,7 @@ it.each(["rendering", "source-node"])("requires a fresh explicit choice after ba
 })
 
 it("shows identified book images without running scripts or loading remote resources", async () => {
-  const html = '<section><img data-id="pg001_im001" src="https://remote.invalid/image.png"><a href="https://remote.invalid">link</a><svg><a xlink:href="https://remote.invalid/navigation"><text>Open</text></a></svg><script>danger()</script></section>'
+  const html = '<section><img data-id="pg001_im001" src="https://remote.invalid/image.png"><video poster="https://remote.invalid/poster.png"></video><a href="https://remote.invalid">link</a><svg><a xlink:href="https://remote.invalid/navigation"><text>Open</text></a></svg><script>danger()</script></section>'
   calls.read.mockResolvedValue({ ...review, unresolved: [{ ...review.unresolved[0], rendering: { ...review.unresolved[0].rendering, html } }] })
   mount()
   fireEvent.click(screen.getByRole("button", { name: "Repair section ownership: pg001" }))
