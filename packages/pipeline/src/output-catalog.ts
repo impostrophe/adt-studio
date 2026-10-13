@@ -144,7 +144,10 @@ export function readOutputCatalog(options: {
       const { signature, input } = coreTtsInputBasis({ entries, index, language, config: preparation, profile: resolveCoreTtsProfile(language, profiles), sourceContext: language === sourceLanguage ? undefined : sourceContext })
       const upstream = getBaseLanguage(language) === getBaseLanguage(sourceLanguage) ? sourceStatus(source) : find("translation", source.id, language)
       const metadata: OutputMetadata | undefined = previous?.generation.mode === "manual" ? { ...previous, source: "manual" } : previous
-      const speechExcluded = isTtsExcluded(source.id, config.speech) || (source.id.endsWith("_easy_read") && !easyConfig.tts) || (!!source.text.trim() && !isSpeakableText(stripEmojis(source.text).trim()))
+      // Easy Read is read aloud unless muted in Read-Aloud Content (the
+      // "easy-read" category) or per entry, as before this spec. The unused
+      // `easy_read.tts` config field has no Studio control and must not gate it.
+      const speechExcluded = isTtsExcluded(source.id, config.speech) || (!!source.text.trim() && !isSpeakableText(stripEmojis(source.text).trim()))
       const prepStatus = add(withOutputLocations(deriveOutputStatus({ identity: { kind: "preparation", id: source.id, language }, signature,
         content: previous?.speechText, metadata, excluded: speechExcluded, usable: !!previous?.speechText?.trim(), fallback: previous?.fallbackReason, upstream: upstream ? [upstream] : [],
       }), source))

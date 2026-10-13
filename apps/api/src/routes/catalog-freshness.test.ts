@@ -196,6 +196,19 @@ describe("catalog freshness through real API/storage boundaries", () => {
     expect(imageOutputs.some((output) => ["translation", "preparation", "audio", "timestamps"].includes(output.identity.kind))).toBe(false)
   })
 
+  it("reads Easy Read aloud unless its Read-Aloud Content category is muted, as before this spec", async () => {
+    const easyAudio = (items: OutputStatus[]) => items.filter((item) => item.identity.kind === "audio" && item.identity.id.endsWith("_easy_read"))
+    const enabled = easyAudio(await outputs())
+    expect(enabled.length).toBeGreaterThan(0)
+    expect(enabled.every((item) => !item.excluded)).toBe(true)
+    const db = storage()
+    fs.writeFileSync(path.join(db.bookDir!, "config.yaml"), "output_languages: [en, fr]\neasy_read:\n  enabled: true\nspeech:\n  excluded_categories: [easy-read]\n")
+    db.close()
+    const muted = easyAudio(await outputs())
+    expect(muted.length).toBe(enabled.length)
+    expect(muted.every((item) => item.excluded)).toBe(true)
+  })
+
   it("changes only consuming signatures for effective prompt, model and voice edits", async () => {
     const before = await outputs()
     const find = (items: OutputStatus[], kind: string, language?: string) => items.find((output) => output.identity.kind === kind && output.identity.id === (kind === "caption" ? "pg001_im001" : "pg001_t001") && (!language || output.identity.language === language))!
