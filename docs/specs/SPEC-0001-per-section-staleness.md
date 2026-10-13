@@ -45,6 +45,23 @@ All step names and ordering remain derived from `PIPELINE`. A deterministic whol
 
 Storyboard's own freshness is excluded. Editing Sectioning and having a Storyboard run select only affected pages remains a follow-up. Generation of glossary, quizzes and TOC also remains outside scope: their saved content is retained, while edits to their existing catalog entries can affect translations and speech. This does not certify those generated source artifacts as semantically current under every source edit; their existing generation policies remain separate.
 
+**Compatibility clarification (October 13, user-authorized; human review pending):**
+Substantive source/structure changes reset Quiz, Glossary and TOC attempts while
+retaining their saved content, versions and assets. Cosmetic/source-equivalent
+saves leave those attempts unchanged. This applies consistently to source edits,
+restores and successful generation publication; each source-entity publication
+and its reset are atomic. Existing spread extraction can retain an earlier page
+addition if later recording preservation fails; its attempts reset with that
+committed addition, while the older page and recording remain retained. This
+clarification does not change Extract's existing page-retirement policy.
+The retained TOC remains editable after its attempt resets. For single-item
+Gemini generation with page batching preferred, no alignment key and highlighting
+disabled, synthesize only the requested item and record the actual per-item basis.
+Reuse that audio for unchanged item inputs, even if an alignment key later becomes
+available. Actual page batches retain ordered page context and alignment needs;
+highlighting retains its separate timing requirement. This restores Gemini-only
+item use without treating an item request as a completed page batch.
+
 No automatic paid generation on save, model-cache redesign, arbitrary dependency graph, separate review application, new glossary-caption consumer, or recovery of files already lost in older versions. Reuse existing editors and lists for warnings/actions. Explicit force-fresh behavior in #731 is separate from ordinary cache-enabled regeneration.
 
 ## Proposed design
