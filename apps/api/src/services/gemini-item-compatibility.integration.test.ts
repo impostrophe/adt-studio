@@ -73,6 +73,13 @@ it("publishes truthful item evidence, remains current across neighbor changes, a
     outputScope: { selection: { ids: [entry.textId] } }, credentials: { gemini: { apiKey: "fixture" } } }, { emit: () => {} })
   expect(transport).toHaveBeenCalledTimes(1)
   expect(audio()!.data.entries[0]).toMatchObject(entry)
+  // An ordinary whole-stage run also skips this current artifact. The other
+  // phrase is explicitly muted, so no missing page work needs alignment.
+  configure("  excluded_text_ids: [pg001_t002]\n")
+  await createStageRunner().run(label, { booksDir: root, promptsDir, configPath: configPath(), fromStage: "speech", toStage: "speech",
+    credentials: { gemini: { apiKey: "fixture" } } }, { emit: () => {} })
+  expect(transport).toHaveBeenCalledTimes(1)
+  expect(audio()!.data.entries[0]).toMatchObject(entry)
   source("Changed own text", "Changed neighbor")
   expect(item().updateNeeded).toBe(true)
 })

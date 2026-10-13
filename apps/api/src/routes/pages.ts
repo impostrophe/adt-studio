@@ -1,3 +1,4 @@
+import { SOURCE_GENERATION_RESET_STEPS } from "@adt/types"
 import { putSourceNodeData, resetSourceGenerationAttempts, sourceGenerationBasis, inputSignature as sourceInputSignature } from "@adt/pipeline"
 import { cloneRenderedIdentities, stampRenderedOwner } from "@adt/pipeline"
 import { captureOutputReferences } from "@adt/pipeline"
@@ -1288,6 +1289,9 @@ export function createPageRoutes(
       )
     }
     for (const id of toRemove) storage.deletePage(id)
+    // Spread reconciliation changes the set/order of source pages without a
+    // Sectioning/Storyboard node write. Keep the separate generators honest.
+    if (toAdd.length > 0 || toRemove.length > 0) storage.clearStepRuns([...SOURCE_GENERATION_RESET_STEPS])
 
     return c.json({
       merged: toAdd.length,

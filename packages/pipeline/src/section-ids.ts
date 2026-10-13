@@ -237,7 +237,6 @@ function pruneSpeechForRetiredSections(
   // `failed` item named a retired section still has to invalidate the steps that
   // produced it, but it dropped no delivered audio, so counting it as a dropped
   // entry would misreport what the user lost.
-  let rewroteAnyRow = false
   const detachedRecordings: DetachedRecording[] = []
   const generatedAt = new Date().toISOString()
 
@@ -265,7 +264,6 @@ function pruneSpeechForRetiredSections(
     const droppedFailed = (priorFailed?.length ?? 0) - (failed?.length ?? 0)
     if (droppedEntries + droppedFailed === 0) continue
 
-    rewroteAnyRow = true
     speechEntries += droppedEntries
     for (const entry of priorEntries) {
       if (entry.provider === "manual" && ownedByRetiredSection(entry.textId)) {
@@ -305,7 +303,6 @@ function pruneSpeechForRetiredSections(
     const droppedFailed = (priorFailed?.length ?? 0) - (failed?.length ?? 0)
     if (droppedEntries + droppedFailed === 0) continue
 
-    rewroteAnyRow = true
     wordTimestamps += droppedEntries
     storage.putNodeData("tts-timestamps", itemId, {
       ...rest,
@@ -315,14 +312,8 @@ function pruneSpeechForRetiredSections(
     })
   }
 
-  // Every other path that removes `tts` entries also invalidates the steps that
-  // produced them (`easy-read.ts`, the version-restore reconcile in `pages.ts`,
-  // `text-catalog.ts`). Without this, `spreads/apply` leaves Speech marked
-  // complete over a manifest with holes — the rerun path clears step runs a
-  // moment later anyway, so this only ever adds information.
-  if (rewroteAnyRow) {
-    storage.clearStepRuns(["tts", "word-timestamps"])
-  }
+  // Catalog membership/freshness describes the remaining speech work. Retiring
+  // an identity must not erase retained synthesis/alignment attempt history.
 
   return { speechEntries, detachedRecordings, wordTimestamps }
 }

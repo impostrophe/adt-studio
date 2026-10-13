@@ -1713,7 +1713,10 @@ describe("Page routes", () => {
       fs.writeFileSync(path.join(audioDir, fileName), "uploaded-audio")
 
       const storage = createBookStorage(label, tmpDir)
+      const sourceSteps = ["quiz-generation", "glossary", "toc-generation"]
       try {
+        for (const step of [...sourceSteps, "tts"]) storage.markStepCompleted(step)
+        for (const node of sourceSteps) storage.putNodeData(node, "book", { manual: "retained" })
         storage.putExtractedPage({
           pageId: "pg001",
           pageNumber: 1,
@@ -1763,6 +1766,7 @@ describe("Page routes", () => {
         }
         const failed = createBookStorage(label, tmpDir)
         try {
+          expect(failed.getStepRuns().map((run) => run.step)).toEqual(expect.arrayContaining(sourceSteps))
           expect(failed.getPages().some((page) => page.pageId === `${label}_p1`)).toBe(true)
           expect(failed.getLatestNodeData("tts", "en")?.data).toMatchObject({
             entries: [{ textId: `${label}_p1_sec001_ans_a`, provider: "manual" }],
@@ -1781,9 +1785,17 @@ describe("Page routes", () => {
           entries: Array<{ textId: string }>
         }
         expect(tts.entries).toEqual([])
+        const steps = verify.getStepRuns().map((run) => run.step)
+        for (const step of sourceSteps) expect(steps).not.toContain(step)
+        expect(steps).toContain("tts")
+        for (const node of sourceSteps) { expect(verify.getAllNodeVersions(node, "book").some((row) => (row.data as { manual?: string }).manual === "retained")).toBe(true); verify.markStepCompleted(node) }
       } finally {
         verify.close()
       }
+      expect((await request()).status).toBe(200)
+      const noOp = createBookStorage(label, tmpDir)
+      try { expect(noOp.getStepRuns().map((run) => run.step)).toEqual(expect.arrayContaining(sourceSteps)) }
+      finally { noOp.close() }
       // Keep the original as well as the backup, so transaction rollback never
       // leaves the old manifest pointing to a missing upload.
       expect(fs.existsSync(path.join(audioDir, fileName))).toBe(true)
