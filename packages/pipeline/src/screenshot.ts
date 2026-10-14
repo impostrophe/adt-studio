@@ -84,8 +84,8 @@ export async function _createScreenshotRenderer(): Promise<ScreenshotRenderer> {
       // guarantee that a stalled browser releases the caller for a retry.
       // Floor at 1ms: Playwright reads `timeout: 0` as "wait forever".
       const timeoutMs = Math.max(1, options.timeoutMs ?? DEFAULT_SCREENSHOT_TIMEOUT_MS)
-      const deadline = Date.now() + timeoutMs
-      const remaining = () => Math.max(1, deadline - Date.now())
+      const deadline = performance.now() + timeoutMs
+      const remaining = () => Math.max(1, deadline - performance.now())
       let context: PlaywrightContext | undefined
       let closePromise: Promise<void> | undefined
       let stopped: Error | undefined

@@ -38,8 +38,8 @@ async function screenshot(
   });
   windows.add(win);
 
-  const deadline = Date.now() + timeoutMs;
-  const remaining = () => Math.max(1, deadline - Date.now());
+  const deadline = performance.now() + timeoutMs;
+  const remaining = () => Math.max(1, deadline - performance.now());
 
   try {
     const loadPromise = new Promise<void>((resolve, reject) => {

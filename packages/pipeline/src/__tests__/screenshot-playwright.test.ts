@@ -134,8 +134,8 @@ describe("Playwright screenshot lifecycle", () => {
 
   it("keeps successful captures deterministic and shares the operation budget", async () => {
     const mocks = setupBrowser()
-    mocks.page.setContent.mockImplementation(async () => { vi.setSystemTime(40) })
-    mocks.page.waitForFunction.mockImplementation(async () => { vi.setSystemTime(70) })
+    mocks.page.setContent.mockImplementation(async () => { vi.advanceTimersByTime(40) })
+    mocks.page.waitForFunction.mockImplementation(async () => { vi.advanceTimersByTime(30) })
     const renderer = await _createScreenshotRenderer()
     await expect(renderer.screenshot("html", undefined, { timeoutMs: 100 })).resolves.toBe(Buffer.from("png").toString("base64"))
     expect(mocks.page.setContent).toHaveBeenCalledWith("html", { waitUntil: "load", timeout: 100 })
@@ -143,6 +143,16 @@ describe("Playwright screenshot lifecycle", () => {
     expect(mocks.page.screenshot).toHaveBeenCalledWith({ fullPage: true, type: "png", animations: "disabled", timeout: 30 })
     expect(mocks.context.close).toHaveBeenCalledTimes(1)
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("does not shorten a capture when the wall clock jumps forward", async () => {
+    const mocks = setupBrowser()
+    mocks.page.setContent.mockImplementation(async () => { vi.setSystemTime(60_000) })
+    const renderer = await _createScreenshotRenderer()
+
+    await expect(renderer.screenshot("html", undefined, { timeoutMs: 100 })).resolves.toBe(Buffer.from("png").toString("base64"))
+    expect(mocks.page.waitForFunction).toHaveBeenCalledWith("document.fonts.ready", undefined, { timeout: 100 })
+    expect(mocks.page.screenshot).toHaveBeenCalledWith({ fullPage: true, type: "png", animations: "disabled", timeout: 100 })
   })
 
   it("uses the shared default deadline", async () => {
