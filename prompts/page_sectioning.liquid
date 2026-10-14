@@ -66,6 +66,7 @@ Book ancestors that establish the current nesting context:
 - TOC navigation rows are list/link content, not semantic headings in the current document. Represent their titles and page numbers with ordinary `text` leaves inside the TOC list structure—never `chapter_title`, `section_heading`, `subheading`, or `heading`. Only the TOC page's own visible title (for example “Contents” or “Sumário”) may use a heading role.
 - Dot leaders between TOC titles and terminal page numbers are navigation formatting, NOT writable response lines. TOC continuation detection takes precedence over WRITABLE-PAGE PRECEDENCE below.
 
+{% if activities_enabled != false %}
 ## Activity classification rules
 
 Use these to disambiguate activity types:
@@ -137,6 +138,7 @@ Use these to disambiguate activity types:
 - If the expected answer is DETERMINABLE (one correct value derivable from the prompt or page — unscrambling, counting, missing letters, labelling, copying from a passage, solving) → activity_fill_in_the_blank. This is the right pick whenever the writing area has a correct answer, regardless of whether the blank is inline in a sentence or a full-width line beside the prompt.
 - If a table grid has empty cells to complete → activity_fill_in_a_table
 - activity_other is a last resort — only use it when the learning mechanic itself is truly unique (e.g., free drawing, crafts, physical movement) and no other activity type applies. Do NOT use `activity_other` to bundle multiple different known mechanics on one page into a single section — if the page contains both choice options AND a writing area (or any two different known mechanics), split into separate sections with their known types instead.
+{% endif %}
 
 ## Tree construction rules
 
@@ -185,6 +187,7 @@ Sections PARTITION the top-level tree. They do NOT restructure it.
 {% if mode == "page" %}
 The entire page is always ONE section. Emit exactly one section containing all top-level nodes in reading order. Do NOT split the page under any circumstance, regardless of activity types, instruction blocks, headings, or visual breaks.
 {% else %}
+{% if activities_enabled != false %}
 DEFAULT: the entire page is ONE section. Keep it as one section unless the split condition below applies.
 
 SPLIT the page into multiple sections when either of these applies:
@@ -217,8 +220,12 @@ A page shows 4 reading passages, each paired with a list of 3 summary options to
 - The final write-a-sentence prompt and its writing line → activity_open_ended_answer (a second section).
 
 The correct partition is TWO sections. Labeling the whole page `activity_other` is WRONG. Keeping both mechanics inside one `structure: "activity"` container under one section is WRONG.
+{% else %}
+Activity section types are disabled for this book. Emit exactly one section for the whole page and choose the most accurate allowed content type from the visible content. Treat questions, exercises, response lines, and choices as ordinary page content; do not force them into `other` merely because they resemble an exercise.
+{% endif %}
 {% endif %}
 
+{% if activities_enabled != false %}
 ## Activity classification
 
 - Classify by the COGNITIVE TASK, not the physical action (circling, coloring, underlining, drawing lines).
@@ -236,6 +243,7 @@ The correct partition is TWO sections. Labeling the whole page `activity_other` 
 - Sentences with blanks → `activity_fill_in_the_blank`.
 - Grid table with empty cells → `activity_fill_in_a_table`.
 - `activity_other` is a last resort — only when the learning mechanic itself is genuinely unique (e.g. free drawing, crafts, physical movement). Never use `activity_other` to keep mixed mechanics in one section instead of splitting.
+{% endif %}
 
 ## Common mistakes — do NOT do these
 

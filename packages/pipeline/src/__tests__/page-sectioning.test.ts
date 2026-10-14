@@ -75,6 +75,7 @@ function makeConfig(
     prunedRoleTypes: [],
     prunedSectionTypes: [],
     disabledSectionTypes: [],
+    activitiesEnabled: true,
     promptName: "page_sectioning",
     refinementPromptName: "page_sectioning_refinement",
     modelId: "openai:gpt-5.4",
@@ -149,6 +150,7 @@ describe("buildPageSectioningConfig", () => {
     // activity_* types (including activity_other, which has no render strategy)
     // are excluded by the prefix rule — not a hand-maintained list.
     expect(config.sectionTypes).toEqual([{ key: "text_only", description: "Text only" }])
+    expect(config.activitiesEnabled).toBe(false)
   })
 
   it("keeps activity types when generate_activities is not false", () => {
@@ -160,6 +162,7 @@ describe("buildPageSectioningConfig", () => {
 
     const config = buildPageSectioningConfig(appConfig)
     expect(config.sectionTypes.map((t) => t.key)).toEqual(["text_only", "activity_multiple_choice"])
+    expect(config.activitiesEnabled).toBe(true)
   })
 
   it("carries through pruned_role_types and pruned_section_types", () => {
@@ -227,6 +230,59 @@ describe("buildPageSectioningConfig", () => {
 })
 
 describe("page sectioning prompt", () => {
+  it("removes activity section rules when activities are disabled", async () => {
+    const promptEngine = createPromptEngine(path.join(process.cwd(), "prompts"))
+    const context = {
+      structure_types: [],
+      role_types: [],
+      section_types: [{ key: "text_only", description: "Text only" }],
+      book_outline: null,
+      mode: "dynamic",
+      activities_enabled: false,
+    }
+
+    const [sectioning, refinement] = await Promise.all([
+      promptEngine.renderPrompt("page_sectioning", context),
+      promptEngine.renderPrompt("page_sectioning_refinement", {
+        ...context,
+        max_refinements: 0,
+        iteration: 0,
+        prior_notes: [],
+        candidate: { reasoning: "", sections_json: "[]" },
+        page: { pageNumber: 1, text: "", imageBase64: "" },
+        images: [],
+      }),
+    ])
+    const text = [sectioning, refinement]
+      .flatMap((messages) => messages.flatMap((message) => typeof message.content === "string"
+        ? [message.content]
+        : message.content.filter((part) => part.type === "text").map((part) => part.text)))
+      .join("\n")
+
+    expect(text).not.toContain("Activity classification rules")
+    expect(text).not.toContain("section MUST be classified as an activity type")
+    expect(text).not.toContain("**Activity recognition**")
+    expect(text).toContain("Activity section types are disabled")
+  })
+
+  it("keeps the existing prompt wording when activities are enabled", async () => {
+    const promptEngine = createPromptEngine(path.join(process.cwd(), "prompts"))
+    const context = {
+      structure_types: [],
+      role_types: [],
+      section_types: [],
+      book_outline: null,
+      mode: "dynamic",
+    }
+    const withActivities = await promptEngine.renderPrompt("page_sectioning", {
+      ...context,
+      activities_enabled: true,
+    })
+    const legacyDefault = await promptEngine.renderPrompt("page_sectioning", context)
+
+    expect(withActivities).toEqual(legacyDefault)
+  })
+
   it("makes outline-linked role assignment override wording and visual heuristics", async () => {
     const promptEngine = createPromptEngine(path.join(process.cwd(), "prompts"))
     const messages = await promptEngine.renderPrompt("page_sectioning", {

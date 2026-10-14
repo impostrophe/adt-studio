@@ -186,8 +186,8 @@ introduce new required variables without a matching pipeline code change.
 | `image_meaningfulness` | `page_image_base64`, `page_text`, `figure_extraction_mode`, `images`, `images[].imageId`, `images[].imageBase64`, `images[].width`, `images[].height`, `images[].renderMethod`, `images[].figureContext`, `images[].figureContext.coveredImageIds`, `images[].containedInFigureId` |
 | `image_cropping` | `page_image_base64`, `images`, `images[].imageId`, `images[].imageBase64`, `images[].width`, `images[].height` |
 | `image_segmentation` | `page_image_base64`, `images`, `images[].imageId`, `images[].imageBase64`, `images[].width`, `images[].height` |
-| `page_sectioning` | `page`, `page.pageNumber`, `page.text`, `page.imageBase64`, `images`, `images[].image_id`, `images[].imageBase64`, `structure_types`, `role_types`, `section_types`, `mode` |
-| `page_sectioning_refinement` | `page`, `page.pageNumber`, `page.text`, `page.imageBase64`, `images`, `structure_types`, `role_types`, `section_types`, `mode`, `max_refinements`, `iteration`, `prior_notes`, `candidate`, `candidate.reasoning`, `candidate.sections_json` |
+| `page_sectioning` | `page`, `page.pageNumber`, `page.text`, `page.imageBase64`, `images`, `images[].image_id`, `images[].imageBase64`, `structure_types`, `role_types`, `section_types`, `activities_enabled`, `mode` |
+| `page_sectioning_refinement` | `page`, `page.pageNumber`, `page.text`, `page.imageBase64`, `images`, `structure_types`, `role_types`, `section_types`, `activities_enabled`, `mode`, `max_refinements`, `iteration`, `prior_notes`, `candidate`, `candidate.reasoning`, `candidate.sections_json` |
 | `image_captioning` | `page_image_base64`, `images`, `images[].imageId`, `images[].imageBase64`, `language`, `language_code`, `book_summary`, `user_instructions`, `grade_level` |
 | `translation` | `source_language`, `source_language_code`, `target_language`, `target_language_code`, `texts`, `texts[].index`, `texts[].text` |
 | `image_translation` | No Liquid variables in the current root prompt. The API passes image context to the image model separately. |

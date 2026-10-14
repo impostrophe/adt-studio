@@ -22,6 +22,7 @@ export interface PageSectioningConfig {
   prunedRoleTypes: string[]
   prunedSectionTypes: string[]
   disabledSectionTypes: string[]
+  activitiesEnabled: boolean
   promptName: string
   refinementPromptName: string
   modelId: string
@@ -161,6 +162,7 @@ async function generateInitial(
       structure_types: config.structureTypes,
       role_types: config.roleTypes,
       section_types: config.sectionTypes,
+      activities_enabled: config.activitiesEnabled,
       mode: config.mode,
       book_outline: input.outline ?? null,
     },
@@ -204,6 +206,7 @@ async function generateReview(
       structure_types: config.structureTypes,
       role_types: config.roleTypes,
       section_types: config.sectionTypes,
+      activities_enabled: config.activitiesEnabled,
       mode: config.mode,
       book_outline: input.outline ?? null,
       max_refinements: config.maxRefinements,
@@ -844,6 +847,7 @@ export function buildPageSectioningConfig(
     prunedRoleTypes: appConfig.pruned_role_types ?? [],
     prunedSectionTypes: appConfig.pruned_section_types ?? [],
     disabledSectionTypes: [...disabledSet],
+    activitiesEnabled: !activitiesOff,
     promptName: appConfig.page_sectioning?.prompt ?? "page_sectioning",
     refinementPromptName: "page_sectioning_refinement",
     modelId: appConfig.page_sectioning?.model ?? appConfig.default_model ?? DEFAULT_LLM_MODEL_ID,
