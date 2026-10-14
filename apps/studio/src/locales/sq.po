@@ -2260,9 +2260,6 @@ msgstr "Ndryshimi i fonteve ndikon në mënyrën se si shfaqen faqet — riekzek
 msgid "Changing the language resets downstream work."
 msgstr "Ndryshimi i gjuhës rivendos punën e mëvonshme."
 
-msgid "Changing the type regenerates the activity when you save."
-msgstr "Ndryshimi i llojit e rigjeneron aktivitetin kur ruani."
-
 msgid "Chapter"
 msgstr "Kapitull"
 
@@ -8684,6 +8681,9 @@ msgstr "Ruaj tekstin e të folurit"
 
 msgid "Save text sizes"
 msgstr "Ruaj madhësitë e tekstit"
+
+msgid "Save the new type, then choose Regenerate to update the activity."
+msgstr "Ruani llojin e ri, pastaj zgjidhni Rigenero për të përditësuar aktivitetin."
 
 msgid "Save your work first if you want to keep these changes."
 msgstr "Ruaje punën tënde më parë nëse dëshiron t'i mbash këto ndryshime."

@@ -2258,9 +2258,6 @@ msgstr "Cambiar las fuentes afecta cómo se renderizan las páginas — vuelve a
 msgid "Changing the language resets downstream work."
 msgstr "Cambiar el idioma restablece el trabajo posterior."
 
-msgid "Changing the type regenerates the activity when you save."
-msgstr "Cambiar el tipo regenera la actividad al guardar."
-
 msgid "Chapter"
 msgstr "Capítulo"
 
@@ -8682,6 +8679,9 @@ msgstr "Guardar texto hablado"
 
 msgid "Save text sizes"
 msgstr "Guardar tamaños de texto"
+
+msgid "Save the new type, then choose Regenerate to update the activity."
+msgstr "Guarda el nuevo tipo y luego elige Regenerar para actualizar la actividad."
 
 msgid "Save your work first if you want to keep these changes."
 msgstr "Guarda tu trabajo primero si quieres conservar estos cambios."

@@ -2258,9 +2258,6 @@ msgstr "Changing fonts affects how pages are rendered — re-run Storyboard and 
 msgid "Changing the language resets downstream work."
 msgstr "Changing the language resets downstream work."
 
-msgid "Changing the type regenerates the activity when you save."
-msgstr "Changing the type regenerates the activity when you save."
-
 msgid "Chapter"
 msgstr "Chapter"
 
@@ -8682,6 +8679,9 @@ msgstr "Save speech text"
 
 msgid "Save text sizes"
 msgstr "Save text sizes"
+
+msgid "Save the new type, then choose Regenerate to update the activity."
+msgstr "Save the new type, then choose Regenerate to update the activity."
 
 msgid "Save your work first if you want to keep these changes."
 msgstr "Save your work first if you want to keep these changes."

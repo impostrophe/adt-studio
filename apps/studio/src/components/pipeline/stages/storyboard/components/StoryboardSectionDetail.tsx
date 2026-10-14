@@ -455,7 +455,7 @@ export function StoryboardSectionDetail({
       return next
     })
   }, [])
-  // Tracks whether pending sectioning changes require LLM re-render on save.
+  // Tracks whether saved sectioning will still require an explicit LLM re-render.
   // Pure prune/delete can be resolved locally; unprune/type change/reorder need LLM.
   const needsRerenderRef = useRef(false)
 
@@ -838,22 +838,23 @@ export function StoryboardSectionDetail({
     try {
       const minDelay = new Promise((r) => setTimeout(r, 400))
 
-      // Before saving, strip pruned leaves from the rendered HTML so they
-      // disappear from the preview without needing an LLM re-render.
+      // Flush inspector edits before pruning so the same saved HTML retains
+      // the latest style/image draft and removes excluded content.
+      const flushed = flushPendingHtml()
+      const renderingDraft = flushed ?? pendingRendering
       let renderingFromPrune: RenderingData | null = null
       const sectionToSave = pendingSectioning.sections[sectionIndex]
       if (sectionToSave) {
         const prunedIds = collectPrunedLeafIds(sectionToSave.nodes)
         if (prunedIds.length > 0) {
-          renderingFromPrune = removeElementsFromRendering(prunedIds)
+          renderingFromPrune = removeElementsFromRendering(prunedIds, renderingDraft ?? page.rendering)
         }
       }
 
       // Save rendering if dirty (from delete/prune removing HTML elements).
       // Use renderingFromPrune if we just stripped pruned elements above,
       // since React state won't have updated yet within this async call.
-      const flushed = flushPendingHtml()
-      const renderingToSave = renderingFromPrune ?? flushed ?? pendingRendering
+      const renderingToSave = renderingFromPrune ?? renderingDraft
       const sourceSave = renderingToSave ? sectioningSaveFromRendering(
         page.sectioningTree as SectioningData | null, pendingSectioning, sectionIndex,
         getRenderedSectionByIndex(renderingToSave, sectionIndex)?.html ?? "",
@@ -900,6 +901,12 @@ export function StoryboardSectionDetail({
 
   // Save rendering (including back-propagation to sectioning)
   const saveRendering = async () => {
+    // Every Save entrypoint must apply pending exclusions as well as HTML
+    // edits. The floating bar and HTML panel can both carry a mixed draft.
+    if (pendingSectioning) {
+      await saveSectioning()
+      return
+    }
     const flushed = flushPendingHtml()
     const renderingToSave = flushed ?? pendingRendering
     if (!renderingToSave || storyboardRunning) return
@@ -1201,8 +1208,8 @@ export function StoryboardSectionDetail({
   // Remove one or more data-id elements from the rendered HTML and update pendingRendering.
   // Returns the updated rendering, or null if nothing changed.
   const removeElementsFromRendering = useCallback(
-    (dataIds: string[]): RenderingData | null => {
-      const rBase = pendingRendering ?? page.rendering
+    (dataIds: string[], renderingDraft?: RenderingData | null): RenderingData | null => {
+      const rBase = renderingDraft ?? pendingRendering ?? page.rendering
       if (!rBase) return null
       const currentSection = getRenderedSectionByIndex(rBase, sectionIndex)
       if (!currentSection?.html) return null
@@ -1212,22 +1219,23 @@ export function StoryboardSectionDetail({
       let removed = false
 
       for (const dataId of dataIds) {
-        const el = doc.querySelector(`[data-id="${dataId}"]`)
-        if (!el) continue
-
-        const blockParent = el.closest("div, p, figure, li, tr, section[data-section-id]")
-        // Guard: never remove the section wrapper or the outer content/container div
-        const isSectionWrapper = blockParent?.getAttribute("data-section-id") != null
-        const isOuterContainer =
-          blockParent?.id === "content" || blockParent?.classList.contains("container")
-        if (isSectionWrapper || isOuterContainer) {
-          el.remove()
-        } else if (blockParent && blockParent.querySelectorAll("[data-id]").length <= 1) {
-          blockParent.remove()
-        } else {
-          el.remove()
+        // Shared images can appear more than once in this section. Excluding
+        // their source leaf removes every local occurrence, never a neighbor's.
+        for (const el of doc.querySelectorAll(`[data-id="${dataId}"]`)) {
+          const blockParent = el.closest("div, p, figure, li, tr, section[data-section-id]")
+          // Guard: never remove the section wrapper or the outer content/container div
+          const isSectionWrapper = blockParent?.getAttribute("data-section-id") != null
+          const isOuterContainer =
+            blockParent?.id === "content" || blockParent?.classList.contains("container")
+          if (isSectionWrapper || isOuterContainer) {
+            el.remove()
+          } else if (blockParent && blockParent.querySelectorAll("[data-id]").length <= 1) {
+            blockParent.remove()
+          } else {
+            el.remove()
+          }
+          removed = true
         }
-        removed = true
       }
 
       if (!removed) return null
@@ -1331,7 +1339,7 @@ export function StoryboardSectionDetail({
       // the interactive children (underline option spans, blank inputs) with a
       // bare text node and leave a dead activity in the saved HTML. Fall back to
       // the same re-render path used when the element isn't in the HTML at all,
-      // so the activity is regenerated from the new text on save.
+      // retaining the new source until the user explicitly regenerates the activity.
       if (!el || hasActivityInteractiveDescendant(el)) {
         needsRerenderRef.current = true
         return false
@@ -1541,7 +1549,7 @@ export function StoryboardSectionDetail({
   // nothing else, so when the edit can't be mirrored into the rendered HTML
   // (activity leaves with interactive children) it must go into the section
   // tree instead: that creates pending state (Save enables) and the save path
-  // regenerates the activity HTML from the new text.
+  // retains the source draft for an explicit re-render without provider calls.
   const handleActivityPanelTextEdited = useCallback(
     (nodeId: string, newText: string) => {
       if (updateElementTextInRendering(nodeId, newText)) return
@@ -3082,7 +3090,7 @@ export function StoryboardSectionDetail({
           saving={saving}
           onSave={() => {
             // Type/tree changes live in pending sectioning — its save path also
-            // persists the rendering AND auto-regenerates when the type changed.
+            // persists the rendering; generation remains an explicit action.
             if (dirty) void saveSectioning()
             else void saveRendering()
           }}

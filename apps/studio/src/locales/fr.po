@@ -2260,9 +2260,6 @@ msgstr "Changer les polices affecte le rendu des pages — relancez le Storyboar
 msgid "Changing the language resets downstream work."
 msgstr "Changer la langue réinitialise le travail en aval."
 
-msgid "Changing the type regenerates the activity when you save."
-msgstr "Changer le type régénère l'activité à l'enregistrement."
-
 msgid "Chapter"
 msgstr "Chapitre"
 
@@ -8684,6 +8681,9 @@ msgstr "Enregistrer le texte vocal"
 
 msgid "Save text sizes"
 msgstr "Enregistrer les tailles de texte"
+
+msgid "Save the new type, then choose Regenerate to update the activity."
+msgstr "Enregistrez le nouveau type, puis choisissez Régénérer pour mettre à jour l’activité."
 
 msgid "Save your work first if you want to keep these changes."
 msgstr "Enregistrez d'abord votre travail si vous souhaitez conserver ces modifications."
