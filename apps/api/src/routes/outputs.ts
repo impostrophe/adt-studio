@@ -3,7 +3,7 @@ import path from "node:path"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { createBookStorage, publishSpeechOutput, publishSpeechTimings } from "@adt/storage"
-import { OutputReviewRequest, OutputDisclosureOptions, parseBookLabel, type OutputStatus, type CatalogConflict, type TTSOutput } from "@adt/types"
+import { OutputReviewRequest, OutputDisclosureOptions, parseBookLabel, STAGE_ORDER, OUTPUT_KIND_TO_STAGE, OUTPUT_KIND_TO_STEP, type OutputKind, type OutputStatus, type CatalogConflict, type StageName, type TTSOutput } from "@adt/types"
 import { loadBookConfig, readOutputCatalog, outputIdentityKey, summarizeOutputs, summarizeOutputScopes, buildTextCatalogSnapshot, reconcileSpeechInputs, loadCoreTtsProfiles, renderingOwnershipWarnings } from "@adt/pipeline"
 
 export function createOutputRoutes(booksDir: string, promptsDir: string, configPath?: string): Hono {
@@ -14,15 +14,27 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
     bookDir: path.join(path.resolve(booksDir), label), promptsDir,
     configDir: configPath ? path.join(path.dirname(configPath), "config") : path.resolve("config"),
   })
-  const showMissingSpeech = (storage: ReturnType<typeof createBookStorage>) => {
-    const runs = storage.getStepRuns().filter((run) => ["tts", "word-timestamps"].includes(run.step))
-    if (runs.some((run) => ["running", "queued"].includes(run.status))) return false
-    return runs.some((run) => ["done", "completed", "error", "failed"].includes(run.status)) || storage.getNodeItemIds("tts").some((language) => {
-      const data = storage.getLatestNodeData("tts", language)?.data as TTSOutput | undefined
-      return !!data?.entries?.length || !!data?.failed?.length
+  // Missing output is unfinished work only once its stage has been attempted
+  // (SPEC-0001 §6): a completed or failed run, or saved output. Deterministic
+  // preparation is not Language output. Speech also hides it while queued or
+  // running, and counts recorded failures as output.
+  const missingStages = (storage: ReturnType<typeof createBookStorage>, outputs: OutputStatus[]): StageName[] => {
+    const runs = storage.getStepRuns()
+    return STAGE_ORDER.filter((stage) => {
+      const steps = Object.entries(OUTPUT_KIND_TO_STEP).filter(([kind]) => OUTPUT_KIND_TO_STAGE[kind as OutputKind] === stage).map(([, step]) => step as string)
+      if (!steps.length) return false
+      const stageRuns = runs.filter((run) => steps.includes(run.step))
+      const attempted = stageRuns.some((run) => ["done", "completed", "error", "failed"].includes(run.status))
+      if (stage !== "speech") return attempted || outputs.some((output) => OUTPUT_KIND_TO_STAGE[output.identity.kind] === stage &&
+        output.identity.kind !== "preparation" && !output.excluded && (output.usable || output.protected))
+      if (stageRuns.some((run) => ["running", "queued"].includes(run.status))) return false
+      return attempted || storage.getNodeItemIds("tts").some((language) => {
+        const data = storage.getLatestNodeData("tts", language)?.data as TTSOutput | undefined
+        return !!data?.entries?.length || !!data?.failed?.length
+      })
     })
   }
-  const withoutMissingSpeech = (outputs: OutputStatus[]) => outputs.filter((output) => !output.missing || !["audio", "timestamps"].includes(output.identity.kind))
+  const withoutMissing = (outputs: OutputStatus[]) => outputs.filter((output) => !output.missing)
   app.get("/books/:label/outputs/summary", (c) => {
     const label = parseBookLabel(c.req.param("label"))
     if (!fs.existsSync(path.join(path.resolve(booksDir), label, `${label}.db`))) throw new HTTPException(404, { message: "Book not found" })
@@ -31,8 +43,8 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
       let conflicts: CatalogConflict[] = []
       const outputs = read(label, storage, (items) => { conflicts = items })
       return c.json({ stages: summarizeOutputScopes(outputs, conflicts, { stagesOnly: true }).stages,
-        stagesWithoutMissingSpeech: summarizeOutputScopes(withoutMissingSpeech(outputs), conflicts, { stagesOnly: true }).stages,
-        showMissingSpeech: showMissingSpeech(storage) })
+        stagesWithoutMissing: summarizeOutputScopes(withoutMissing(outputs), conflicts, { stagesOnly: true }).stages,
+        missingStages: missingStages(storage, outputs) })
     } finally { storage.close() }
   })
   app.get("/books/:label/outputs", (c) => {
@@ -42,7 +54,7 @@ export function createOutputRoutes(booksDir: string, promptsDir: string, configP
     try {
       let conflicts: CatalogConflict[] = []
       const outputs = read(label, storage, (items) => { conflicts = items })
-      return c.json({ outputs, showMissingSpeech: showMissingSpeech(storage), summary: summarizeOutputs(outputs), summaries: summarizeOutputScopes(outputs, conflicts), conflicts, ownershipWarnings: renderingOwnershipWarnings(storage) })
+      return c.json({ outputs, missingStages: missingStages(storage, outputs), summary: summarizeOutputs(outputs), summaries: summarizeOutputScopes(outputs, conflicts), conflicts, ownershipWarnings: renderingOwnershipWarnings(storage) })
     } finally { storage.close() }
   })
   app.get("/books/:label/outputs/disclosure", (c) => {

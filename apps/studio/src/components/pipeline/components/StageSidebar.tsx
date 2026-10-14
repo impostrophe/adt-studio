@@ -176,10 +176,10 @@ export function StageSidebar({
     const Icon = step.icon
     const state = completionOverrides[step.slug] ? "done" : stageState(step.slug)
     const content = catalog?.stages[step.slug]
-    // Keep complete expected counts in the read model. Optional speech only
-    // surfaces missing-output attention after an attempt, and not during it.
-    const hideMissingSpeech = step.slug === "speech" && (["running", "queued"].includes(state) || !catalog?.showMissingSpeech)
-    const visibleContent = hideMissingSpeech ? catalog?.stagesWithoutMissingSpeech[step.slug] : content
+    // Keep complete expected counts in the read model. Missing output is only
+    // attention after the stage's first attempt; Speech also hides it during one.
+    const hideMissing = !catalog?.missingStages.some((stage) => stage === step.slug) || (step.slug === "speech" && ["running", "queued"].includes(state))
+    const visibleContent = hideMissing ? catalog?.stagesWithoutMissing[step.slug] : content
     const { updates = 0, reviews = 0, warnings = 0, missing = 0 } = visibleContent ?? {}
     const attentionLabel = updates || reviews || warnings || missing
       ? i18n._(msg`Updates: ${updates}. Needs review: ${reviews}. Warnings: ${warnings}. Missing: ${missing}.`)

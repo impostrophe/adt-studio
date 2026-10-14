@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { StageName } from "./pipeline.js"
 
 /** Authorship of content, never inferred from a timestamp or a successful run. */
 export const OutputSource = z.enum(["ai", "manual"])
@@ -126,11 +127,12 @@ export const OutputSummaries = z.object({
 })
 export type OutputSummaries = z.infer<typeof OutputSummaries>
 
-/** Compact sidebar projection, with optional speech visibility applied by UI. */
+/** Compact sidebar projection. Missing output becomes attention only in
+ * `missingStages`, the stages that have been attempted (SPEC-0001 §6). */
 export const OutputStageSummaryResponse = z.object({
   stages: z.record(OutputScopeSummary),
-  stagesWithoutMissingSpeech: z.record(OutputScopeSummary),
-  showMissingSpeech: z.boolean(),
+  stagesWithoutMissing: z.record(OutputScopeSummary),
+  missingStages: z.array(StageName),
 })
 export type OutputStageSummaryResponse = z.infer<typeof OutputStageSummaryResponse>
 

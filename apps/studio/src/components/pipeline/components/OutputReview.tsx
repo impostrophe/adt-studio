@@ -24,11 +24,16 @@ export function useHasSavedOutputs(bookLabel: string, stage: StageName) {
     output.identity.kind !== "preparation" && (output.usable || output.protected)) ?? false
 }
 
+/** Missing output is attention only after its stage's first attempt. */
+function missingShown(data: { outputs: OutputStatus[]; missingStages?: StageName[] } | undefined, output: OutputStatus) {
+  return !!data?.missingStages?.includes(OUTPUT_KIND_TO_STAGE[output.identity.kind])
+}
+
 export function OutputReview({ bookLabel, id, kinds, language, voiceSlot, dirty = false, compact = false, edited = false, description, showMissing = true }: {
   bookLabel: string; id: string; kinds: OutputKind[]; language?: string; voiceSlot?: string; dirty?: boolean; compact?: boolean; edited?: boolean; description?: string; showMissing?: boolean
 }) {
   const { data } = useOutputs(bookLabel)
-  const outputs = data?.outputs.filter((output) => (showMissing || !output.missing) && output.identity.id === id && kinds.includes(output.identity.kind) &&
+  const outputs = data?.outputs.filter((output) => ((showMissing && missingShown(data, output)) || !output.missing) && output.identity.id === id && kinds.includes(output.identity.kind) &&
     (!language || !output.identity.language || output.identity.language === language) && (!voiceSlot || !output.identity.voiceSlot || output.identity.voiceSlot === voiceSlot)) ?? []
   return <div className={compact ? "flex flex-wrap items-center gap-1" : "space-y-1"}>{outputs.map((output) => <OutputReviewItem key={JSON.stringify(output.identity)} bookLabel={bookLabel} output={output} outputs={data?.outputs ?? []} dirty={dirty} compact={compact} edited={edited} description={description} />)}</div>
 }
@@ -129,7 +134,7 @@ export function CatalogSummary({ bookLabel, stage, disclosure = false, features,
   // unfinished translation work merely because a display string was edited.
   const outputs = (data?.outputs ?? []).filter((output) => !output.excluded && (!stage || OUTPUT_KIND_TO_STAGE[output.identity.kind] === stage) &&
     (disclosure || stage !== "translate" || output.identity.kind !== "preparation") &&
-    (disclosure || stage !== "speech" || data?.showMissingSpeech || !output.missing))
+    (disclosure || missingShown(data, output) || !output.missing))
   if (error) return <p className="text-xs text-red-700">{error.message}</p>
   const ownershipPages = [...new Set(data?.ownershipWarnings?.map((warning) => warning.pageId) ?? [])].join(", ")
   return <>{ownershipPages && <div className="space-y-2 rounded border border-amber-300 p-2 text-xs text-amber-800"><p>{t`Some rendered sections on ${ownershipPages} have no verified section owner and are omitted from preview and export. Their content and history are retained. Review their section identities in Storyboard.`}</p></div>}<OutputReviewPanel defaultOpen={expanded} bookLabel={bookLabel} outputs={outputs} catalog={data?.outputs ?? []} conflicts={stage ? data?.conflicts?.filter((conflict) => outputs.some((output) => output.identity.id === conflict.id)) : data?.conflicts} disclosure={disclosure}

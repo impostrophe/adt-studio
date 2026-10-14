@@ -3,7 +3,7 @@ import React from "react"
 import { afterEach, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import type { CoreTtsCatalogEntry, OutputStatus, PackagingWarning } from "@adt/types"
+import { STAGE_ORDER, type CoreTtsCatalogEntry, type OutputStatus, type PackagingWarning, type StageName } from "@adt/types"
 import type { TTSResponse } from "@/api/client"
 import type { StageState } from "@/hooks/use-book-run"
 import { shouldShowMissingSpeech } from "../stages/languages/lib/speech-review-state"
@@ -35,9 +35,9 @@ function status(overrides: Partial<OutputStatus> = {}): OutputStatus {
     warnings: [], pageIds: [], sectionIds: [], ...overrides }
 }
 
-function setup(outputs: OutputStatus[], ownershipWarnings: PackagingWarning[] = []) {
+function setup(outputs: OutputStatus[], ownershipWarnings: PackagingWarning[] = [], missingStages: StageName[] = STAGE_ORDER) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
-  client.setQueryData(["books", "book", "outputs", false, undefined], { outputs, ownershipWarnings })
+  client.setQueryData(["books", "book", "outputs", false, undefined], { outputs, ownershipWarnings, missingStages })
   clients.push(client)
   return ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
 }
@@ -49,6 +49,23 @@ it("AC-12 discloses unverifiable rendered ownership without offering generation 
   expect(screen.getByText(/Some rendered sections on pg001 have no verified section owner/)).toBeTruthy()
   expect(screen.getByText(/Their content and history are retained/)).toBeTruthy()
   expect(screen.queryByRole("button", { name: /Repair section ownership/ })).toBeNull()
+})
+
+it("hides Missing output until its stage's first attempt, but keeps existing output's review", () => {
+  const outputs = [
+    status({ identity: { kind: "caption", id: "img1" }, usable: false, current: false, protected: false, manual: false, missing: true, text: "Never captioned" }),
+    status({ identity: { kind: "translation", id: "phrase", language: "fr" }, protected: false, manual: false, current: false, updateNeeded: true, text: "Stale translation" }),
+  ]
+  const { unmount } = render(<><CatalogSummary bookLabel="book" stage="captions" expanded /><OutputReview {...review} id="img1" kinds={["caption"]} /></>, { wrapper: setup(outputs, [], ["translate"]) })
+  expect(screen.queryByText("Never captioned")).toBeNull()
+  expect(screen.queryByRole("button", { name: "Caption: Missing" })).toBeNull()
+  unmount()
+  render(<OutputReview {...review} />, { wrapper: setup(outputs, [], []) })
+  expect(screen.getByRole("button", { name: "Translation: Out of sync" })).toBeTruthy()
+  cleanup()
+  render(<><CatalogSummary bookLabel="book" stage="captions" expanded /><OutputReview {...review} id="img1" kinds={["caption"]} /></>, { wrapper: setup(outputs, [], ["captions"]) })
+  expect(screen.getByText("Never captioned")).toBeTruthy()
+  expect(screen.getByRole("button", { name: "Caption: Missing" })).toBeTruthy()
 })
 
 it("AC-15 expanded details retain every reason and linked source", () => {

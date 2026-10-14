@@ -460,3 +460,26 @@ it("projects editor source guards identically without reading unrelated retained
     })
   } finally { db.close() }
 })
+
+it("shows Missing as stage attention only after that stage's first attempt", async () => {
+  const summary = async () => { const response = await app.request(`/books/${label}/outputs/summary`); expect(response.status).toBe(200); return response.json() }
+  const db = storage()
+  db.putNodeData("image-captioning", "pg001", { captions: [] })
+  db.putNodeData("text-catalog-translation", "fr", { entries: [], generatedAt: "before" })
+  db.close()
+  const before = await summary()
+  // Never run: the expected work stays in the read model but isn't attention,
+  // and deterministic speech-text preparation doesn't count as Language output.
+  expect(before.stages.captions.missing).toBe(1)
+  expect(before.stages["easy-read"].missing).toBeGreaterThan(0)
+  expect(before.stages.translate.missing).toBeGreaterThan(0)
+  expect((await outputs()).some((output) => output.identity.kind === "preparation" && output.usable)).toBe(true)
+  expect(before.missingStages).toEqual([])
+  for (const stage of ["captions", "easy-read", "translate"]) expect(before.stagesWithoutMissing[stage], stage).toBeUndefined()
+  const runs = storage(); runs.recordStepError("image-captioning", "Provider timed out"); runs.markStepCompleted("easy-read"); runs.close()
+  expect((await summary()).missingStages).toEqual(["captions", "easy-read"])
+  const translated = storage(); translated.putNodeData("text-catalog-translation", "fr", { entries: [{ id: "pg001_t001", text: "Bonjour" }], generatedAt: "after" }); translated.close()
+  expect((await summary()).missingStages).toEqual(["captions", "easy-read", "translate"])
+  const listed = await (await app.request(`/books/${label}/outputs`)).json()
+  expect(listed.missingStages).toEqual(["captions", "easy-read", "translate"])
+})

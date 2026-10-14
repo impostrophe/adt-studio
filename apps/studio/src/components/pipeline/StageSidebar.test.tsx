@@ -18,9 +18,14 @@ const outputsMock = vi.fn((): { data?: { summaries: { stages: Record<string, { a
 vi.mock("@/hooks/use-outputs", () => ({ useOutputSummary: () => {
   const data = outputsMock().data
   if (!data) return {}
-  return { data: { stages: data.summaries.stages,
-    stagesWithoutMissingSpeech: { ...data.summaries.stages, speech: data.summaries.stages.speech?.missing ? { applicable: 0, current: true, updates: 0, reviews: 0, warnings: 0, missing: 0 } : data.summaries.stages.speech },
-    showMissingSpeech: ["done", "error"].includes(stageStateMock("speech")) || Object.values(ttsMock().data?.languages ?? {}).some((language) => language.entries.length || language.failed?.length),
+  const stages = data.summaries.stages
+  // Mirrors the server rule; GET /outputs/summary is covered in output-entrypoints.
+  const attempted = (stage: string) => stage === "speech"
+    ? !["running", "queued"].includes(stageStateMock(stage)) && (["done", "error"].includes(stageStateMock(stage)) || Object.values(ttsMock().data?.languages ?? {}).some((language) => language.entries.length || language.failed?.length))
+    : ["done", "error"].includes(stageStateMock(stage)) || stages[stage].applicable > stages[stage].missing
+  return { data: { stages,
+    stagesWithoutMissing: Object.fromEntries(Object.entries(stages).map(([stage, summary]) => [stage, summary.missing ? { applicable: 0, current: true, updates: 0, reviews: 0, warnings: 0, missing: 0 } : summary])),
+    missingStages: Object.keys(stages).filter(attempted),
   } }
 } }))
 vi.mock("./components/OutputReview", () => ({ useOutputs: () => outputsMock(), CatalogSummary: () => <div>Selected stage outputs</div> }))
