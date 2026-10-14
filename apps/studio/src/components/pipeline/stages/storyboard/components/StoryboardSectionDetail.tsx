@@ -1,3 +1,4 @@
+import { backPropagateTextChanges } from "../lib/back-propagate-text"
 import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import {
@@ -369,43 +370,6 @@ function buildEditInstructions(savedHtml: string, pendingHtml: string): string {
 
 function escapeRegex(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-}
-
-/**
- * Back-propagate text changes from edited HTML into sectioning data.
- * Tree leaves have nodeId === data-id, so we walk every leaf and update its
- * text if the corresponding element in the HTML has changed.
- */
-function backPropagateTextChanges(
-  sectioning: SectioningData,
-  sectionIndex: number,
-  fullHtml: string
-): SectioningData {
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(fullHtml, "text/html")
-  const textMap = new Map<string, string>()
-  doc.querySelectorAll("[data-id]").forEach((el) => {
-    const id = el.getAttribute("data-id")
-    if (id && el.tagName !== "IMG") {
-      textMap.set(id, el.textContent?.trim() ?? "")
-    }
-  })
-
-  if (textMap.size === 0) return sectioning
-
-  const section = sectioning.sections[sectionIndex]
-  if (!section) return sectioning
-
-  let nextNodes = section.nodes
-  for (const leaf of collectLeafNodes(section.nodes)) {
-    if (leaf.role === "image") continue
-    const nextText = textMap.get(leaf.nodeId)
-    if (nextText !== undefined && nextText !== (leaf.text ?? "")) {
-      nextNodes = editLeafText(nextNodes, leaf.nodeId, nextText)
-    }
-  }
-  if (nextNodes === section.nodes) return sectioning
-  return withSectionNodes(sectioning, sectionIndex, nextNodes)
 }
 
 // -- Main component --
@@ -974,7 +938,7 @@ export function StoryboardSectionDetail({
       const editedHtml = getRenderedSectionByIndex(renderingToSave, sectionIndex)?.html
       const sBase = pendingSectioning ?? (page.sectioningTree as SectioningData | null)
       const updatedSectioning =
-        editedHtml && sBase ? backPropagateTextChanges(sBase, sectionIndex, editedHtml) : null
+        editedHtml && sBase ? backPropagateTextChanges(sBase, sectionIndex, editedHtml, getRenderedSectionByIndex(page.rendering, sectionIndex)?.html ?? "") : null
 
       // The sectioning we send is derived from the HTML we send, so the pair is
       // in sync by construction — this save leaves the Storyboard current and
