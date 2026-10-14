@@ -1,4 +1,4 @@
-import { putSourceNodeData } from "@adt/pipeline"
+import { withSourceGenerationTracking, putSourceNodeData } from "@adt/pipeline"
 import { stampRenderedOwner } from "@adt/pipeline"
 import { z } from "zod"
 import { parseDocument, DomUtils } from "htmlparser2"
@@ -386,7 +386,7 @@ export function createBookTools(ctx: BookToolsContext): BookToolsResult {
               s.sectionId === sectionId ? newSectioningSection : s,
             ),
           }
-          const version = ctx.storage.transaction(() => {
+          const version = withSourceGenerationTracking(ctx.storage, () => {
             putSourceNodeData(ctx.storage, "page-sectioning", pageId, updatedSectioning)
             return putSourceNodeData(ctx.storage, "web-rendering", pageId, updatedRendering)
           })
@@ -513,7 +513,7 @@ export function createBookTools(ctx: BookToolsContext): BookToolsResult {
             ...existingSectioning,
             sections: [...existingSectioning.sections, section],
           }
-          const version = ctx.storage.transaction(() => {
+          const version = withSourceGenerationTracking(ctx.storage, () => {
             putSourceNodeData(ctx.storage, "page-sectioning", pageId, updatedSectioning)
             return putSourceNodeData(ctx.storage, "web-rendering", pageId, updatedRendering)
           })
@@ -648,7 +648,7 @@ export function createBookTools(ctx: BookToolsContext): BookToolsResult {
             ...sectioning,
             sections: [...sectioning.sections, newSectioningSection],
           }
-          const version = ctx.storage.transaction(() => {
+          const version = withSourceGenerationTracking(ctx.storage, () => {
             putSourceNodeData(ctx.storage, "page-sectioning", pageId, updatedSectioning)
             return putSourceNodeData(ctx.storage, "web-rendering", pageId, updatedRendering)
           })

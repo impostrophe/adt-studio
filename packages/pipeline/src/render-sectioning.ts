@@ -13,11 +13,10 @@
  * tree that matches the rendered HTML, so it goes through this resolver.
  *
  * Selection is by node presence rather than config: `fixed-layout-sectioning`
- * is a `storyboard`-stage output, so `clearNodesByType` deletes it at the start
- * of every storyboard rerun and `processFixedLayoutPages` only re-writes it for
- * fixed-layout books. Its presence therefore reliably means "this page is
- * currently rendered fixed-layout" — including after a fixed→reflowable toggle,
- * which clears it.
+ * and its rendering are retained during rerun preparation. Successful reflowable
+ * publication invalidates the positioned tree for that page atomically with
+ * replacement HTML. A failed strategy switch therefore leaves the prior pair
+ * readable; successful fixed-layout publication writes both in one transaction.
  */
 import type { NodeDataRow, Storage } from "@adt/storage"
 import type { PageSectioningOutput, PageSectioningSection, SectionRendering, PackagingWarning, ContentNodeData } from "@adt/types"
@@ -26,6 +25,14 @@ import { parseDocument, DomUtils } from "htmlparser2"
 
 export const FIXED_LAYOUT_SECTIONING_NODE = "fixed-layout-sectioning"
 export const PAGE_SECTIONING_NODE = "page-sectioning"
+
+/** Older fixed-layout books stored their positioned tree in the semantic slot.
+ * A reflow renderer must not reinterpret that tree as semantic sectioning. */
+export function assertReflowableSectioning(sectioning: PageSectioningOutput): void {
+  if (sectioning.sections.some(section => section.sectionType === "fixed-layout-page" && section.viewport && section.placement)) {
+    throw new Error("Run Sectioning before switching this legacy fixed-layout page to reflowable layout. Existing content has been preserved.")
+  }
+}
 
 /** Resolve explicit ownership, never overriding contradictory declarations. */
 export function renderedSectionId(rendering: SectionRendering): string | undefined {

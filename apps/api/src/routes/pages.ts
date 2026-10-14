@@ -1,5 +1,5 @@
-import { SOURCE_GENERATION_RESET_STEPS } from "@adt/types"
-import { putSourceNodeData, resetSourceGenerationAttempts } from "@adt/pipeline"
+import { SourceGeneratorStep } from "@adt/types"
+import { putSourceNodeData, withSourceGenerationTracking, markSourceGenerationNeedsUpdate } from "@adt/pipeline"
 import { cloneRenderedIdentities, stampRenderedOwner } from "@adt/pipeline"
 import { captureOutputReferences } from "@adt/pipeline"
 import { scopeLegacyActivityIds, renderedSectionId, withLegacyRenderingOwnership } from "@adt/pipeline"
@@ -500,9 +500,11 @@ function clearRestoredNodeDependents(
   storage: Storage,
   node: RestorableNode,
   itemId: string,
-  previousData?: unknown,
+  previousVersion?: number,
 ): void {
-  resetSourceGenerationAttempts(storage, node, previousData, storage.getLatestNodeData(node, itemId)?.data)
+  if (SourceGeneratorStep.safeParse(node).success && previousVersion !== storage.getLatestNodeData(node, itemId)?.version) {
+    markSourceGenerationNeedsUpdate(storage, SourceGeneratorStep.parse(node))
+  }
   if (node === "text-catalog-translation") {
     const restored = TextCatalogOutput.safeParse(storage.getLatestNodeData(node, itemId)?.data)
     if (restored.success) invalidateCoreTtsForDisplayEntries({ storage, language: itemId, entries: restored.data.entries })
@@ -1251,7 +1253,7 @@ export function createPageRoutes(
           Buffer.from(storage.getImageBase64(imageId), "base64"),
       }
       for (const page of newPages) {
-        storage.transaction(() => {
+        withSourceGenerationTracking(storage, () => {
           storage.putExtractedPage(page)
           storage.putNodeData("positioned-text", page.pageId, page.positionedText)
           if (page.extractionDebug) {
@@ -1269,7 +1271,6 @@ export function createPageRoutes(
               ? deduplicateAutoFigureCandidates(classified, page.extractionDebug)
               : classified,
           )
-          storage.clearStepRuns([...SOURCE_GENERATION_RESET_STEPS])
         })
       }
     }
@@ -1303,9 +1304,8 @@ export function createPageRoutes(
     }
     // A later extraction/retirement failure may leave an earlier page published.
     // Reset with each committed membership change, never only on HTTP success.
-    for (const id of toRemove) storage.transaction(() => {
+    for (const id of toRemove) withSourceGenerationTracking(storage, () => {
       storage.deletePage(id)
-      storage.clearStepRuns([...SOURCE_GENERATION_RESET_STEPS])
     })
 
     return c.json({
@@ -1578,7 +1578,7 @@ export function createPageRoutes(
       // Rendering, sectioning, downstream invalidations, and step status are a
       // single editor save. If any statement fails, none of them may survive.
       const outputs = rendering ? catalogOutputs(storage, safeLabel, booksDir, promptsDir, configPath, { kinds: ["caption"] }) : []
-      const { renderingVersion, sectioningVersion } = storage.transaction(() => {
+      const { renderingVersion, sectioningVersion } = withSourceGenerationTracking(storage, () => {
         if (rendering) saveAuthoredImageAlts(storage, pageId, rendering, outputs)
         return {
         renderingVersion: rendering
@@ -1628,15 +1628,15 @@ export function createPageRoutes(
 
     const storage = createBookStorage(safeLabel, booksDir)
     try {
-      return storage.transaction(() => {
-        const previousData = storage.getLatestNodeData(node, itemId)?.data
+      return withSourceGenerationTracking(storage, () => {
+        const previousVersion = storage.getLatestNodeData(node, itemId)?.version
         const ok = node === "tts" ? restoreSpeechOutput(storage, path.join(path.resolve(booksDir), safeLabel), itemId, version) : storage.setCurrentNodeVersion(node, itemId, version)
         if (!ok) {
           throw new HTTPException(404, {
             message: `Version ${version} not found for ${node}/${itemId}`,
           })
         }
-        clearRestoredNodeDependents(storage, node, itemId, previousData)
+        clearRestoredNodeDependents(storage, node, itemId, previousVersion)
         return c.json({ node, itemId, version: storage.getCurrentNodeVersion(node, itemId) ?? version })
       })
     } finally {

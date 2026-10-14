@@ -1,12 +1,17 @@
 import { DomUtils, parseDocument } from "htmlparser2"
-import { PageSectioningOutput, SOURCE_GENERATION_RESET_STEPS, WebRenderingOutput } from "@adt/types"
+import { PageSectioningOutput, WebRenderingOutput } from "@adt/types"
 import type { Storage } from "@adt/storage"
 import { inputSignature } from "./output-freshness.js"
 import { renderedSectionId, withLegacyRenderingOwnership } from "./render-sectioning.js"
+import { SourceGenerationState, SourceGeneratorStep, QuizGenerationOutput, SourceGenerationPolicy, type SourceGenerationReceipt } from "@adt/types"
+import { collectPageTexts } from "./glossary.js"
+import { collectHeadingsAndToc } from "./toc-generation.js"
+import { resolveReadingOrder } from "./reading-order.js"
+import { batchPages, collectQuizPages, collectQuizPageTexts } from "./quiz-generation.js"
 
 /** Semantic inputs only: no CSS, placement, reasoning, media bytes or URLs.
- * These generators retain their existing coarse source-change policy; their
- * content is deliberately not part of catalog-based replacement. */
+ * Used by assistant editing to distinguish source edits from styling. Generator
+ * reset decisions below use each generator's own collectors instead. */
 export function sourceGenerationBasis(node: string, data: unknown): unknown {
   if (node === "page-sectioning" || node === "fixed-layout-sectioning") {
     const parsed = PageSectioningOutput.safeParse(data)
@@ -38,23 +43,119 @@ export function sourceGenerationBasis(node: string, data: unknown): unknown {
         role: element.attribs["data-role"] ?? element.attribs.role,
         heading: /^h[1-6]$/.test(element.name) ? element.name : undefined,
         image: element.name === "img", alt: element.name === "img" ? element.attribs.alt : undefined }))
-    return { sectionId, sectionType: section.sectionType,
+    return { sectionId, sectionIndex: section.sectionIndex, sectionType: section.sectionType,
       text: DomUtils.textContent(doc).replace(/\s+/g, " ").trim(), identities,
       activityAnswers: section.activityAnswers }
   })
 }
 
-export function resetSourceGenerationAttempts(storage: Storage, node: string, before: unknown, after: unknown): void {
-  if (inputSignature(sourceGenerationBasis(node, before)) !== inputSignature(sourceGenerationBasis(node, after))) {
-    storage.clearStepRuns([...SOURCE_GENERATION_RESET_STEPS])
+const STATE_NODE = "source-generation-state"
+
+function state(storage: Storage, step: SourceGeneratorStep): SourceGenerationState {
+  const parsed = SourceGenerationState.safeParse(storage.getLatestNodeData(STATE_NODE, step)?.data)
+  return parsed.success ? parsed.data : { version: 1, needsUpdate: false, policy: {} }
+}
+
+/** Existing reset metadata, kept separately from transient run attempts so
+ * starting, skipping, cancelling or failing a run cannot certify old content. */
+export function getSourceGenerationUpdates(storage: Storage): SourceGeneratorStep[] {
+  return SourceGeneratorStep.options.filter(step => state(storage, step).needsUpdate && !!storage.getLatestNodeData(step, "book"))
+}
+
+function sourceInputs(storage: Storage, step: SourceGeneratorStep, policy: SourceGenerationPolicy): unknown {
+  const pages = storage.getPages()
+  if (step === "glossary") return collectPageTexts(storage, pages)
+  if (step === "toc-generation") {
+    const { headings, originalTocText } = collectHeadingsAndToc(storage, pages)
+    return { headings, originalTocText: policy.tocMode === "dynamic" ? null : originalTocText,
+      pages: pages.map(page => page.pageId),
+      // Section membership/order changes can retire links even in sections
+      // without a heading. Do not include their body text or image metadata.
+      sections: resolveReadingOrder(storage, { includeQuizzes: false }).items
+        .filter(item => item.kind === "section").map(item => ({ pageId: item.pageId, sectionId: item.section.sectionId })) }
   }
+  const quizPages = collectQuizPages(storage)
+  if (policy.quiz) return batchPages(quizPages, policy.quiz.pagesPerQuiz, policy.quiz.quizSectionTypes).map(collectQuizPageTexts)
+  // Legacy output does not record the section-type filter. Its pageIds prove
+  // the text coverage; new/removed/eligible pages conservatively reset batching
+  // until a successful run records its exact selection policy. Never infer
+  // coverage from quiz position or fixed-layout section types.
+  const saved = QuizGenerationOutput.safeParse(storage.getLatestNodeData(step, "book")?.data)
+  const covered = saved.success ? new Set(saved.data.quizzes.flatMap(quiz => quiz.pageIds)) : null
+  return {
+    eligibleTypes: quizPages.map(page => ({ pageId: page.pageId, types: [...new Set(page.sectioning.sections.filter(section => !section.isPruned).map(section => section.sectionType))].sort() })),
+    membership: batchPages(quizPages, saved.success && saved.data.pagesPerQuiz > 0 ? saved.data.pagesPerQuiz : 3).map(batch => batch.map(page => page.pageId)),
+    pageTexts: collectQuizPageTexts(covered?.size ? quizPages.filter(page => covered.has(page.pageId)) : quizPages),
+  }
+}
+
+export function captureSourceGeneration(storage: Storage, step: SourceGeneratorStep, policy: SourceGenerationPolicy = {}): SourceGenerationReceipt {
+  const selection = SourceGenerationPolicy.parse(policy)
+  return { step, policy: selection, inputSignature: inputSignature(sourceInputs(storage, step, selection)) }
+}
+
+/** Call only for complete generator output, under existing writer admission.
+ * Check the inputs captured before provider calls and publish the output and
+ * its clean state together. Manual edits and generic completion never call it. */
+export function publishSourceGeneration<T>(storage: Storage, receipt: SourceGenerationReceipt, publish: () => T): T {
+  return storage.transaction(() => {
+    if (captureSourceGeneration(storage, receipt.step, receipt.policy).inputSignature !== receipt.inputSignature) {
+      throw new Error("Source inputs changed during generation. Run this stage again.")
+    }
+    const result = publish()
+    storage.putNodeData(STATE_NODE, receipt.step, { version: 1, needsUpdate: false, policy: receipt.policy, inputSignature: receipt.inputSignature } satisfies SourceGenerationState)
+    return result
+  })
+}
+
+export function markSourceGenerationNeedsUpdate(storage: Storage, step: SourceGeneratorStep): void {
+  storage.clearStepRuns([step])
+  const previous = state(storage, step)
+  if (!previous.needsUpdate && storage.getLatestNodeData(step, "book")) {
+    storage.putNodeData(STATE_NODE, step, { ...previous, needsUpdate: true })
+  }
+}
+
+// Coalesce paired sectioning/rendering writes and page membership mutations.
+// This only scopes input comparison, and is not a writer lock.
+const tracking = new WeakSet<Storage>()
+export function withSourceGenerationTracking<T>(storage: Storage, mutate: () => T): T {
+  if (tracking.has(storage)) return mutate()
+  return storage.transaction(() => {
+    const attempted = new Set(storage.getStepRuns().map(run => run.step))
+    const steps = SourceGeneratorStep.options.filter(step => attempted.has(step) || storage.getLatestNodeData(step, "book"))
+    const read = (step: SourceGeneratorStep) => {
+      try { return captureSourceGeneration(storage, step, state(storage, step).policy).inputSignature }
+      catch (error) {
+        // An invalid retained rendering must not make every editor save fail.
+        // Only validation failures are unprovable; storage/IO failures rollback.
+        if (error instanceof Error && error.message.startsWith("Invalid web-rendering output")) {
+          return inputSignature({ unprovable: true, pages: storage.getPages().map(page => ({
+            pageId: page.pageId, pageNumber: page.pageNumber,
+            source: ["page-sectioning", "fixed-layout-sectioning", "web-rendering"].map(node =>
+              sourceGenerationBasis(node, storage.getLatestNodeData(node, page.pageId)?.data)),
+          })) })
+        }
+        throw error
+      }
+    }
+    const before = new Map(steps.map(step => [step, read(step)]))
+    tracking.add(storage)
+    try {
+      const result = mutate()
+      for (const step of steps) {
+        const after = read(step)
+        if (before.get(step) !== after) markSourceGenerationNeedsUpdate(storage, step)
+      }
+      return result
+    } finally { tracking.delete(storage) }
+  })
 }
 
 /** Publish source and reset only the separate source generators atomically.
  * Catalog-managed attempts, entity versions and physical assets are retained. */
 export function putSourceNodeData(storage: Storage, node: string, itemId: string, data: unknown): number {
-  return storage.transaction(() => {
-    let previous = storage.getLatestNodeData(node, itemId)?.data
+  const write = () => {
     if (node === "page-sectioning" || node === "fixed-layout-sectioning") {
       // Capture ownership while all original leaves are still in their source
       // sections. Otherwise a successful reorder/split/move could change what
@@ -66,12 +167,21 @@ export function putSourceNodeData(storage: Storage, node: string, itemId: string
           storage.putNodeData("web-rendering", itemId, resolved)
         }
       }
-    } else if (node === "web-rendering") {
-      const retained = WebRenderingOutput.safeParse(previous)
-      if (retained.success) previous = withLegacyRenderingOwnership(storage, itemId, retained.data)
     }
-    const version = storage.putNodeData(node, itemId, data)
-    resetSourceGenerationAttempts(storage, node, previous, data)
-    return version
+    return storage.putNodeData(node, itemId, data)
+  }
+  const previous = storage.getLatestNodeData(node, itemId)?.data
+  // Fast path also protects cosmetic saves in malformed legacy books.
+  return inputSignature(sourceGenerationBasis(node, previous)) === inputSignature(sourceGenerationBasis(node, data))
+    ? storage.transaction(write) : withSourceGenerationTracking(storage, write)
+}
+
+/** A successful strategy switch replaces the old positioned/read-model pair
+ * together. Until this transaction commits, failed reflow keeps the fixed book
+ * readable. HTML-only edits must not call this strategy-changing operation. */
+export function putReflowableRendering(storage: Storage, itemId: string, data: unknown): number {
+  return withSourceGenerationTracking(storage, () => {
+    storage.clearNodesByType(["fixed-layout-sectioning"], itemId)
+    return putSourceNodeData(storage, "web-rendering", itemId, data)
   })
 }

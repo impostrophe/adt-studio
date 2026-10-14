@@ -43,7 +43,9 @@ it("resets attempts with a committed page addition even if later recording prese
     expect(response.status).toBe(500)
     expect(db.getPages().map((page) => page.pageId)).toEqual(["pg001", "pg002"])
     const actual = db.getStepRuns().map((run) => run.step)
-    for (const step of steps) expect(actual).not.toContain(step)
+    // The committed page is not yet rendered: only TOC page membership changed.
+    expect(actual).not.toContain("toc-generation")
+    expect(actual).toEqual(expect.arrayContaining(["quiz-generation", "glossary"]))
     expect(actual).toContain("tts")
     for (const node of steps) expect(db.getAllNodeVersions(node, "book").map((row) => row.data)).toEqual([{ manual: "retained" }])
     expect(db.getLatestNodeData("page-sectioning", "pg002")?.data).toEqual(source)

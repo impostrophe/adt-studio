@@ -1,4 +1,5 @@
-import { putSourceNodeData } from "./source-generation-state.js"
+import { collectQuizPages } from "./quiz-generation.js"
+import { putSourceNodeData, putReflowableRendering, captureSourceGeneration, publishSourceGeneration } from "./source-generation-state.js"
 import { reconcileSectioningIdentities } from "./sectioning-identity.js"
 import { buildOutputSources, translatedDisplayEntries } from "./output-sources.js"
 import { captureOutputReferences } from "./output-references.js"
@@ -77,7 +78,7 @@ import { createTemplateEngine } from "./render-template.js"
 import { captionPageImages, buildCaptionConfig, collectCaptionImageIds, groupGlossaryImageIdsByPage } from "./image-captioning.js"
 import { regenerateGlossaryPreservingEdits, buildGlossaryConfig } from "./glossary.js"
 import { generateToc, buildTocGenerationConfig } from "./toc-generation.js"
-import { generateAllQuizzes, buildQuizGenerationConfig, batchPages, type QuizPageInput } from "./quiz-generation.js"
+import { generateAllQuizzes, buildQuizGenerationConfig, batchPages } from "./quiz-generation.js"
 import { saveQuizOutput, assertQuizGenerationCapacity } from "./quiz-ids.js"
 import { buildTextCatalog } from "./text-catalog.js"
 import { buildEasyReadConfig, buildEasyReadSourceBlocks, createEmptyEasyReadOutput, generateEasyRead, flattenEasyReadEntries, isDeterministicEmptyEasyReadOutput } from "./easy-read.js"
@@ -113,7 +114,7 @@ import {
 } from "./speech.js"
 import { packageAdtWeb } from "./packaging/web.js"
 import { processFixedLayoutPages, isFixedLayoutBook } from "./fixed-layout-rendering.js"
-import { getRenderSectioning, getSemanticSectioning } from "./render-sectioning.js"
+import { getRenderSectioning, assertReflowableSectioning } from "./render-sectioning.js"
 import { runAccessibilityAssessment } from "./accessibility-assessment.js"
 import { loadBookConfig } from "./config.js"
 import { nullProgress, type Progress } from "./progress.js"
@@ -660,6 +661,7 @@ export async function runFullPipeline(
         const imageClassRow = storage.getLatestNodeData("image-filtering", page.pageId)
         if (!structuringRow || !imageClassRow) return
         const sectioning = structuringRow.data as PageSectioningOutput
+        assertReflowableSectioning(sectioning)
         const imageClassification = imageClassRow.data as ImageClassificationOutput
         const unprunedImageIds = imageClassification.images
           .filter((img) => !img.isPruned)
@@ -705,7 +707,7 @@ export async function runFullPipeline(
           resolveRenderModel,
           templateEngine,
         )
-        putSourceNodeData(storage, "web-rendering", page.pageId, result)
+        putReflowableRendering(storage, page.pageId, result)
         p.emit({
           type: "step-progress",
           step: "web-rendering",
@@ -724,23 +726,8 @@ export async function runFullPipeline(
       const quizConfig = buildQuizGenerationConfig(config, language)
       if (!quizConfig) return
       const model = getModel(quizConfig.modelId)
-      const pages = storage.getPages()
-      const quizPages: QuizPageInput[] = []
-      for (const page of pages) {
-        const renderingRow = storage.getLatestNodeData("web-rendering", page.pageId)
-        // Filter by the SEMANTIC sectioning (real section types like
-        // `text_and_single_image`), not the render sectioning — in fixed-layout
-        // the latter is the positioned tree whose only type is
-        // `fixed-layout-page`, which never matches `quiz_section_types`, so no
-        // quizzes would ever generate.
-        const sectioning = getSemanticSectioning(storage, page.pageId)
-        if (!renderingRow || !sectioning) continue
-        quizPages.push({
-          pageId: page.pageId,
-          rendering: renderingRow.data as WebRenderingOutput,
-          sectioning,
-        })
-      }
+      const quizPages = collectQuizPages(storage)
+      const sourceReceipt = captureSourceGeneration(storage, "quiz-generation", { quiz: quizConfig })
       if (quizPages.length > 0) {
         assertQuizGenerationCapacity(storage, batchPages(quizPages, quizConfig.pagesPerQuiz, quizConfig.quizSectionTypes).length)
         const result = await generateAllQuizzes(quizPages, quizConfig, model, {
@@ -755,12 +742,12 @@ export async function runFullPipeline(
             })
           },
         })
-        saveQuizOutput(storage, result, "replace")
+        publishSourceGeneration(storage, sourceReceipt, () => saveQuizOutput(storage, result, "replace"))
       } else {
-        saveQuizOutput(storage, {
+        publishSourceGeneration(storage, sourceReceipt, () => saveQuizOutput(storage, {
           generatedAt: new Date().toISOString(), language: quizConfig.language,
           pagesPerQuiz: quizConfig.pagesPerQuiz, quizzes: [],
-        }, "replace")
+        }, "replace"))
       }
     })
 
@@ -815,6 +802,7 @@ export async function runFullPipeline(
       const model = getModel(glossaryConfig.modelId)
       const pages = storage.getPages()
 
+      const sourceReceipt = captureSourceGeneration(storage, "glossary")
       const glossary = await regenerateGlossaryPreservingEdits({
         storage,
         pages,
@@ -831,7 +819,7 @@ export async function runFullPipeline(
           })
         },
       })
-      storage.putNodeData("glossary", "book", glossary)
+      publishSourceGeneration(storage, sourceReceipt, () => storage.putNodeData("glossary", "book", glossary))
     })
 
     // ── TOC stage ───────────────────────────────────────────────
@@ -844,13 +832,14 @@ export async function runFullPipeline(
 
       p.emit({ type: "step-progress", step: "toc-generation", message: "Analyzing book structure..." })
 
+      const sourceReceipt = captureSourceGeneration(storage, "toc-generation", { tocMode: tocConfig.mode })
       const toc = await generateToc({
         storage,
         pages,
         config: tocConfig,
         llmModel: model,
       })
-      storage.putNodeData("toc-generation", "book", toc)
+      publishSourceGeneration(storage, sourceReceipt, () => storage.putNodeData("toc-generation", "book", toc))
 
       p.emit({
         type: "step-progress",

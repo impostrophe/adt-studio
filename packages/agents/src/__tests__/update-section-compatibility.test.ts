@@ -9,6 +9,7 @@ import { createBookTools } from "../tools/book-tools.js"
 it.each(["cosmetic", "legacy-cosmetic", "redistributed-text"])("preserves native source metadata or resets attempts for %s agent edits", async (mode) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "adt-update-compat-"))
   const storage = createBookStorage("book", root)
+  storage.putExtractedPage({ pageId: "pg001", pageNumber: 1, text: "", pageImage: { imageId: "pg001_page", buffer: Buffer.from("page"), format: "png", hash: "fixture", width: 100, height: 100 }, images: [] })
   try {
     const ownedHtml = '<section data-section-id="pg001_sec001"><h2 data-id="pg001_t001">One</h2><p data-id="pg001_t002">Two</p></section>'
     const html = mode === "legacy-cosmetic" ? ownedHtml.replace(' data-section-id="pg001_sec001"', "") : ownedHtml
@@ -30,7 +31,9 @@ it.each(["cosmetic", "legacy-cosmetic", "redistributed-text"])("preserves native
     if (cosmetic) expect(current.sections[0]).toEqual(source)
     else expect(current.sections[0].nodes[0].children.map((node) => node.text)).toEqual(["OneT", "wo"])
     const steps = storage.getStepRuns().map((run) => run.step)
-    for (const step of SOURCE_GENERATION_RESET_STEPS) expect(steps.includes(step)).toBe(cosmetic)
+    for (const step of SOURCE_GENERATION_RESET_STEPS) expect(steps.includes(step)).toBe(step !== "toc-generation" || cosmetic)
+    // Redistributing text between IDs changes the first TOC heading, but the
+    // exact aggregate text sent to Quiz/Glossary remains "OneTwo".
     expect(steps).toContain("tts")
     expect(storage.getAllNodeVersions("page-sectioning", "pg001")[0].data).toEqual({ reasoning: "native", sections: [source] })
   } finally {

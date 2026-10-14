@@ -80,17 +80,17 @@ export function createBookStorage(label: string, booksRoot: string): Storage {
       clearExtractedRows(db)
     },
 
-    clearNodesByType(nodes: string[]): void {
+    clearNodesByType(nodes: string[], itemId?: string): void {
       if (nodes.length === 0) return
       transaction(() => {
         // Quiz history is also the permanent record of spent catalog/audio
         // identities. Invalidate its current output, never erase that record.
-        if (nodes.includes("quiz-generation")) invalidateQuizOutput(db)
+        if (nodes.includes("quiz-generation")) invalidateQuizOutput(db, itemId)
         const deletable = nodes.filter((node) => node !== "quiz-generation" && !CATALOG_OUTPUT_NODES.includes(node))
         if (deletable.length === 0) return
         const placeholders = deletable.map(() => "?").join(", ")
         // Invalidate active output through a new version; never erase history.
-        const items = db.all(`SELECT node, item_id, MAX(version) AS version FROM node_data WHERE node IN (${placeholders}) GROUP BY node, item_id`, deletable) as Array<{ node: string; item_id: string; version: number }>
+        const items = db.all(`SELECT node, item_id, MAX(version) AS version FROM node_data WHERE node IN (${placeholders})${itemId === undefined ? "" : " AND item_id = ?"} GROUP BY node, item_id`, itemId === undefined ? deletable : [...deletable, itemId]) as Array<{ node: string; item_id: string; version: number }>
         for (const item of items) {
           if (!readCurrentNodeRow(db, item.node, item.item_id)) continue
           db.run("INSERT INTO node_data (node, item_id, version, data) VALUES (?, ?, ?, NULL)", [item.node, item.item_id, item.version + 1])
@@ -660,10 +660,11 @@ function clearExtractedRows(db: sqlite.Database): void {
 /** Called inside the clearing transaction. The null version hides stale quiz
  * output after an upstream reset while retaining every version for allocation
  * and rollback. A repeated clear does not create another null version. */
-function invalidateQuizOutput(db: sqlite.Database): void {
+function invalidateQuizOutput(db: sqlite.Database, selectedItemId?: string): void {
   const node = "quiz-generation"
   const items = db.all("SELECT DISTINCT item_id FROM node_data WHERE node = ?", [node]) as Array<{ item_id: string }>
   for (const { item_id: itemId } of items) {
+    if (selectedItemId !== undefined && itemId !== selectedItemId) continue
     if (!readCurrentNodeRow(db, node, itemId)) continue
     const [{ version }] = db.all(
       "SELECT MAX(version) + 1 AS version FROM node_data WHERE node = ? AND item_id = ?",

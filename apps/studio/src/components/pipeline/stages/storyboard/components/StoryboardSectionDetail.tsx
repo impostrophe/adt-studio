@@ -1,4 +1,4 @@
-import { backPropagateTextChanges } from "../lib/back-propagate-text"
+import { sectioningSaveFromRendering } from "../lib/back-propagate-text"
 import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import {
@@ -831,18 +831,10 @@ export function StoryboardSectionDetail({
     if (!pendingSectioning || storyboardRunning) return
     setSaving(true)
     setPanelOpen(false)
-    const shouldRerender = needsRerenderRef.current
-    // Editing here is meant to be incremental: change a section's type, text or
-    // pruning, re-render that one section, carry on. Every such edit either
-    // arrives already mirrored into the HTML or queues a render of the section
-    // it touched, so the storyboard is current (or seconds away from it) and
-    // resetting the whole stage would only take the editor away for a book that
-    // is fine. The stage is marked stale only when we cannot bring the HTML back
-    // in sync at all: no API key, or a custom activity whose inline grading
-    // script a re-render would flatten.
-    const isCustomActivity = section?.sectionType?.startsWith("activity_custom") ?? false
-    const willRerender = shouldRerender && hasStructuredTextProvider && !isCustomActivity
-    const renderingInSync = !shouldRerender || willRerender
+    // Save retains the draft without invoking generation. Structural changes
+    // that have not been mirrored into HTML leave Storyboard needing a render;
+    // the user can explicitly re-render after reviewing the saved changes.
+    const renderingInSync = !needsRerenderRef.current
     try {
       const minDelay = new Promise((r) => setTimeout(r, 400))
 
@@ -862,12 +854,17 @@ export function StoryboardSectionDetail({
       // since React state won't have updated yet within this async call.
       const flushed = flushPendingHtml()
       const renderingToSave = renderingFromPrune ?? flushed ?? pendingRendering
+      const sourceSave = renderingToSave ? sectioningSaveFromRendering(
+        page.sectioningTree as SectioningData | null, pendingSectioning, sectionIndex,
+        getRenderedSectionByIndex(renderingToSave, sectionIndex)?.html ?? "",
+        getRenderedSectionByIndex(page.rendering, sectionIndex)?.html ?? "",
+        needsRerenderRef.current,
+      ) : { sectioning: pendingSectioning, renderingInSync }
 
       // Both nodes in one request so a failure can't split them apart.
       await api.saveStoryboard(bookLabel, pageId, {
-        sectioning: pendingSectioning,
+        ...sourceSave,
         rendering: renderingToSave ? stripTransientIds(renderingToSave) : undefined,
-        renderingInSync,
       })
 
       setPendingSectioning(null)
@@ -879,27 +876,6 @@ export function StoryboardSectionDetail({
       invalidateStoryboardDependents(queryClient, bookLabel)
       await minDelay
 
-      // Only re-render when changes require LLM (e.g., unprune, type change, reorder)
-      // Skip for pure prune/delete — those are already handled by local HTML removal.
-      // Also skip custom activities: re-render rebuilds from the flat sectioning
-      // tree and would discard their inline grading script.
-      // The task marks the storyboard stale itself if it fails, so a section that
-      // never gets its HTML cannot leave the stage reporting complete. A rejected
-      // *submission* never reaches the task runner, so that net does not fire and
-      // we have to take the completion mark back here instead.
-      if (willRerender) {
-        api.reRenderPage(bookLabel, pageId, apiKey, sectionIndex).catch(async (err) => {
-          setAiError(err instanceof Error ? err.message : t`Re-render failed`)
-          if (!renderingInSync) return
-          await api
-            .saveStoryboard(bookLabel, pageId, {
-              sectioning: pendingSectioning,
-              renderingInSync: false,
-            })
-            .catch(() => {})
-          invalidateStoryboardDependents(queryClient, bookLabel)
-        })
-      }
     } catch (err) {
       setAiError(err instanceof Error ? err.message : t`Save failed`)
     } finally {
@@ -936,19 +912,19 @@ export function StoryboardSectionDetail({
       // includes the flushed inspector edit; the closure `pendingRendering`
       // is stale until React re-renders.
       const editedHtml = getRenderedSectionByIndex(renderingToSave, sectionIndex)?.html
-      const sBase = pendingSectioning ?? (page.sectioningTree as SectioningData | null)
-      const updatedSectioning =
-        editedHtml && sBase ? backPropagateTextChanges(sBase, sectionIndex, editedHtml, getRenderedSectionByIndex(page.rendering, sectionIndex)?.html ?? "") : null
-
-      // The sectioning we send is derived from the HTML we send, so the pair is
-      // in sync by construction — this save leaves the Storyboard current and
-      // only marks the stages downstream of it for re-run.
+      const sourceSave = sectioningSaveFromRendering(
+        page.sectioningTree as SectioningData | null,
+        pendingSectioning,
+        sectionIndex,
+        editedHtml ?? "",
+        getRenderedSectionByIndex(page.rendering, sectionIndex)?.html ?? "",
+        needsRerenderRef.current,
+      )
       await api.saveStoryboard(bookLabel, pageId, {
         rendering: stripTransientIds(renderingToSave),
-        ...(updatedSectioning && updatedSectioning !== sBase
-          ? { sectioning: updatedSectioning, renderingInSync: true }
-          : {}),
+        ...sourceSave,
       })
+      needsRerenderRef.current = false
 
       setPendingRendering(null)
       setPendingSectioning(null)

@@ -221,10 +221,10 @@ export function getStageClearNodes(stage: StageName): PipelineNodeName[] {
 
 /** Keep prior output until these stages successfully write a new version.
  * Quizzes also use their history to reserve IDs across full regeneration. */
-const STAGES_PRESERVING_OWN_OUTPUT: readonly StageName[] = ["glossary", "quizzes"]
+const STAGES_PRESERVING_OWN_OUTPUT: readonly StageName[] = ["glossary", "quizzes", "toc"]
 
 /** Like getStageClearNodes(fromStage), but retains selected stages' prior output
- * until their handlers save a new version. Outside the run range it is cleared. */
+ * until their handlers save a new version, including outside the run range. */
 export function getStageRerunClearNodes(
   fromStage: StageName,
   toStage: StageName
@@ -235,12 +235,9 @@ export function getStageRerunClearNodes(
 
   // Preserve the selected source snapshot, including a restored older version.
   // Generated sectioning reconciles identities against it before publication.
-  const preservedNodes = new Set<PipelineNodeName>(["page-sectioning"])
+  const preservedNodes = new Set<PipelineNodeName>(["page-sectioning", "fixed-layout-sectioning", "web-rendering"])
   for (const stage of STAGES_PRESERVING_OWN_OUTPUT) {
-    const index = STAGE_ORDER.indexOf(stage)
-    if (index >= fromIndex && index <= toIndex) {
-      for (const node of STAGE_OUTPUT_NODES[stage]) preservedNodes.add(node)
-    }
+    for (const node of STAGE_OUTPUT_NODES[stage]) preservedNodes.add(node)
   }
   const translateIndex = STAGE_ORDER.indexOf("translate")
   if (translateIndex >= fromIndex && translateIndex <= toIndex) {

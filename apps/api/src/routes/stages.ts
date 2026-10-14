@@ -7,10 +7,12 @@ import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import { createBookStorage, openBookDb } from "@adt/storage"
 import type { Storage } from "@adt/storage"
-import { OutputSkipRequest, OutputRunScope, StageName, STAGE_ORDER, PIPELINE, parseBookLabel, getStageRerunClearNodes, getStageClearOrder, PageErrorPolicy, DecisionBody, TTSOutput, WordTimestampOutput, parseVoiceSlotEntryId, sectionIdOfAnswerTextId } from "@adt/types"
+import { SourceGeneratorStep, OutputSkipRequest, OutputRunScope, StageName, STAGE_ORDER, STEP_TO_STAGE, PIPELINE, parseBookLabel, getStageRerunClearNodes, getStageClearOrder, PageErrorPolicy, DecisionBody, TTSOutput, WordTimestampOutput, parseVoiceSlotEntryId, sectionIdOfAnswerTextId } from "@adt/types"
 import { assertStageRunModelCredentials } from "@adt/llm"
 import {
   loadBookConfig,
+  getSourceGenerationUpdates,
+  withSourceGenerationTracking,
   collectSpentSectionIds,
   retireSectionIds,
   NOTHING_RETIRED,
@@ -197,7 +199,7 @@ export function makeBeforeRun(label: string, fromStage: StageName, toStage: Stag
       } else {
         const nodes = getStageRerunClearNodes(fromStage, toStage)
         if (nodes.length > 0) {
-          storage.clearNodesByType(nodes)
+          withSourceGenerationTracking(storage, () => storage.clearNodesByType(nodes))
         }
         if (fromStage === "storyboard" && typeof storage.clearDebugImages === "function") {
           storage.clearDebugImages()
@@ -207,7 +209,8 @@ export function makeBeforeRun(label: string, fromStage: StageName, toStage: Stag
         const stepsToClear = PIPELINE
           .filter((s) => stagesToClear.includes(s.name))
           .flatMap((s) => s.steps.map((step) => step.name))
-        storage.clearStepRuns(stepsToClear)
+        const selectedStages = new Set(STAGE_ORDER.slice(STAGE_ORDER.indexOf(fromStage), STAGE_ORDER.indexOf(toStage) + 1))
+        storage.clearStepRuns(stepsToClear.filter(step => !SourceGeneratorStep.safeParse(step).success || selectedStages.has(STEP_TO_STAGE[step])))
       }
     } finally {
       storage.close()
@@ -385,12 +388,14 @@ export function createStageRoutes(
 
     // Read step_runs from DB (or empty if no DB)
     let stepRunRows: Array<{ step: string; status: string; error: string | null; message: string | null }> = []
+    let sourceUpdateStages: string[] = []
     if (fs.existsSync(dbPath)) {
-      const db = openBookDb(dbPath)
+      const storage = createBookStorage(safeLabel, booksDir)
       try {
-        stepRunRows = db.all("SELECT step, status, error, message FROM step_runs") as typeof stepRunRows
+        stepRunRows = storage.getStepRuns()
+        sourceUpdateStages = getSourceGenerationUpdates(storage).map(step => STEP_TO_STAGE[step])
       } finally {
-        db.close()
+        storage.close()
       }
     }
 
@@ -462,6 +467,7 @@ export function createStageRoutes(
     return c.json({
       stages,
       steps,
+      sourceUpdateStages,
       error,
       stepErrors: hasStepErrors ? stepErrors : null,
       stepMessages: hasStepMessages ? stepMessages : null,

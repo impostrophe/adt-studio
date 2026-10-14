@@ -1,4 +1,5 @@
-import { putSourceNodeData } from "@adt/pipeline"
+import { collectQuizPages } from "@adt/pipeline"
+import { putSourceNodeData, putReflowableRendering, assertReflowableSectioning, captureSourceGeneration, publishSourceGeneration } from "@adt/pipeline"
 import { bookAssetExists, readBookAsset } from "@adt/storage"
 import { reconcileSectioningIdentities } from "@adt/pipeline"
 import { requireExistingBook } from "../utils/book-exists.js"
@@ -65,7 +66,6 @@ import {
   buildQuizGenerationConfig,
   // Master step imports
   getRenderSectioning,
-  getSemanticSectioning,
   buildTextCatalog,
   buildEasyReadConfig,
   buildEasyReadSourceBlocks,
@@ -138,7 +138,7 @@ import {
   DEFAULT_VISUAL_REVIEW_MODEL_ID,
   isFixedLayoutBook,
 } from "@adt/pipeline"
-import type { BookOutlineConfig, PageSectioningConfig, TranslationConfig, QuizPageInput, ProviderRouting, MeaningfulnessConfig, CroppingConfig, SegmentationConfig, VisualRefinementDeps } from "@adt/pipeline"
+import type { BookOutlineConfig, PageSectioningConfig, TranslationConfig, ProviderRouting, MeaningfulnessConfig, CroppingConfig, SegmentationConfig, VisualRefinementDeps } from "@adt/pipeline"
 import type { ElevenLabsVoiceSettingsOverrides } from "@adt/llm"
 import { loadStyleguideContent } from "./styleguide.js"
 import { createTTSSynthesizer, createAzureTTSSynthesizer, createGeminiTTSSynthesizer, createElevenLabsTTSSynthesizer } from "@adt/llm"
@@ -1731,6 +1731,7 @@ async function runStoryboardStep(
             return
           }
           const sectioning = structuringRow.data as PageSectioningOutput
+          assertReflowableSectioning(sectioning)
 
           const imageClassificationRow = storage.getLatestNodeData(
             "image-filtering",
@@ -1793,7 +1794,7 @@ async function runStoryboardStep(
             { signal: options.signal },
           )
           if (options.signal?.aborted) throw new RunCancelledError()
-          putSourceNodeData(storage, "web-rendering", page.pageId, renderResult)
+          putReflowableRendering(storage, page.pageId, renderResult)
           completedRendering++
           progress.emit({
             type: "step-progress",
@@ -1894,39 +1895,9 @@ async function runQuizzesStep(
 
     progress.emit({ type: "step-start", step: "quiz-generation" })
 
-    // Gather page data for quiz generation. A page is eligible only when it has
-    // BOTH a web-rendering and a render-sectioning node — the quiz LLM reads
-    // rendered text, and batching counts sectioned content pages.
     const pages = storage.getPages()
-    const quizPages: QuizPageInput[] = []
-    let missingRendering = 0
-    let missingSectioning = 0
-    for (const page of pages) {
-      const renderingRow = storage.getLatestNodeData("web-rendering", page.pageId)
-      // Filter by the SEMANTIC sectioning (real types like `text_and_single_image`),
-      // not the render sectioning — in fixed-layout the render tree is positioned
-      // and its only section type is `fixed-layout-page`, which never matches
-      // `quiz_section_types`, so no page would qualify and no quiz would generate.
-      const sectioning = getSemanticSectioning(storage, page.pageId)
-      if (!renderingRow) {
-        missingRendering++
-        continue
-      }
-      if (!sectioning) {
-        missingSectioning++
-        continue
-      }
-      quizPages.push({
-        pageId: page.pageId,
-        rendering: renderingRow.data as WebRenderingOutput,
-        sectioning,
-      })
-    }
-    console.log(
-      `[stage-run] ${label}: quiz input — ${quizPages.length}/${pages.length} pages ready ` +
-        `(missing web-rendering: ${missingRendering}, missing sectioning: ${missingSectioning}); ` +
-        `pages_per_quiz=${quizConfig.pagesPerQuiz}`
-    )
+    const quizPages = collectQuizPages(storage)
+    const sourceReceipt = captureSourceGeneration(storage, "quiz-generation", { quiz: quizConfig })
 
     if (quizPages.length > 0) {
       assertQuizGenerationCapacity(storage, batchPages(quizPages, quizConfig.pagesPerQuiz, quizConfig.quizSectionTypes).length)
@@ -1943,7 +1914,7 @@ async function runQuizzesStep(
         },
       })
       options.signal?.throwIfAborted()
-      saveQuizOutput(storage, quizResult, "replace")
+      publishSourceGeneration(storage, sourceReceipt, () => saveQuizOutput(storage, quizResult, "replace"))
       console.log(
         `[stage-run] ${label}: generated ${quizResult.quizzes.length} quiz(zes) from ${quizPages.length} page(s)`
       )
@@ -1956,10 +1927,10 @@ async function runQuizzesStep(
       // A successful empty rerun must not leave the preserved previous quizzes
       // active. Keep their history, but publish the now-empty result.
       options.signal?.throwIfAborted()
-      saveQuizOutput(storage, {
+      publishSourceGeneration(storage, sourceReceipt, () => saveQuizOutput(storage, {
         generatedAt: new Date().toISOString(), language: quizConfig.language,
         pagesPerQuiz: quizConfig.pagesPerQuiz, quizzes: [],
-      }, "replace")
+      }, "replace"))
       // Nothing to generate. This is the silent "finished instantly, no quizzes"
       // case — surface it loudly instead of completing green with no output.
       console.warn(
@@ -2218,6 +2189,7 @@ async function runGlossaryStep(
 
     console.log(`[stage-run] ${label}: generating glossary from ${pages.length} pages`)
 
+    const sourceReceipt = captureSourceGeneration(storage, "glossary")
     const glossary = await regenerateGlossaryPreservingEdits({
       storage,
       pages,
@@ -2234,7 +2206,8 @@ async function runGlossaryStep(
         })
       },
     })
-    storage.putNodeData("glossary", "book", glossary)
+    options.signal?.throwIfAborted()
+    publishSourceGeneration(storage, sourceReceipt, () => storage.putNodeData("glossary", "book", glossary))
 
     progress.emit({
       type: "step-progress",
@@ -2309,13 +2282,15 @@ async function runTocStep(
 
     console.log(`[stage-run] ${label}: generating TOC from ${pages.length} pages`)
 
+    const sourceReceipt = captureSourceGeneration(storage, "toc-generation", { tocMode: tocConfig.mode })
     const toc = await generateToc({
       storage,
       pages,
       config: tocConfig,
       llmModel: tocModel,
     })
-    storage.putNodeData("toc-generation", "book", toc)
+    options.signal?.throwIfAborted()
+    publishSourceGeneration(storage, sourceReceipt, () => storage.putNodeData("toc-generation", "book", toc))
 
     progress.emit({
       type: "step-progress",

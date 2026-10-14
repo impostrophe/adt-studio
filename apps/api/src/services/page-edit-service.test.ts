@@ -531,3 +531,25 @@ it.each([false, true])("section re-render after source reorder retains the other
     expect(rows.find((row) => row.sectionId === "pg001_sec001")?.html).toBe(legacy ? '<section><p data-id="A">A</p></section>' : '<section data-section-id="pg001_sec001"><p data-id="A">A</p></section>')
   } finally { fs.rmSync(booksDir, { recursive: true, force: true }) }
 })
+
+
+it.each([false, true])("preserves positioned pages and avoids providers on unsafe scoped/legacy reflow (legacy=%s)", async legacy => {
+  const booksDir = fs.mkdtempSync(path.join(os.tmpdir(), "adt-fixed-rerender-"))
+  const label = "fixed"
+  const storage = createBookStorage(label, booksDir)
+  const source = { reasoning: "", sections: [{ sectionId: "pg001_sec001", sectionType: "content", backgroundColor: "white", textColor: "black", pageNumber: 1, isPruned: false, nodes: [{ nodeId: "text", role: "body_text", text: "Retained", isPruned: false }] }] }
+  const positioned = { reasoning: "", sections: [{ ...source.sections[0], sectionType: "fixed-layout-page", viewport: { width: 100, height: 100 }, placement: { text: { position: { top: 0, left: 0, lineHeight: 10 } } }, nodes: source.sections[0].nodes }] }
+  const rendering = { sections: [{ sectionId: "pg001_sec001", sectionIndex: 0, sectionType: "fixed-layout-page", reasoning: "", html: '<section data-section-id="pg001_sec001"><p data-id="text">Retained</p></section>' }] }
+  try {
+    storage.putExtractedPage({ pageId: "pg001", pageNumber: 1, text: "", pageImage: { imageId: "pg001_page", buffer: Buffer.from("image"), format: "png", hash: "page", width: 100, height: 100 }, images: [] })
+    storage.putNodeData("page-sectioning", "pg001", legacy ? positioned : source)
+    if (!legacy) storage.putNodeData("fixed-layout-sectioning", "pg001", positioned)
+    storage.putNodeData("web-rendering", "pg001", rendering)
+    const before = storage.getLatestNodeData("web-rendering", "pg001")
+    llmMocks.createLLMModel.mockClear()
+    await expect(reRenderPage({ label, pageId: "pg001", ...(legacy ? {} : { sectionIndex: 0 }), booksDir, promptsDir: path.resolve("prompts"), configPath: path.resolve("config.yaml"), credentials: {} })).rejects.toMatchObject({ status: 409 })
+    expect(llmMocks.createLLMModel).not.toHaveBeenCalled()
+    expect(storage.getLatestNodeData("web-rendering", "pg001")).toEqual(before)
+    expect(storage.getAllNodeVersions("web-rendering", "pg001")).toHaveLength(1)
+  } finally { storage.close(); fs.rmSync(booksDir, { recursive: true, force: true }) }
+})

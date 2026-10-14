@@ -313,7 +313,8 @@ describe("Page routes", () => {
         const steps = after.getStepRuns().map((r) => r.step)
         expect(steps).not.toContain("web-rendering")
         expect(steps).not.toContain("quiz-generation")
-        expect(steps).not.toContain("toc-generation")
+        // No TOC heading or rendered section existed, so its input is unchanged.
+        expect(steps).toContain("toc-generation")
         // Non-destructive: the rendering itself is untouched.
         expect(after.getLatestNodeData("web-rendering", `${label}_p1`)).toBeTruthy()
       } finally {
@@ -323,7 +324,7 @@ describe("Page routes", () => {
 
     it("keeps separate generation attempts on cosmetic saves, resets them on source restore, and preserves every saved version", async () => {
       const seed = createBookStorage(label, tmpDir)
-      const original = seed.getLatestNodeData("page-sectioning", `${label}_p1`)!.data as { sections: Array<{ backgroundColor: string; nodes: Array<{ text?: string }> }> }
+      const original = seed.getLatestNodeData("page-sectioning", `${label}_p1`)!.data as { sections: Array<{ backgroundColor: string; nodes: Array<{ text?: string; role?: string }> }> }
       const sourceSteps = ["quiz-generation", "glossary", "toc-generation"]
       for (const step of [...sourceSteps, "tts", "catalog-translation", "web-rendering"]) seed.markStepCompleted(step)
       for (const node of sourceSteps) { seed.putNodeData(node, "book", { manual: "first" }); seed.putNodeData(node, "book", { manual: "second" }) }
@@ -339,6 +340,7 @@ describe("Page routes", () => {
       expect(afterCosmetic.getStepRuns().map((run) => run.step)).not.toContain("web-rendering")
       const changed = structuredClone(original)
       changed.sections[0].nodes[0].text = "Changed source"
+      changed.sections[0].nodes[0].role = "heading"
       afterCosmetic.putNodeData("page-sectioning", `${label}_p1`, changed)
       afterCosmetic.close()
       const restored = await app.request(`/api/books/${label}/versions/page-sectioning/${label}_p1/restore`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: 1 }) })
@@ -346,8 +348,9 @@ describe("Page routes", () => {
       const after = createBookStorage(label, tmpDir)
       try {
         const steps = after.getStepRuns().map((run) => run.step)
-        for (const step of sourceSteps) expect(steps).not.toContain(step)
-        expect(steps).toEqual(expect.arrayContaining(["tts", "catalog-translation"]))
+        // Restoring the source heading affects TOC; rendered Quiz/Glossary text did not change.
+        expect(steps).not.toContain("toc-generation")
+        expect(steps).toEqual(expect.arrayContaining(["quiz-generation", "glossary", "tts", "catalog-translation"]))
         for (const node of sourceSteps) expect(after.getAllNodeVersions(node, "book").map((row) => row.data)).toEqual([{ manual: "first" }, { manual: "second" }])
         expect(after.getAllNodeVersions("page-sectioning", `${label}_p1`)).toHaveLength(3)
         expect(after.getCurrentNodeVersion("page-sectioning", `${label}_p1`)).toBe(1)

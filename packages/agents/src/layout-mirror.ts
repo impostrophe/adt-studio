@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto"
 import { z } from "zod"
 import type { Storage } from "@adt/storage"
 import { WebRenderingOutput, PageSectioningOutput } from "@adt/types"
-import { putSourceNodeData, stampRenderedOwner, resolveRenderedSection, withLegacyRenderingOwnership } from "@adt/pipeline"
+import { withSourceGenerationTracking, putSourceNodeData, stampRenderedOwner, resolveRenderedSection, withLegacyRenderingOwnership } from "@adt/pipeline"
 import { createLLMModel } from "@adt/llm"
 import type { AgentCredentials } from "./credentials.js"
 import { buildSectioningSectionFromHtml } from "./tools/build-sectioning.js"
@@ -256,7 +256,7 @@ export async function mirrorLayout(
           s.sectionId === sectionId ? newSectioningSection : s,
         ),
       }
-      const version = storage.transaction(() => {
+      const version = withSourceGenerationTracking(storage, () => {
         if (storage.getLatestNodeData("web-rendering", target.pageId)?.version !== renderingVersion || storage.getLatestNodeData("page-sectioning", target.pageId)?.version !== sectioningVersion) {
           throw new Error("Section changed while mirroring. Refresh before trying again.")
         }

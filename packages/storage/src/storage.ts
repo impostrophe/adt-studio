@@ -79,7 +79,7 @@ export interface Storage {
    * transaction; never retain the snapshot across provider calls or awaits. */
   readSnapshot<T>(operation: () => T): T
   clearExtractedData(): void
-  clearNodesByType(nodes: string[]): void
+  clearNodesByType(nodes: string[], itemId?: string): void
   putExtractedPage(page: ExtractedPage): void
   deletePage(pageId: string): void
 

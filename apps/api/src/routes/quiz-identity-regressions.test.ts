@@ -409,10 +409,10 @@ describe("full-stage quiz regeneration", () => {
     expect(useStorage((s) => s.getStepRuns()).find((s) => s.step === "quiz-generation")?.status).toBe("error")
   })
 
-  it("reserves identities after invalidation and refuses an unsafe extraction reset", async () => {
+  it("reserves identities through retained reruns and refuses an unsafe extraction reset", async () => {
     seed([quiz("One"), quiz("Two")])
     makeBeforeRun(label, "storyboard", "storyboard", root)()
-    expect(useStorage((s) => s.getLatestNodeData("quiz-generation", "book"))).toBeNull()
+    expect(stored().quizzes.map(quiz => quiz.question)).toEqual(["One", "Two"])
     useStorage((s) => saveQuizOutput(s, output([quiz("Three")]), "replace"))
     expect(stored().quizzes[0].quizId).toBe("qz003")
     const before = history()
@@ -420,7 +420,7 @@ describe("full-stage quiz regeneration", () => {
     expect(history()).toEqual(before)
     useStorage((s) => saveQuizOutput(s, output([quiz("Four")]), "replace"))
     expect(stored().quizzes[0].quizId).toBe("qz004")
-    expect(history()).toHaveLength(4)
+    expect(history()).toHaveLength(3)
   })
 
   it("cannot reuse or overwrite old manual audio when the full run preserves the speech manifest", async () => {
@@ -463,7 +463,8 @@ describe("recoverable inactive quiz history", () => {
   it("exposes history while keeping invalidated output absent, and restores without allocating IDs", async () => {
     app.route("/", createPageRoutes(root, path.resolve("prompts"), assets, configPath))
     seed([quiz("Original", "qz1000")])
-    makeBeforeRun(label, "storyboard", "storyboard", root)()
+    // Explicit invalidation remains restorable; preparing Storyboard now retains quizzes.
+    useStorage(s => s.clearNodesByType(["quiz-generation"]))
     expect(await (await app.request(`/books/${label}/quizzes`)).json()).toEqual({
       quizzes: null, version: null, historyVersion: 2,
     })

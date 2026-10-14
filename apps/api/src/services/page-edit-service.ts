@@ -1,4 +1,4 @@
-import { putSourceNodeData } from "@adt/pipeline"
+import { putSourceNodeData, putReflowableRendering, isFixedLayoutBook } from "@adt/pipeline"
 import { HTTPException } from "hono/http-exception"
 import { renderedSectionId, resolveRenderedSection, withLegacyRenderingOwnership } from "@adt/pipeline"
 import crypto from "node:crypto"
@@ -74,6 +74,14 @@ export async function reRenderPage(
       throw new Error("Invalid page-sectioning data")
     }
     const sectioning = structuringParsed.data
+    const fixedRow = storage.getLatestNodeData("fixed-layout-sectioning", pageId)
+    const legacyPositioned = sectioning.sections.some(section => section.sectionType === "fixed-layout-page" && section.viewport && section.placement)
+    if (fixedRow || legacyPositioned) {
+      const config = loadBookConfig(label, booksDir, configPath)
+      if (sectionIndex !== undefined || legacyPositioned || isFixedLayoutBook(config)) {
+        throw new HTTPException(409, { message: "This page uses fixed layout. Run Sectioning and Storyboard after selecting a reflowable layout, or run Storyboard to rebuild fixed layout. Existing content has been preserved." })
+      }
+    }
     const initialRenderingRow = storage.getLatestNodeData("web-rendering", pageId)
     const initialRendering = WebRenderingOutput.safeParse(initialRenderingRow?.data)
     if (initialRendering.success) initialRendering.data = withLegacyRenderingOwnership(storage, pageId, initialRendering.data)
@@ -200,7 +208,8 @@ export async function reRenderPage(
 
     return storage.transaction(() => {
       if (storage.getLatestNodeData("page-sectioning", pageId)?.version !== structuringRow.version ||
-          storage.getLatestNodeData("web-rendering", pageId)?.version !== initialRenderingRow?.version) {
+          storage.getLatestNodeData("web-rendering", pageId)?.version !== initialRenderingRow?.version ||
+          storage.getLatestNodeData("fixed-layout-sectioning", pageId)?.version !== fixedRow?.version) {
         throw new HTTPException(409, { message: "Page changed during re-rendering. The existing rendering has been preserved." })
       }
       let rendering = renderResult
@@ -215,7 +224,9 @@ export async function reRenderPage(
         }).sort((a, b) => a.sectionIndex - b.sectionIndex) }
       }
       assertImageAltConflicts(initialRendering.success ? initialRendering.data : undefined, rendering)
-      const version = putSourceNodeData(storage, "web-rendering", pageId, rendering)
+      const version = sectionIndex === undefined
+        ? putReflowableRendering(storage, pageId, rendering)
+        : putSourceNodeData(storage, "web-rendering", pageId, rendering)
       storage.clearNodesByType(["accessibility-assessment"])
       return { version, rendering }
     })

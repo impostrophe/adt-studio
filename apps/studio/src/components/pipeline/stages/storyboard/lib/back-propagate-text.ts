@@ -84,3 +84,22 @@ export function backPropagateTextChanges(
   return { ...sectioning, sections: sectioning.sections.map((value, index) => index === sectionIndex ? { ...value, nodes: nextNodes } : value) }
 }
 
+/** Include an explicit tree draft even when the HTML projection adds no text
+ * changes. Saving both drafts does not claim that a pending structural edit
+ * has already been rendered, and never requests generation. */
+export function sectioningSaveFromRendering(
+  savedSectioning: SectioningData | null,
+  pendingSectioning: SectioningData | null,
+  sectionIndex: number,
+  editedHtml: string,
+  savedHtml: string,
+  needsRerender: boolean,
+) {
+  const base = pendingSectioning ?? savedSectioning
+  if (!base) return {}
+  const updated = backPropagateTextChanges(base, sectionIndex, editedHtml, savedHtml)
+  return pendingSectioning || updated !== base
+    ? { sectioning: updated, renderingInSync: !needsRerender }
+    : {}
+}
+

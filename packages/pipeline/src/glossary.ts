@@ -1,4 +1,4 @@
-import { parseDocument, DomUtils } from "htmlparser2"
+import { renderedText } from "./rendered-text.js"
 import type { AppConfig, GlossaryItem, GlossaryOutput } from "@adt/types"
 import {
   glossaryLLMSchema,
@@ -48,9 +48,7 @@ export function buildGlossaryConfig(
 }
 
 export function stripHtml(html: string): string {
-  const doc = parseDocument(html)
-  const text = DomUtils.textContent(doc)
-  return text.replace(/\s+/g, " ").trim()
+  return renderedText(html)
 }
 
 function normalizeGlossaryWord(word: string): string {

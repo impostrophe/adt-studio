@@ -8,7 +8,7 @@ issues: ["#735", "#131", "#733", "#736", "#619", "#626"]
 prs: ["#879"]
 adr: "docs/DECISIONS.md#adr-024"
 created: 2026-09-10
-updated: 2026-10-13
+updated: 2026-10-14
 ---
 
 ## Decision under review
@@ -45,16 +45,51 @@ All step names and ordering remain derived from `PIPELINE`. A deterministic whol
 
 Storyboard's own freshness is excluded. Editing Sectioning and having a Storyboard run select only affected pages remains a follow-up. Generation of glossary, quizzes and TOC also remains outside scope: their saved content is retained, while edits to their existing catalog entries can affect translations and speech. This does not certify those generated source artifacts as semantically current under every source edit; their existing generation policies remain separate.
 
-**Compatibility clarification (October 13, user-authorized; human review pending):**
-Substantive source/structure changes reset Quiz, Glossary and TOC attempts while
-retaining their saved content, versions and assets. Cosmetic/source-equivalent
-saves leave those attempts unchanged. This applies consistently to source edits,
-restores and successful generation publication; each source-entity publication
-and its reset are atomic. Existing spread extraction can retain an earlier page
-addition if later recording preservation fails; its attempts reset with that
-committed addition, while the older page and recording remain retained. This
-clarification does not change Extract's existing page-retirement policy.
-The retained TOC remains editable after its attempt resets. Whenever a reset keeps a stage's content, that stage's Overview, with its Run button, stays available. For single-item
+**Compatibility clarification (October 14, Note 3 refinement; human review pending):**
+Source generators remain outside catalog-scoped regeneration. Compare each
+existing generator's actual inputs before and after source edits, restores,
+structural changes and successful generation publication. Reset only the
+changed generator's attempt, atomically with the source publication, retaining
+its saved content, versions and assets. This supersedes October 13's broad
+reset of all three generators on any substantive source edit:
+
+- Glossary: the rendered page text its collector consumes.
+- Quiz: selected page text, page IDs, eligibility and batch membership using
+  the run's section-type filter and pages-per-quiz policy.
+- TOC: first section headings and their identities, section/page membership
+  and reading order; original TOC text only for extract mode.
+
+Retained affected content shows “Generated before your latest edits,” an amber
+sidebar state and an explicit Re-run action. The warning survives reload,
+skip, failed/cancelled runs and manual output edits. Only successful complete
+publication against unchanged captured inputs clears it. The existing stage
+Overview/Run and content editor remain reachable. Preparing a run alone does
+not declare unaffected retained generators outdated.
+
+Saving compares edited HTML against the saved rendering before propagating
+real text changes into sectioning. Cosmetic renderer/source differences, such
+as printed blanks rendered as inputs, must not overwrite source text. Mixed
+structural and HTML drafts are saved together without automatic generation;
+unrendered structural edits remain out of sync. Historical blank drift is not
+silently repaired.
+
+For legacy generators without a recorded selection policy, use saved Quiz
+page IDs for text coverage and conservatively detect possible eligibility or
+batch membership changes. Treat unknown TOC mode as extract until a successful
+run records its mode. The warning applies prospectively: erased historical
+attempts do not prove which older source changes affected a retained output.
+No book is rewritten merely on opening to guess that history.
+
+Fixed-layout content remains readable until a successful per-page reflow
+publication atomically retires that page's positioned source. Failed or
+cancelled runs retain the old pair. A legacy positioned tree requires semantic
+Sectioning before switching to reflow; a partial re-render must not mix layout
+strategies. Existing spread extraction can retain an earlier page addition if
+later recording preservation fails; only generators affected by the committed
+addition are reset. This does not change Extract's page-retirement policy.
+See the [Note 3 evidence](../verification/spec-0001-note3.md).
+
+For single-item
 Gemini generation with page batching preferred, no alignment key and highlighting
 disabled, synthesize only the requested item and record the actual per-item basis.
 Reuse that audio for unchanged item inputs, even if an alignment key later becomes

@@ -15,6 +15,7 @@ const rendering = { sections: [{ sectionId: owner, sectionIndex: 0, sectionType:
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), "adt-mirror-attempts-"))
   db = createBookStorage("book", root)
+  db.putExtractedPage({ pageId: "pg001", pageNumber: 1, text: "", pageImage: { imageId: "pg001_page", buffer: Buffer.from("page"), format: "png", hash: "fixture", width: 100, height: 100 }, images: [] })
   // Native Sectioning is not already flattened by the agent's HTML builder.
   db.putNodeData("page-sectioning", "pg001", { reasoning: "fixture", sections: [{
     sectionId: owner, sectionType: "text", backgroundColor: "white", textColor: "black", pageNumber: 1, isPruned: false,
@@ -35,7 +36,7 @@ it.each(["cosmetic", "substantive", "conflict", "failure"])("handles %s mirrorin
   const result = await mirrorLayout({ storage: db, bookLabel: "book", booksDir: root, source: { pageId: "pg001", sectionIndex: 0 }, targets: [{ pageId: "pg001", sectionIndex: 0 }], modelId: "fixture" })
   expect(result.results[0].ok).toBe(mode === "cosmetic" || mode === "substantive")
   const steps = db.getStepRuns().map((run) => run.step)
-  for (const step of SOURCE_GENERATION_RESET_STEPS) expect(steps.includes(step)).toBe(mode !== "substantive")
+  for (const step of SOURCE_GENERATION_RESET_STEPS) expect(steps.includes(step)).toBe(step === "toc-generation" || mode !== "substantive")
   expect(steps).toEqual(expect.arrayContaining(["tts", "catalog-translation"]))
   for (const node of ["glossary", "quiz-generation", "toc-generation"]) expect(db.getAllNodeVersions(node, "book").map((row) => row.data)).toEqual([{ manual: "retained" }])
   expect(db.getAllNodeVersions("web-rendering", "pg001")[0].data).toEqual(rendering)

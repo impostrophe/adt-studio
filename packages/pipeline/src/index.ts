@@ -509,4 +509,8 @@ export { cloneRenderedIdentities, stampRenderedOwner } from "./rendered-identity
 
 export { indexEasyReadEntries } from "./easy-read.js"
 
-export { sourceGenerationBasis, resetSourceGenerationAttempts, putSourceNodeData } from "./source-generation-state.js"
+export { sourceGenerationBasis, putSourceNodeData, putReflowableRendering, withSourceGenerationTracking, captureSourceGeneration, publishSourceGeneration, getSourceGenerationUpdates, markSourceGenerationNeedsUpdate } from "./source-generation-state.js"
+
+export { collectQuizPages } from "./quiz-generation.js"
+
+export { assertReflowableSectioning } from "./render-sectioning.js"
