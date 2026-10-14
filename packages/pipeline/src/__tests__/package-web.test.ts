@@ -2665,6 +2665,18 @@ describe("packageAdtWeb", () => {
 })
 
 describe("rewriteImageUrls", () => {
+  it("keeps UTF-8 text and attributes literal while escaping HTML syntax", () => {
+    const { html } = rewriteImageUrls(
+      '<p title="Año &amp; &quot;x&quot;">Niño á ¿Qué? — &amp; &lt; $5</p>',
+      "mybook",
+      new Map(),
+    )
+
+    expect(html).toContain('title="Año &amp; &quot;x&quot;"')
+    expect(html).toContain("Niño á ¿Qué? — &amp; &lt; $5")
+    expect(html).not.toContain("&#x")
+  })
+
   it("rewrites src URL from API path to local images/ path", () => {
     const html = `<img src="/api/books/mybook/images/abc123">`
     const imageMap = new Map([["abc123", "photo.jpg"]])

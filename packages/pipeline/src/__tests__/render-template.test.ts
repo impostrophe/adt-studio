@@ -264,7 +264,7 @@ describe("one_column_render.liquid", () => {
     const config = { ...templateConfig, templateName: "one_column_render" }
     const result = await renderSectionTemplate(input, config, engine)
 
-    expect(result.html).toContain("&lt;img src=x onerror=alert(&quot;xss&quot;)&gt;")
+    expect(result.html).toContain('&lt;img src=x onerror=alert("xss")&gt;')
     expect(result.html).not.toContain('<img src=x onerror=alert("xss")>')
   })
 })
@@ -332,7 +332,7 @@ describe("two_column_render.liquid", () => {
     const config = { ...templateConfig, templateName: "two_column_render" }
     const result = await renderSectionTemplate(input, config, engine)
 
-    expect(result.html).toContain("&lt;img src=x onerror=alert(&quot;xss&quot;)&gt;")
+    expect(result.html).toContain('&lt;img src=x onerror=alert("xss")&gt;')
     expect(result.html).not.toContain('<img src=x onerror=alert("xss")>')
   })
 

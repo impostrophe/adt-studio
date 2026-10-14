@@ -1,3 +1,10 @@
+import { DomUtils } from "htmlparser2"
+
+/** Serialize HTML fragments as UTF-8 while retaining required HTML escaping. */
+export function serializeHtml(node: Parameters<typeof DomUtils.getOuterHTML>[0]): string {
+  return DomUtils.getOuterHTML(node, { encodeEntities: "utf8" })
+}
+
 export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")

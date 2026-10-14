@@ -1,4 +1,5 @@
 import { parseDocument, DomUtils } from "htmlparser2"
+import { serializeHtml } from "./html-escape.js"
 
 export type FontScope = "whole" | "heading" | "paragraph" | "body" | "caption"
 
@@ -36,5 +37,5 @@ export function applyFontToHtml(html: string, opts: { family: string | null; sco
   for (const node of nodes) {
     rewriteStyle(node, isWhole ? null : opts.family)
   }
-  return DomUtils.getOuterHTML(doc)
+  return serializeHtml(doc)
 }

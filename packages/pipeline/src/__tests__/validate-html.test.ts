@@ -6,6 +6,18 @@ import {
 } from "../validate-html.js"
 
 describe("validateSectionHtml", () => {
+  it("keeps UTF-8 text and attributes literal in normalized HTML", () => {
+    const result = validateSectionHtml(
+      '<section><p data-id="pg001_gp001" title="Año &amp; &quot;x&quot;">Niño á ¿Qué? — &amp; &lt; $5</p></section>',
+      ["pg001_gp001"],
+      [],
+    )
+
+    expect(result.sectionHtml).toContain('title="Año &amp; &quot;x&quot;"')
+    expect(result.sectionHtml).toContain("Niño á ¿Qué? — &amp; &lt; $5")
+    expect(result.sectionHtml).not.toContain("&#x")
+  })
+
   it("passes valid HTML with correct data-ids", () => {
     const html = `
       <div id="content" class="container">
