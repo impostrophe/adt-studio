@@ -1917,6 +1917,7 @@ export const api = {
 
   getStepStatus: (label: string) =>
     request<{
+      sourceUpdateStages: string[]
       stages: Record<string, string>
       steps: Record<string, string>
       error: string | null

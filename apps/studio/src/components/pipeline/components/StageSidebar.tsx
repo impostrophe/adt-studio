@@ -80,7 +80,7 @@ export function StageSidebar({
   const { i18n } = useLingui()
   const matchRoute = useMatchRoute()
   const search = useSearch({ strict: false }) as { tab?: string }
-  const { stageState, cancelRun, isCancelling } = useBookRun()
+  const { stageState, cancelRun, isCancelling, sourceUpdateStages = [] } = useBookRun()
   const { data: accessibilityAssessment } = useAccessibilityAssessment(bookLabel)
   const { data: signLanguageData } = useSignLanguageVideos(bookLabel)
   const { data: packageStatus } = usePackageAdtStatus(bookLabel)
@@ -182,10 +182,11 @@ export function StageSidebar({
     const hideMissing = !catalog?.missingStages.some((stage) => stage === step.slug) || (step.slug === "speech" && ["running", "queued"].includes(state))
     const visibleContent = hideMissing ? catalog?.stagesWithoutMissing[step.slug] : content
     const { updates = 0, reviews = 0, warnings = 0, missing = 0 } = visibleContent ?? {}
-    const attentionLabel = updates || reviews || warnings || missing
+    const sourceNeedsUpdate = sourceUpdateStages.includes(step.slug)
+    const attentionLabel = sourceNeedsUpdate ? i18n._(msg`Generated before your latest edits`) : updates || reviews || warnings || missing
       ? i18n._(msg`Updates: ${updates}. Needs review: ${reviews}. Warnings: ${warnings}. Missing: ${missing}.`)
       : undefined
-    const stageCompleted = visibleContent?.current || (!(updates || missing) && state === "done")
+    const stageCompleted = !sourceNeedsUpdate && (visibleContent?.current || (!(updates || missing) && state === "done"))
     // Overview is the stage's landing page, and its Run button. Always keep it:
     // a reset can keep a stage's content (SPEC-0001), and its own view then
     // shows that content instead of the landing page, so hiding Overview would
@@ -199,7 +200,7 @@ export function StageSidebar({
     const settingsTabs = getSettingsTabs(step.slug, i18n, showOverviewTab)
     const showSubTabs = isActive && isSettings && !!settingsTabs
 
-    const stageNeedsRerun = updates > 0 || missing > 0
+    const stageNeedsRerun = sourceNeedsUpdate || updates > 0 || missing > 0
     const activeAttempt = state === "running" || state === "queued"
     const ringState = activeAttempt ? state : stageNeedsRerun || state === "error" ? "idle" : content?.current ? "done" : state
 
@@ -278,7 +279,7 @@ export function StageSidebar({
                 >
                   <TriangleAlert className="w-2 h-2 text-white" aria-hidden="true" />
                 </span>
-              ) : railCollapsed && attentionLabel ? (
+              ) : (sourceNeedsUpdate || railCollapsed) && attentionLabel ? (
                 // The review button beside the label is clipped while the rail
                 // is collapsed; mirror its attention on the icon until hover
                 // expands the rail and reveals the button.
@@ -286,7 +287,7 @@ export function StageSidebar({
                   role="img"
                   aria-label={attentionLabel}
                   title={attentionLabel}
-                  className="absolute -top-1 -right-1 z-20 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-600 ring-2 ring-background transition-opacity duration-150 delay-150 group-hover/rail:opacity-0"
+                  className="absolute -top-1 -right-1 z-20 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-600 ring-2 ring-background"
                 >
                   <TriangleAlert className="w-2 h-2 text-white" aria-hidden="true" />
                 </span>

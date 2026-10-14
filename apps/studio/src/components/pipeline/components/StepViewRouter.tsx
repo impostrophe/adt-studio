@@ -1,4 +1,5 @@
 import { CatalogSummary } from "./OutputReview"
+import { SourceGenerationNotice } from "./SourceGenerationNotice"
 import { STAGE_ORDER, OUTPUT_KIND_TO_STAGE } from "@adt/types"
 import {
   createContext,
@@ -159,6 +160,7 @@ export function StepViewRouter({
             </Link>
           )}
         </StepHeaderBar>
+        <SourceGenerationNotice bookLabel={bookLabel} stage={step} />
         {(Object.values(OUTPUT_KIND_TO_STAGE).some((stage) => stage === step) || step === "preview") && <div className="px-4"><CatalogSummary bookLabel={bookLabel} stage={STAGE_ORDER.find((stage) => stage === step)} disclosure={step === "preview"} /></div>}
 
         {/* Step content */}

@@ -8,6 +8,7 @@ const defaultStageState = (slug: string) => {
   return "idle"
 }
 const stageStateMock = vi.fn(defaultStageState)
+const sourceUpdateStages: string[] = []
 const cancelRunMock = vi.fn()
 const toastInfoMock = vi.fn()
 const matchRouteMock = vi.fn(() => true)
@@ -93,6 +94,7 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@/hooks/use-book-run", () => ({
   useBookRun: () => ({
     stageState: stageStateMock,
+    sourceUpdateStages,
     stepState: vi.fn(() => "idle"),
     stepProgress: vi.fn(() => null),
     cancelRun: cancelRunMock,
@@ -151,6 +153,7 @@ vi.mock("@/routes/books.$label", () => ({
 }))
 
 beforeEach(() => {
+  sourceUpdateStages.length = 0;
   matchRouteMock.mockReturnValue(true)
 })
 
@@ -327,4 +330,14 @@ describe("StageSidebar", () => {
     expect(cancelRunMock).toHaveBeenCalledTimes(1)
     expect(toastInfoMock).toHaveBeenCalledWith("Cancelling Storyboard step")
   })
+})
+
+it.each(["toc", "quizzes", "glossary"])("shows persisted source update attention for %s even when the job says done", async stage => {
+  sourceUpdateStages.push(stage)
+  stageStateMock.mockReturnValue("done")
+  const { StageSidebar } = await import("./components/StageSidebar")
+  render(<StageSidebar bookLabel="demo-book" activeStep="book" />)
+  const badge = screen.getByRole("img", { name: "Generated before your latest edits" })
+  expect(badge.className).toContain("bg-amber-600")
+  expect(badge.closest("a")?.getAttribute("aria-label")).toContain("needs update")
 })

@@ -54,6 +54,7 @@ export interface QueueRunOptions {
 
 /** Shape returned by the enriched GET /books/:label/step-status endpoint. */
 interface StepStatusResponse {
+  sourceUpdateStages?: string[]
   stages: Record<string, string>
   steps: Record<string, string>
   error: string | null
@@ -70,6 +71,8 @@ interface StepStatusResponse {
 // ---------------------------------------------------------------------------
 
 export interface BookRunContextValue {
+  /** Retained generator content affected by a source edit; independent of run state. */
+  sourceUpdateStages?: string[]
   /** Stage state: idle / queued / running / done / error */
   stageState(stage: string): StageState
   /** Step state: idle / running / done / error */
@@ -898,6 +901,7 @@ export function useBookRunStatus(label: string): BookRunContextValue {
   }, [polledDecisions])
 
   return {
+    sourceUpdateStages: data?.sourceUpdateStages ?? [],
     stageState,
     stepState: stepStateAccessor,
     stepProgress: stepProgressAccessor,
