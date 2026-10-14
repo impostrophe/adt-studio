@@ -1,5 +1,13 @@
 # SPEC-0001 approval-test follow-up — October 14
 
+> **Superseded acceptance evidence:** the follow-up [real UI walkthrough](spec-0001-real-ui-2026-10-14.md)
+> distinguishes actual editor-control interactions from this checkpoint's
+> browser/API harness. In particular, earlier save probes submitted API payloads;
+> they did not exercise the floating Save dispatch with mixed tree/HTML drafts.
+> The subsequent real editor walkthrough found that combination could retain
+> excluded HTML, and fixes and tests it. “No known must-fix” below describes the
+> earlier review checkpoint, not proof that every production journey passed.
+
 Starting head: `cb808fa58bb9f3ca6913165d5e30e377161ef51c`, based on develop
 `0b18602f8b42f4b52b4d2ccf2927635d5a4db572`. Same PR #879. Reviewer commits
 `f86406b9c` and `cb808fa58` are preserved. Spec approval remains pending.
