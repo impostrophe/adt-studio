@@ -54,7 +54,7 @@ and its reset are atomic. Existing spread extraction can retain an earlier page
 addition if later recording preservation fails; its attempts reset with that
 committed addition, while the older page and recording remain retained. This
 clarification does not change Extract's existing page-retirement policy.
-The retained TOC remains editable after its attempt resets. For single-item
+The retained TOC remains editable after its attempt resets. Whenever a reset keeps a stage's content, that stage's Overview, with its Run button, stays available. For single-item
 Gemini generation with page batching preferred, no alignment key and highlighting
 disabled, synthesize only the requested item and record the actual per-item basis.
 Reuse that audio for unchanged item inputs, even if an alignment key later becomes

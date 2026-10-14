@@ -255,6 +255,14 @@ describe("StageSidebar", () => {
     expect(screen.queryByText("Global Prompts")).toBeNull()
   })
 
+  it.each(["quizzes", "glossary", "toc", "captions"])("keeps the %s Overview (and its Run button) after a reset leaves the stage idle", async (stage) => {
+    matchRouteMock.mockReturnValue(true)
+    stageStateMock.mockReturnValue("idle")
+    const { StageSidebar } = await import("./components/StageSidebar")
+    render(<StageSidebar bookLabel="demo-book" activeStep={stage} />)
+    expect(screen.getByText("Overview").closest("a")?.getAttribute("data-tab")).toBe("overview")
+  })
+
   it("shows Validation before Preview and exposes Validation settings tabs", async () => {
     const { StageSidebar } = await import("./components/StageSidebar")
     const { container } = render(

@@ -24,6 +24,7 @@ import { useOutputSummary } from "@/hooks/use-outputs"
 import { StageOutputStatus } from "./StageOutputStatus"
 import { useDirtyTabsForStage } from "@/hooks/use-settings-dirty-tabs"
 import { getSettingsTabs } from "../settings-tabs"
+import { OVERVIEW_STAGE_SLUGS } from "../settings-routing"
 import { usePackageAdtStatus } from "@/hooks/use-books"
 import { useSignLanguageVideos } from "@/hooks/use-sign-language-videos"
 import { StepProgressRing } from "./StepProgressRing"
@@ -185,16 +186,16 @@ export function StageSidebar({
       ? i18n._(msg`Updates: ${updates}. Needs review: ${reviews}. Warnings: ${warnings}. Missing: ${missing}.`)
       : undefined
     const stageCompleted = visibleContent?.current || (!(updates || missing) && state === "done")
-    // Overview is the stage's landing page, and its Run button. It is normally
-    // redundant while a stage is idle, because the stage's own view *is* the
-    // landing page — but a stale Storyboard shows the editor instead, so hiding
-    // Overview there leaves no way to re-run the stage at all. It is the first
-    // tab, so re-running stays one click from the gear.
+    // Overview is the stage's landing page, and its Run button. Always keep it:
+    // a reset can keep a stage's content (SPEC-0001), and its own view then
+    // shows that content instead of the landing page, so hiding Overview would
+    // leave no way to re-run the stage. It is the first tab, so re-running
+    // stays one click from the gear.
     const showOverviewTab =
+      (OVERVIEW_STAGE_SLUGS as readonly string[]).includes(step.slug) ||
       state === "done" ||
       state === "running" ||
-      state === "queued" ||
-      (step.slug === "storyboard" && hasRenderings)
+      state === "queued"
     const settingsTabs = getSettingsTabs(step.slug, i18n, showOverviewTab)
     const showSubTabs = isActive && isSettings && !!settingsTabs
 
